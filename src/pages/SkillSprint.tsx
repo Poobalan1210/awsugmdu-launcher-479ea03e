@@ -16,8 +16,9 @@ import {
   Rocket, Calendar, Users, Github, MessageSquare, 
   Video, Send, ThumbsUp, Clock, ExternalLink,
   ChevronRight, ChevronDown, Linkedin, User,
-  CheckCircle, Image, FileText, PlayCircle
+  CheckCircle, Image, FileText, PlayCircle, Link2
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
 import { mockSprints, mockForumPosts, Sprint, Session, currentUser, mockUsers, getUserById } from '@/data/mockData';
 import { format, parseISO } from 'date-fns';
@@ -676,6 +677,17 @@ function SprintDetail({ sprint, onBack }: { sprint: Sprint; onBack: () => void }
                               <MessageSquare className="h-4 w-4" />
                               {post.replies.length} replies
                             </button>
+                            <button 
+                              className="flex items-center gap-1 hover:text-primary transition-colors"
+                              onClick={() => {
+                                const url = `${window.location.origin}/skill-sprint?post=${post.id}`;
+                                navigator.clipboard.writeText(url);
+                                toast.success('Link copied to clipboard!');
+                              }}
+                            >
+                              <Link2 className="h-4 w-4" />
+                              Share
+                            </button>
                           </div>
                           {/* Replies */}
                           {post.replies.length > 0 && (
@@ -692,6 +704,17 @@ function SprintDetail({ sprint, onBack }: { sprint: Sprint; onBack: () => void }
                                       <span className="text-muted-foreground">· {format(parseISO(reply.createdAt), 'MMM d')}</span>
                                     </div>
                                     <p className="text-sm text-muted-foreground">{reply.content}</p>
+                                    <button 
+                                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors mt-1"
+                                      onClick={() => {
+                                        const url = `${window.location.origin}/skill-sprint?reply=${reply.id}`;
+                                        navigator.clipboard.writeText(url);
+                                        toast.success('Link copied to clipboard!');
+                                      }}
+                                    >
+                                      <Link2 className="h-3 w-3" />
+                                      Share
+                                    </button>
                                   </div>
                                 </div>
                               ))}

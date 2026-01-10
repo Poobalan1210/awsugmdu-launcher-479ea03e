@@ -13,8 +13,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   Award, Users, BookOpen, Calendar, CheckCircle, ArrowRight, 
   MessageSquare, Send, ThumbsUp, Pin, Video, Clock,
-  ChevronDown, Crown, ArrowLeft
+  ChevronDown, Crown, ArrowLeft, Link2
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { mockCertificationGroups, CertificationGroup, currentUser, getUserById } from '@/data/mockData';
 import { format, parseISO } from 'date-fns';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -446,6 +447,17 @@ function MessageCard({
                 <MessageSquare className="h-4 w-4" />
                 Reply
               </button>
+              <button 
+                className="flex items-center gap-1 hover:text-primary transition-colors"
+                onClick={() => {
+                  const url = `${window.location.origin}/certification-circle?message=${message.id}`;
+                  navigator.clipboard.writeText(url);
+                  toast.success('Link copied to clipboard!');
+                }}
+              >
+                <Link2 className="h-4 w-4" />
+                Share
+              </button>
               {message.replies.length > 0 && (
                 <button 
                   className="flex items-center gap-1 hover:text-primary transition-colors"
@@ -520,10 +532,23 @@ function MessageCard({
                           <span className="text-muted-foreground">· {format(parseISO(reply.createdAt), 'MMM d')}</span>
                         </div>
                         <p className="text-sm">{reply.content}</p>
-                        <button className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors mt-1">
-                          <ThumbsUp className="h-3 w-3" />
-                          {reply.likes}
-                        </button>
+                        <div className="flex items-center gap-3 mt-1">
+                          <button className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors">
+                            <ThumbsUp className="h-3 w-3" />
+                            {reply.likes}
+                          </button>
+                          <button 
+                            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"
+                            onClick={() => {
+                              const url = `${window.location.origin}/certification-circle?reply=${reply.id}`;
+                              navigator.clipboard.writeText(url);
+                              toast.success('Link copied to clipboard!');
+                            }}
+                          >
+                            <Link2 className="h-3 w-3" />
+                            Share
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}

@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { 
   Calendar, MapPin, Users, Video, Clock, 
   ArrowLeft, ExternalLink, CheckCircle, UserPlus,
-  Linkedin, Github
+  Linkedin, Github, BookOpen, ListChecks, Star, AlertCircle
 } from 'lucide-react';
 import { mockMeetups, Meetup, currentUser } from '@/data/mockData';
 import { format, parseISO, isPast } from 'date-fns';
@@ -241,6 +241,111 @@ function MeetupDetail({ meetup, onBack }: { meetup: Meetup; onBack: () => void }
         </div>
       </div>
 
+      {/* What to Expect Section */}
+      {meetup.whatToExpect && (
+        <Card className="glass-card">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <BookOpen className="h-5 w-5 text-primary" />
+              What to Expect
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-muted-foreground">{meetup.whatToExpect}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Highlights Section */}
+      {meetup.highlights && meetup.highlights.length > 0 && (
+        <Card className="glass-card">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Star className="h-5 w-5 text-primary" />
+              Event Highlights
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-2">
+              {meetup.highlights.map((highlight, index) => (
+                <li key={index} className="flex items-start gap-2">
+                  <CheckCircle className="h-4 w-4 text-emerald-500 mt-1 flex-shrink-0" />
+                  <span>{highlight}</span>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Prerequisites Section */}
+      {meetup.prerequisites && meetup.prerequisites.length > 0 && (
+        <Card className="glass-card border-amber-500/30">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-amber-500" />
+              Prerequisites
+            </CardTitle>
+            <CardDescription>Please ensure you meet these requirements before attending</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-2">
+              {meetup.prerequisites.map((prereq, index) => (
+                <li key={index} className="flex items-start gap-2">
+                  <div className="h-4 w-4 rounded-full bg-amber-500/20 flex items-center justify-center mt-1 flex-shrink-0">
+                    <span className="text-[10px] font-bold text-amber-600">{index + 1}</span>
+                  </div>
+                  <span>{prereq}</span>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Agenda Section */}
+      {meetup.agenda && meetup.agenda.length > 0 && (
+        <Card className="glass-card">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ListChecks className="h-5 w-5 text-primary" />
+              Event Agenda
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {meetup.agenda.map((item, index) => {
+                const speaker = item.speakerId 
+                  ? meetup.speakers.find(s => s.id === item.speakerId) 
+                  : null;
+                return (
+                  <div key={index} className="flex gap-4 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
+                    <div className="text-sm font-mono text-primary min-w-[60px]">
+                      {item.time}
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-medium">{item.title}</h4>
+                      {item.description && (
+                        <p className="text-sm text-muted-foreground mt-1">{item.description}</p>
+                      )}
+                      {speaker && (
+                        <div className="flex items-center gap-2 mt-2">
+                          <Avatar className="h-6 w-6">
+                            <AvatarImage src={speaker.photo} alt={speaker.name} />
+                            <AvatarFallback>{speaker.name.charAt(0)}</AvatarFallback>
+                          </Avatar>
+                          <span className="text-sm text-muted-foreground">{speaker.name}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Speakers Section */}
       {meetup.speakers.length > 0 && (
         <Card className="glass-card">
@@ -266,9 +371,13 @@ function MeetupDetail({ meetup, onBack }: { meetup: Meetup; onBack: () => void }
                       <p className="text-sm text-muted-foreground mt-2">{speaker.bio}</p>
                     )}
                     <div className="flex gap-2 mt-2">
-                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                        <Linkedin className="h-4 w-4" />
-                      </Button>
+                      {speaker.linkedIn && (
+                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0" asChild>
+                          <a href={speaker.linkedIn} target="_blank" rel="noopener noreferrer">
+                            <Linkedin className="h-4 w-4" />
+                          </a>
+                        </Button>
+                      )}
                       <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
                         <Github className="h-4 w-4" />
                       </Button>

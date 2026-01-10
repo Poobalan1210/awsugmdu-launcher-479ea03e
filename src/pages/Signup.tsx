@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Eye, EyeOff, Mail, Lock, User, Building2, GraduationCap, 
   Briefcase, MapPin, Globe, ChevronRight, ChevronLeft, Check, 
-  Loader2, Shield
+  Loader2, Shield, Camera, Upload
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,6 +23,7 @@ interface OnboardingData {
   name: string;
   email: string;
   password: string;
+  profilePhoto: string;
   userType: UserType | '';
   // Student fields
   collegeName: string;
@@ -38,7 +39,7 @@ interface OnboardingData {
 const STEPS = [
   { id: 1, title: 'Account', description: 'Create your account' },
   { id: 2, title: 'Verify', description: 'Verify your email' },
-  { id: 3, title: 'Profile', description: 'Tell us about yourself' },
+  { id: 3, title: 'Profile', description: 'Upload your photo & choose role' },
   { id: 4, title: 'Details', description: 'Complete your profile' },
 ];
 
@@ -52,10 +53,13 @@ export default function Signup() {
   const navigate = useNavigate();
   const { toast } = useToast();
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [formData, setFormData] = useState<OnboardingData>({
     name: '',
     email: '',
     password: '',
+    profilePhoto: '',
     userType: '',
     collegeName: '',
     collegeCity: '',
@@ -65,6 +69,25 @@ export default function Signup() {
     companyCity: '',
     country: '',
   });
+
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        toast({
+          title: "File too large",
+          description: "Please upload an image smaller than 5MB.",
+          variant: "destructive",
+        });
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        updateFormData('profilePhoto', reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const updateFormData = (field: keyof OnboardingData, value: string | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -126,7 +149,7 @@ export default function Signup() {
       case 2:
         return otpVerified;
       case 3:
-        return formData.userType !== '';
+        return formData.userType !== '' && formData.profilePhoto !== '';
       case 4:
         if (formData.userType === 'student') {
           if (formData.isCollegeChamp) {
@@ -363,59 +386,105 @@ export default function Signup() {
                 </div>
               )}
 
-              {/* Step 3: User Type Selection */}
+              {/* Step 3: Profile Photo & User Type Selection */}
               {currentStep === 3 && (
-                <div className="space-y-4">
-                  <Label className="text-base">I am a...</Label>
-                  <RadioGroup
-                    value={formData.userType}
-                    onValueChange={(value) => updateFormData('userType', value)}
-                    className="grid gap-4"
-                  >
-                    <Label
-                      htmlFor="student"
-                      className={`flex items-center gap-4 p-4 rounded-lg border-2 cursor-pointer transition-all ${
-                        formData.userType === 'student'
-                          ? 'border-primary bg-primary/5'
-                          : 'border-muted hover:border-primary/50'
-                      }`}
-                    >
-                      <RadioGroupItem value="student" id="student" />
-                      <div className="flex items-center gap-3 flex-1">
-                        <div className="p-2 rounded-lg bg-blue-500/10">
-                          <GraduationCap className="h-6 w-6 text-blue-500" />
-                        </div>
-                        <div>
-                          <p className="font-medium">Student</p>
-                          <p className="text-sm text-muted-foreground">
-                            Currently pursuing education
-                          </p>
-                        </div>
+                <div className="space-y-6">
+                  {/* Profile Photo Upload */}
+                  <div className="space-y-3">
+                    <Label className="text-base">Profile Photo</Label>
+                    <div className="flex flex-col items-center gap-4">
+                      <div 
+                        className={`relative w-28 h-28 rounded-full border-2 border-dashed transition-all cursor-pointer overflow-hidden ${
+                          formData.profilePhoto 
+                            ? 'border-primary' 
+                            : 'border-muted-foreground/30 hover:border-primary/50'
+                        }`}
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        {formData.profilePhoto ? (
+                          <>
+                            <img 
+                              src={formData.profilePhoto} 
+                              alt="Profile preview" 
+                              className="w-full h-full object-cover"
+                            />
+                            <div className="absolute inset-0 bg-black/50 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <Camera className="h-6 w-6 text-white" />
+                            </div>
+                          </>
+                        ) : (
+                          <div className="w-full h-full flex flex-col items-center justify-center text-muted-foreground">
+                            <Upload className="h-8 w-8 mb-1" />
+                            <span className="text-xs">Upload</span>
+                          </div>
+                        )}
                       </div>
-                    </Label>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handlePhotoUpload}
+                        className="hidden"
+                      />
+                      <p className="text-xs text-muted-foreground text-center">
+                        Click to upload a profile photo (max 5MB)
+                      </p>
+                    </div>
+                  </div>
 
-                    <Label
-                      htmlFor="professional"
-                      className={`flex items-center gap-4 p-4 rounded-lg border-2 cursor-pointer transition-all ${
-                        formData.userType === 'professional'
-                          ? 'border-primary bg-primary/5'
-                          : 'border-muted hover:border-primary/50'
-                      }`}
+                  {/* User Type Selection */}
+                  <div className="space-y-3">
+                    <Label className="text-base">I am a...</Label>
+                    <RadioGroup
+                      value={formData.userType}
+                      onValueChange={(value) => updateFormData('userType', value)}
+                      className="grid gap-4"
                     >
-                      <RadioGroupItem value="professional" id="professional" />
-                      <div className="flex items-center gap-3 flex-1">
-                        <div className="p-2 rounded-lg bg-purple-500/10">
-                          <Briefcase className="h-6 w-6 text-purple-500" />
+                      <Label
+                        htmlFor="student"
+                        className={`flex items-center gap-4 p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                          formData.userType === 'student'
+                            ? 'border-primary bg-primary/5'
+                            : 'border-muted hover:border-primary/50'
+                        }`}
+                      >
+                        <RadioGroupItem value="student" id="student" />
+                        <div className="flex items-center gap-3 flex-1">
+                          <div className="p-2 rounded-lg bg-blue-500/10">
+                            <GraduationCap className="h-6 w-6 text-blue-500" />
+                          </div>
+                          <div>
+                            <p className="font-medium">Student</p>
+                            <p className="text-sm text-muted-foreground">
+                              Currently pursuing education
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-medium">Professional</p>
-                          <p className="text-sm text-muted-foreground">
-                            Working in the industry
-                          </p>
+                      </Label>
+
+                      <Label
+                        htmlFor="professional"
+                        className={`flex items-center gap-4 p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                          formData.userType === 'professional'
+                            ? 'border-primary bg-primary/5'
+                            : 'border-muted hover:border-primary/50'
+                        }`}
+                      >
+                        <RadioGroupItem value="professional" id="professional" />
+                        <div className="flex items-center gap-3 flex-1">
+                          <div className="p-2 rounded-lg bg-purple-500/10">
+                            <Briefcase className="h-6 w-6 text-purple-500" />
+                          </div>
+                          <div>
+                            <p className="font-medium">Professional</p>
+                            <p className="text-sm text-muted-foreground">
+                              Working in the industry
+                            </p>
+                          </div>
                         </div>
-                      </div>
-                    </Label>
-                  </RadioGroup>
+                      </Label>
+                    </RadioGroup>
+                  </div>
                 </div>
               )}
 

@@ -96,6 +96,13 @@ export interface Submission {
   reviewedAt?: string;
 }
 
+export interface AgendaItem {
+  time: string;
+  title: string;
+  description?: string;
+  speakerId?: string;
+}
+
 export interface Meetup {
   id: string;
   title: string;
@@ -111,6 +118,10 @@ export interface Meetup {
   registeredUsers: string[];
   speakers: MeetupSpeaker[];
   image?: string;
+  agenda?: AgendaItem[];
+  highlights?: string[];
+  prerequisites?: string[];
+  whatToExpect?: string;
 }
 
 export interface MeetupSpeaker {
@@ -783,6 +794,22 @@ export const mockMeetups: Meetup[] = [
     attendees: 120,
     maxAttendees: 150,
     registeredUsers: ['1', '2', '3', '4', '5', '6'],
+    whatToExpect: 'Get the inside scoop on everything announced at AWS re:Invent 2024. Our expert speakers will break down the most impactful announcements and share practical insights on how to leverage these new services in your projects.',
+    highlights: [
+      'Overview of 50+ new service announcements',
+      'Deep dive into AI/ML updates including Amazon Bedrock enhancements',
+      'New compute and serverless innovations',
+      'Networking session with AWS Community Builders',
+      'Q&A with certified AWS professionals'
+    ],
+    agenda: [
+      { time: '18:00', title: 'Welcome & Introduction', description: 'Overview of the event and what to expect' },
+      { time: '18:15', title: 'New Compute Services Overview', description: 'EC2 updates, Lambda enhancements, and container services', speakerId: 'ms1' },
+      { time: '18:45', title: 'Serverless Updates and Lambda SnapStart', description: 'Deep dive into serverless innovations', speakerId: 'ms2' },
+      { time: '19:15', title: 'Break & Networking', description: 'Refreshments and casual networking' },
+      { time: '19:30', title: 'Q&A Panel', description: 'Open floor for questions with all speakers' },
+      { time: '20:00', title: 'Closing & Next Steps', description: 'Wrap up and upcoming community events' }
+    ],
     speakers: [
       {
         id: 'ms1',
@@ -823,6 +850,29 @@ export const mockMeetups: Meetup[] = [
     attendees: 35,
     maxAttendees: 50,
     registeredUsers: ['3', '4', '5'],
+    whatToExpect: 'This is a hands-on workshop where you will deploy real containerized applications on AWS. By the end of this session, you will have practical experience with both ECS and EKS, understanding when to use each service.',
+    prerequisites: [
+      'Basic understanding of Docker and containers',
+      'AWS account with console access',
+      'Laptop with AWS CLI installed',
+      'Familiarity with command line operations'
+    ],
+    highlights: [
+      'Hands-on lab with real AWS environments',
+      'Deploy your first ECS Fargate service',
+      'Set up an EKS cluster from scratch',
+      'Best practices for container security',
+      'Take-home reference materials and code samples'
+    ],
+    agenda: [
+      { time: '10:00', title: 'Welcome & Setup', description: 'Environment setup and prerequisites check' },
+      { time: '10:30', title: 'ECS vs EKS: When to use what', description: 'Understanding the container landscape on AWS', speakerId: 'ms3' },
+      { time: '11:15', title: 'Hands-on Lab 1: ECS Fargate', description: 'Deploy a containerized application on ECS' },
+      { time: '12:15', title: 'Lunch Break', description: 'Networking lunch provided' },
+      { time: '13:00', title: 'Hands-on Lab 2: EKS Setup', description: 'Create and configure an EKS cluster' },
+      { time: '14:30', title: 'Advanced Topics & Q&A', description: 'Security, monitoring, and best practices' },
+      { time: '15:00', title: 'Wrap Up & Certificates', description: 'Completion certificates and next steps' }
+    ],
     speakers: [
       {
         id: 'ms3',
@@ -850,6 +900,25 @@ export const mockMeetups: Meetup[] = [
     attendees: 85,
     maxAttendees: 200,
     registeredUsers: ['1', '2', '3'],
+    whatToExpect: 'AWS Community Day is our flagship annual event bringing together cloud enthusiasts, developers, and architects. Experience a full day of learning, networking, and hands-on sessions with some of the best minds in the AWS ecosystem.',
+    highlights: [
+      'Multiple tracks: Containers, Serverless, and Data',
+      'Keynote by AWS Hero',
+      'Interactive panel discussions',
+      'Hands-on workshops in breakout rooms',
+      'Swag, prizes, and networking lunch',
+      'Certificate of participation for all attendees'
+    ],
+    agenda: [
+      { time: '09:00', title: 'Registration & Breakfast', description: 'Check-in and networking breakfast' },
+      { time: '09:30', title: 'Opening Keynote', description: 'State of Cloud Native on AWS' },
+      { time: '10:30', title: 'Microservices Architecture Patterns', description: 'Design patterns for scalable applications', speakerId: 'ms4' },
+      { time: '11:30', title: 'Breakout Sessions', description: 'Choose your track: Containers / Serverless / Data' },
+      { time: '12:30', title: 'Networking Lunch', description: 'Connect with fellow cloud enthusiasts' },
+      { time: '13:30', title: 'Hands-on Workshop', description: 'Build and deploy a microservices application' },
+      { time: '15:30', title: 'Panel Discussion', description: 'Future of Cloud Native development' },
+      { time: '16:30', title: 'Closing & Lucky Draw', description: 'Prizes, certificates, and next steps' }
+    ],
     speakers: [
       {
         id: 'ms4',

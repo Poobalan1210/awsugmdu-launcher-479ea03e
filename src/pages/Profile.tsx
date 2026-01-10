@@ -12,9 +12,9 @@ import { Progress } from '@/components/ui/progress';
 import { 
   Trophy, Calendar, Target, FileText, Medal, Zap, 
   Linkedin, Github, Twitter, ExternalLink, Building, User,
-  Mic, BookOpen, CheckCircle, Clock
+  Mic, BookOpen, CheckCircle, Clock, Award, Shield
 } from 'lucide-react';
-import { currentUser, mockSprints, mockBadges, getUserById, mockUsers, mockMeetups } from '@/data/mockData';
+import { currentUser, mockSprints, mockBadges, getUserById, mockUsers, mockMeetups, mockColleges } from '@/data/mockData';
 import { format, parseISO } from 'date-fns';
 
 export default function Profile() {
@@ -53,6 +53,13 @@ export default function Profile() {
   const userSprintsParticipated = mockSprints.filter(s => 
     s.registeredUsers.includes(user.id)
   );
+
+  // Check if user is a Champ Captain (college lead)
+  const isChampCaptain = mockColleges.some(college => college.champsLeadId === user.id);
+  const champCollege = mockColleges.find(college => college.champsLeadId === user.id);
+
+  // Check if user is an organiser (admin role)
+  const isOrganiser = user.role === 'admin';
 
   const activitySummary = {
     sprintsCompleted: userSprintsParticipated.filter(s => s.status === 'completed').length,
@@ -221,6 +228,18 @@ export default function Profile() {
                   <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 mb-2">
                     <h1 className="text-2xl md:text-3xl font-bold">{user.name}</h1>
                     <Badge variant="outline" className="capitalize">{user.role}</Badge>
+                    {isOrganiser && (
+                      <Badge className="bg-purple-500/10 text-purple-600 border-purple-500/30 hover:bg-purple-500/20">
+                        <Shield className="h-3 w-3 mr-1" />
+                        Organiser
+                      </Badge>
+                    )}
+                    {isChampCaptain && (
+                      <Badge className="bg-amber-500/10 text-amber-600 border-amber-500/30 hover:bg-amber-500/20">
+                        <Award className="h-3 w-3 mr-1" />
+                        Champ Captain
+                      </Badge>
+                    )}
                   </div>
                   
                   {user.designation && (

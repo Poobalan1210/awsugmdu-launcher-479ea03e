@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion, Variants } from 'framer-motion';
+import { marked } from 'marked';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,6 +16,23 @@ import {
 } from 'lucide-react';
 import { mockMeetups, Meetup } from '@/data/mockData';
 import { format, parseISO, isPast } from 'date-fns';
+
+// Configure marked for safe HTML rendering
+marked.setOptions({
+  breaks: true,
+  gfm: true,
+});
+
+// Helper to parse markdown or HTML content
+function parseContent(content: string): string {
+  // Check if content looks like HTML (has HTML tags)
+  const hasHtmlTags = /<[a-z][\s\S]*>/i.test(content);
+  if (hasHtmlTags) {
+    return content;
+  }
+  // Otherwise parse as markdown
+  return marked.parse(content) as string;
+}
 
 const containerVariants: Variants = {
   hidden: { opacity: 0 },
@@ -53,7 +71,6 @@ function MeetupCard({ meetup, onSelect }: { meetup: Meetup; onSelect: () => void
               {meetup.type === 'in-person' && <MapPin className="h-3 w-3 mr-1" />}
               {meetup.type.charAt(0).toUpperCase() + meetup.type.slice(1)}
             </Badge>
-            {!isUpcoming && <Badge variant="outline">Completed</Badge>}
           </div>
           
           <h3 className="font-semibold text-lg mb-2 line-clamp-2">{meetup.title}</h3>
@@ -110,7 +127,12 @@ function MeetupCard({ meetup, onSelect }: { meetup: Meetup; onSelect: () => void
 
 function MeetupDetail({ meetup, onBack }: { meetup: Meetup; onBack: () => void }) {
   const eventDate = parseISO(meetup.date);
-  const isUpcoming = !isPast(eventDate);
+
+  // Parse markdown or HTML content
+  const parsedDescription = useMemo(() => {
+    if (!meetup.richDescription) return null;
+    return parseContent(meetup.richDescription);
+  }, [meetup.richDescription]);
 
   return (
     <motion.div
@@ -123,33 +145,32 @@ function MeetupDetail({ meetup, onBack }: { meetup: Meetup; onBack: () => void }
         Back to Meetups
       </Button>
 
-      {/* Hero Section */}
-      <div className="relative">
-        {meetup.image && (
-          <div className="h-64 md:h-80 rounded-xl overflow-hidden">
-            <img 
-              src={meetup.image} 
-              alt={meetup.title} 
-              className="w-full h-full object-cover"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-background/80 to-transparent" />
-          </div>
-        )}
-        
-        <div className={`${meetup.image ? 'absolute bottom-0 left-0 right-0 p-6' : 'glass-card rounded-xl p-6'}`}>
+      {/* Event Poster - Full width, separate from content */}
+      {meetup.image && (
+        <div className="rounded-xl overflow-hidden">
+          <img 
+            src={meetup.image} 
+            alt={meetup.title} 
+            className="w-full h-auto object-contain"
+          />
+        </div>
+      )}
+
+      {/* Event Details Card - Below the poster */}
+      <Card className="glass-card">
+        <CardContent className="p-6">
           <div className="flex flex-wrap gap-2 mb-4">
             <Badge variant="secondary">
               {meetup.type === 'virtual' && <Video className="h-3 w-3 mr-1" />}
               {meetup.type === 'in-person' && <MapPin className="h-3 w-3 mr-1" />}
               {meetup.type}
             </Badge>
-            {meetup.status === 'completed' && <Badge variant="outline">Completed</Badge>}
           </div>
           
           <h1 className="text-2xl md:text-3xl font-bold mb-4">{meetup.title}</h1>
           <p className="text-muted-foreground mb-6">{meetup.description}</p>
           
-          <div className="flex flex-wrap gap-6 text-sm">
+          <div className="flex flex-wrap gap-6 text-sm mb-6">
             <div className="flex items-center gap-2">
               <Calendar className="h-4 w-4 text-primary" />
               {format(eventDate, 'EEEE, MMMM d, yyyy')}
@@ -172,7 +193,7 @@ function MeetupDetail({ meetup, onBack }: { meetup: Meetup; onBack: () => void }
 
           {/* Register on Meetup Button */}
           {meetup.meetupUrl && (
-            <div className="mt-6 flex gap-4">
+            <div className="flex flex-wrap gap-4">
               <Button size="lg" asChild className="gap-2">
                 <a href={meetup.meetupUrl} target="_blank" rel="noopener noreferrer">
                   <ExternalLink className="h-4 w-4" />
@@ -189,11 +210,11 @@ function MeetupDetail({ meetup, onBack }: { meetup: Meetup; onBack: () => void }
               )}
             </div>
           )}
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
-      {/* Rich Description Section */}
-      {meetup.richDescription && (
+      {/* Rich Description Section - Supports HTML and Markdown */}
+      {parsedDescription && (
         <Card className="glass-card">
           <CardContent className="pt-6">
             <div 
@@ -206,7 +227,7 @@ function MeetupDetail({ meetup, onBack }: { meetup: Meetup; onBack: () => void }
                 prose-li:my-1
                 prose-strong:text-foreground
                 prose-em:text-muted-foreground"
-              dangerouslySetInnerHTML={{ __html: meetup.richDescription }}
+              dangerouslySetInnerHTML={{ __html: parsedDescription }}
             />
           </CardContent>
         </Card>

@@ -78,9 +78,9 @@ function EventCard({ event }: { event: typeof mockEvents[0] }) {
               {event.attendees}
             </div>
           </div>
-          <Button
-            className="w-full group"
-            variant={isUpcoming ? "default" : "outline"}
+          <Button 
+            className="w-full group" 
+            variant={isUpcoming ? "default" : "outline"} 
             size="sm"
             asChild
           >
@@ -135,10 +135,10 @@ export function EventsSection() {
           </TabsTrigger>
           <TabsTrigger value="past">Past</TabsTrigger>
         </TabsList>
-
+        
         <TabsContent value="upcoming">
           {upcomingEvents.length > 0 ? (
-            <motion.div
+            <motion.div 
               className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
               variants={containerVariants}
               initial="hidden"
@@ -157,10 +157,10 @@ export function EventsSection() {
             </Card>
           )}
         </TabsContent>
-
+        
         <TabsContent value="past">
           {pastEvents.length > 0 ? (
-            <motion.div
+            <motion.div 
               className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
               variants={containerVariants}
               initial="hidden"

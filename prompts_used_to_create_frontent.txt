@@ -1,0 +1,59 @@
+[11:11 pm, 3/1/2026] Poobalan P: I am creating a new website for my aws user group, I am having multiple initiatives running in my user group. I have updated my user group logo use that.
+
+Few to highlight and include Builders Skill Sprint, College Champs, Store, Certification Circle. 
+
+Each of the initiatives should have a seperate tab.
+
+The website should have a login signup feature and also the user should have profile page. 
+
+User Profile Page 
+We also will have all the user activity summary in his profile, also it should have badge system which will also should show in their profile.
+
+Builders skill sprint
+I am running an program called builders skill sprint in my aws user group, as part of this program we will choose a specific theme for every month and we will have one or two virtual sessions on the theme (eg serverless, gen ai, security, networking) and we will give a handson challenge in the same theme for the audience which they have to complete.
+I see there is a little participation from audience gradually reduced everymonth and also i agree there were no proper channel set from them like unique group for a sprint like that. What i am thinking of this year to improve is we can give them a proper communication channel, also provide the probelm statement in a repo with the starter code from them to continue, also if possible give them the env for them to implement. Also i am planning to automatew this complete process by creating a website for the whole flow.
+I  will create a skill sprint event in my website, both speakers and participants should join that event and it should automatically create a discussion forum for that month inside that sprint only, github started code for that month, also the submission form for that sprint from audience. like that
+Each sprint will also include a way to ask user to submission like their blog url and these info will be evaulated by the speakers and admin users and they will reward points for this.
+
+
+Home Page
+I need to show a leaderboard of all the participants/users of our website. 
+Also it should also show the highlights of our events it should show past and upcoming events. 
+And any other if needed
+
+we can start with this for now and we can work on the next initiative.
+[9:45 am, 4/1/2026] Poobalan P: We can enchance the animations, and i also want to go full on the events page as well.
+
+In the Home Page,
+The events and community leaderboard should appear one after another instead of putting it in side. And also the leaderboard should also have a link to take to that user profile, where others can see their profile.
+
+Also in the events, if will be good if we have the view details and i can take them to their corresponding site to either builders skill sprint, champs event or meetup.
+
+We can also create a new tab called meetup also this will contain any online or offline event apart from the builders skill sprint and champs. And the events in the homepage should show all the events both upcoming and past with view details which will take them to the corresponding page.
+
+
+Also I want to implement the events page flow completely, first focus on the builders skill sprint and meetup we can work on the champs later.
+
+I want to see how admin can create and update these events and how participants can join. For the events it should be like participants can join by clicking the join now and for speakers they can have a unique link and they can upload their session details and therinfo like photo name session and designation like that. Same we can collect some details for participants also. 
+
+Also if the participants submit their work in the sprint, how can the speaker and admin can view those and accept/reject the submission and award points. I need that view as well.
+
+Use dummy data for now later we can implement the backend.
+[4:15 pm, 4/1/2026] Poobalan P: Add speaker session upload flow and speaker invite flow. 
+
+Rename Skill sprint in the menu bar as Builders Skill Sprint and sort the nav items in sorted order.
+
+Enchance the admin page, And also implement join sprint button in builders skill sprint. 
+
+Also populate events in the home page, also match all the events in builders skill sprint and meetups have the data same.
+
+Also have the profile for 5 users also have a diff dummy data for them. 
+
+Also inside the sessions inside the builders skill sprint they can expand and there should be a session poster speaker info, session details like that. 
+
+Also correctly implement the things in admin page.
+[4:40 pm, 4/1/2026] Poobalan P: Builders Skill Sprint, I would want to show all the participants who registerered for that sprint. 
+
+In Home page i am not seeing builders skill sprint sessions showing up.
+
+Also for certification circle , it should be like a channel. Where people can post messages and for that message we can have multiple replies like how we have forum in the sprint. Also We can have group owners who will moderate the group and can schedule sessions also inside that.

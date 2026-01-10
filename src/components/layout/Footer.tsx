@@ -1,16 +1,15 @@
 import { Link } from 'react-router-dom';
 import { Github, Twitter, Linkedin, Youtube } from 'lucide-react';
 import logo from '@/assets/logo.png';
-
 export function Footer() {
-  return (
-    <footer className="border-t border-border bg-card">
+  return <footer className="border-t border-border bg-card">
       <div className="container mx-auto px-4 py-12">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
           {/* Brand */}
           <div className="col-span-1 md:col-span-2">
             <Link to="/" className="flex items-center gap-3 mb-4">
               <img src={logo} alt="AWS User Group" className="h-12 w-auto" />
+              
             </Link>
             <p className="text-muted-foreground text-sm max-w-md">
               Building a community of cloud enthusiasts, sharing knowledge, and helping each other grow in the AWS ecosystem.
@@ -68,7 +67,7 @@ export function Footer() {
                 </Link>
               </li>
               <li>
-                <Link to="/meetups" className="text-sm text-muted-foreground hover:text-primary transition-colors">
+                <Link to="/events" className="text-sm text-muted-foreground hover:text-primary transition-colors">
                   Events
                 </Link>
               </li>
@@ -90,6 +89,5 @@ export function Footer() {
           <p>© {new Date().getFullYear()} AWS User Group. All rights reserved.</p>
         </div>
       </div>
-    </footer>
-  );
+    </footer>;
 }

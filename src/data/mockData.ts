@@ -45,6 +45,16 @@ export interface Sprint {
   posterImage?: string;
 }
 
+export interface SessionPerson {
+  userId?: string;
+  name: string;
+  photo?: string;
+  designation?: string;
+  company?: string;
+  email?: string;
+  linkedIn?: string;
+}
+
 export interface Session {
   id: string;
   title: string;
@@ -55,6 +65,9 @@ export interface Session {
   speakerCompany?: string;
   speakerBio?: string;
   speakerLinkedIn?: string;
+  hosts?: SessionPerson[];
+  speakers?: SessionPerson[];
+  volunteers?: SessionPerson[];
   date: string;
   time: string;
   duration?: string;
@@ -125,6 +138,89 @@ export interface Event {
   attendees: number;
   image?: string;
   linkedEventId?: string;
+}
+
+export interface ForumPost {
+  id: string;
+  sprintId: string;
+  userId: string;
+  userName: string;
+  userAvatar: string;
+  title: string;
+  content: string;
+  createdAt: string;
+  replies: ForumReply[];
+  likes: number;
+}
+
+export interface ForumReply {
+  id: string;
+  postId: string;
+  userId: string;
+  userName: string;
+  userAvatar: string;
+  content: string;
+  createdAt: string;
+  likes: number;
+}
+
+export interface CertificationGroup {
+  id: string;
+  name: string;
+  level: 'Foundational' | 'Associate' | 'Professional' | 'Specialty';
+  description: string;
+  members: string[];
+  owners: string[];
+  color: string;
+  scheduledSessions: GroupSession[];
+  messages: GroupMessage[];
+}
+
+export interface GroupSession {
+  id: string;
+  groupId: string;
+  title: string;
+  description: string;
+  date: string;
+  time: string;
+  hostId: string;
+  hostName: string;
+  meetingLink?: string;
+}
+
+export interface GroupMessage {
+  id: string;
+  groupId: string;
+  userId: string;
+  userName: string;
+  userAvatar: string;
+  content: string;
+  createdAt: string;
+  replies: GroupReply[];
+  likes: number;
+  isPinned?: boolean;
+}
+
+export interface GroupReply {
+  id: string;
+  messageId: string;
+  userId: string;
+  userName: string;
+  userAvatar: string;
+  content: string;
+  createdAt: string;
+  likes: number;
+}
+
+export interface SpeakerInvite {
+  id: string;
+  eventType: 'sprint' | 'meetup';
+  eventId: string;
+  uniqueLink: string;
+  email?: string;
+  status: 'pending' | 'accepted' | 'expired';
+  createdAt: string;
+  expiresAt: string;
 }
 
 // Mock Users with roles - 5 users with rich profiles
@@ -372,6 +468,34 @@ export const mockSprints: Sprint[] = [
         speakerCompany: 'Tech Corp',
         speakerBio: 'AWS Community Builder with 5+ years of experience building serverless applications at scale.',
         speakerLinkedIn: 'https://linkedin.com/in/priya-sharma',
+        hosts: [
+          {
+            userId: 'admin1',
+            name: 'Admin User',
+            photo: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Admin',
+            designation: 'Community Lead',
+            company: 'AWS User Group'
+          }
+        ],
+        speakers: [
+          {
+            userId: '1',
+            name: 'Priya Sharma',
+            photo: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Priya',
+            designation: 'Solutions Architect',
+            company: 'Tech Corp',
+            linkedIn: 'https://linkedin.com/in/priya-sharma'
+          }
+        ],
+        volunteers: [
+          {
+            userId: '2',
+            name: 'Rahul Verma',
+            photo: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Rahul',
+            designation: 'DevOps Lead',
+            company: 'Cloud Solutions Inc'
+          }
+        ],
         date: '2025-01-05',
         time: '18:00 IST',
         duration: '90 minutes',
@@ -396,6 +520,34 @@ export const mockSprints: Sprint[] = [
         speakerCompany: 'Cloud Solutions Inc',
         speakerBio: 'DevOps engineer specializing in AWS serverless and container orchestration.',
         speakerLinkedIn: 'https://linkedin.com/in/rahul-verma',
+        hosts: [
+          {
+            userId: '1',
+            name: 'Priya Sharma',
+            photo: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Priya',
+            designation: 'Solutions Architect',
+            company: 'Tech Corp'
+          }
+        ],
+        speakers: [
+          {
+            userId: '2',
+            name: 'Rahul Verma',
+            photo: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Rahul',
+            designation: 'DevOps Lead',
+            company: 'Cloud Solutions Inc',
+            linkedIn: 'https://linkedin.com/in/rahul-verma'
+          }
+        ],
+        volunteers: [
+          {
+            userId: '3',
+            name: 'Ananya Patel',
+            photo: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Ananya',
+            designation: 'Cloud Engineer',
+            company: 'DataFlow Systems'
+          }
+        ],
         date: '2025-01-15',
         time: '18:00 IST',
         duration: '90 minutes',
@@ -439,6 +591,18 @@ export const mockSprints: Sprint[] = [
         submittedAt: '2025-01-22',
         points: 0,
         status: 'pending'
+      },
+      {
+        id: 'sub5',
+        sprintId: 's1',
+        userId: '6',
+        userName: 'Arjun Nair',
+        userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Arjun',
+        repoUrl: 'https://github.com/arjun/lambda-functions',
+        description: 'Lambda functions collection for various use cases including file processing and notifications.',
+        submittedAt: '2025-01-23',
+        points: 0,
+        status: 'pending'
       }
     ]
   },
@@ -463,6 +627,25 @@ export const mockSprints: Sprint[] = [
         speakerDesignation: 'Cloud Engineer',
         speakerCompany: 'DataFlow Systems',
         speakerBio: 'Solutions Architect with a passion for AI/ML and cloud technologies.',
+        hosts: [
+          {
+            userId: 'admin1',
+            name: 'Admin User',
+            photo: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Admin',
+            designation: 'Community Lead',
+            company: 'AWS User Group'
+          }
+        ],
+        speakers: [
+          {
+            userId: '3',
+            name: 'Ananya Patel',
+            photo: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Ananya',
+            designation: 'Cloud Engineer',
+            company: 'DataFlow Systems'
+          }
+        ],
+        volunteers: [],
         date: '2025-02-08',
         time: '18:00 IST',
         duration: '90 minutes',
@@ -501,6 +684,40 @@ export const mockSprints: Sprint[] = [
         speakerDesignation: 'Security Consultant',
         speakerCompany: 'SecureCloud Ltd',
         speakerBio: 'Security specialist with expertise in AWS IAM, KMS, and compliance frameworks.',
+        hosts: [
+          {
+            userId: 'admin1',
+            name: 'Admin User',
+            photo: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Admin',
+            designation: 'Community Lead',
+            company: 'AWS User Group'
+          }
+        ],
+        speakers: [
+          {
+            userId: '4',
+            name: 'Vikram Singh',
+            photo: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Vikram',
+            designation: 'Security Consultant',
+            company: 'SecureCloud Ltd'
+          }
+        ],
+        volunteers: [
+          {
+            userId: '1',
+            name: 'Priya Sharma',
+            photo: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Priya',
+            designation: 'Solutions Architect',
+            company: 'Tech Corp'
+          },
+          {
+            userId: '2',
+            name: 'Rahul Verma',
+            photo: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Rahul',
+            designation: 'DevOps Lead',
+            company: 'Cloud Solutions Inc'
+          }
+        ],
         date: '2024-12-10',
         time: '18:00 IST',
         duration: '120 minutes',
@@ -665,106 +882,438 @@ export const mockMeetups: Meetup[] = [
   }
 ];
 
-// Generate unified events from sprints and meetups for home page
-export const mockEvents: Event[] = [
-  // Sprint Sessions
+// Mock Speaker Invites
+export const mockSpeakerInvites: SpeakerInvite[] = [
   {
-    id: 'e1',
-    title: 'Introduction to Serverless Architecture',
-    description: 'Learn the fundamentals of serverless computing and AWS Lambda with Priya Sharma.',
-    date: '2025-01-05',
-    time: '18:00 IST',
-    type: 'virtual',
-    category: 'sprint',
-    attendees: 45,
-    linkedEventId: 's1',
-    image: 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=800&h=400&fit=crop'
-  },
-  {
-    id: 'e8',
-    title: 'Building APIs with API Gateway',
-    description: 'Deep dive into REST and WebSocket APIs using Amazon API Gateway with Rahul Verma.',
-    date: '2025-01-15',
-    time: '18:00 IST',
-    type: 'virtual',
-    category: 'sprint',
-    attendees: 42,
-    linkedEventId: 's1',
-    image: 'https://images.unsplash.com/photo-1544197150-b99a580bb7a8?w=800&h=400&fit=crop'
-  },
-  {
-    id: 'e2',
-    title: 'AWS re:Invent Recap 2024',
-    description: 'Catch up on all the exciting announcements from AWS re:Invent 2024.',
-    date: '2024-12-15',
-    time: '18:00 IST',
-    type: 'hybrid',
-    category: 'meetup',
-    attendees: 120,
-    linkedEventId: 'm1',
-    image: 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800&h=400&fit=crop'
-  },
-  {
-    id: 'e3',
-    title: 'Getting Started with Amazon Bedrock',
-    description: 'Introduction to foundation models and Amazon Bedrock. Build AI-powered apps!',
-    date: '2025-02-08',
-    time: '18:00 IST',
-    type: 'virtual',
-    category: 'sprint',
-    attendees: 32,
-    linkedEventId: 's2',
-    image: 'https://images.unsplash.com/photo-1676299081847-824916de030a?w=800&h=400&fit=crop'
-  },
-  {
-    id: 'e4',
-    title: 'AWS Certification Study Group',
-    description: 'Weekly study group for Solutions Architect Associate certification.',
-    date: '2025-01-10',
-    time: '19:00 IST',
-    type: 'virtual',
-    category: 'certification',
-    attendees: 28,
-    linkedEventId: 'm4',
-    image: 'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?w=800&h=400&fit=crop'
-  },
-  {
-    id: 'e5',
-    title: 'Hands-on Workshop: Container Services',
-    description: 'Deep dive into ECS and EKS with hands-on labs.',
-    date: '2025-01-25',
-    time: '10:00 IST',
-    type: 'in-person',
-    category: 'workshop',
-    attendees: 35,
-    linkedEventId: 'm2',
-    image: 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?w=800&h=400&fit=crop'
-  },
-  {
-    id: 'e6',
-    title: 'AWS Community Day - Cloud Native',
-    description: 'A full-day event dedicated to cloud native technologies.',
-    date: '2025-02-15',
-    time: '09:00 IST',
-    type: 'hybrid',
-    category: 'meetup',
-    attendees: 85,
-    linkedEventId: 'm3',
-    image: 'https://images.unsplash.com/photo-1505373877841-8d25f7d46678?w=800&h=400&fit=crop'
-  },
-  {
-    id: 'e7',
-    title: 'AWS IAM Deep Dive',
-    description: 'Understanding IAM policies, roles, and best practices for secure AWS architectures.',
-    date: '2024-12-10',
-    time: '18:00 IST',
-    type: 'virtual',
-    category: 'sprint',
-    attendees: 38,
-    linkedEventId: 's3',
-    image: 'https://images.unsplash.com/photo-1555949963-aa79dcee981c?w=800&h=400&fit=crop'
+    id: 'inv1',
+    eventType: 'sprint',
+    eventId: 's2',
+    uniqueLink: 'speaker-invite-abc123',
+    email: 'speaker@example.com',
+    status: 'pending',
+    createdAt: '2025-01-15',
+    expiresAt: '2025-02-01'
   }
 ];
+
+// Note: mockEvents is generated after mockColleges is defined (see end of file)
+
+// Mock Forum Posts
+export const mockForumPosts: ForumPost[] = [
+  {
+    id: 'f1',
+    sprintId: 's1',
+    userId: '3',
+    userName: 'Ananya Patel',
+    userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Ananya',
+    title: 'Stuck with Lambda cold starts - any tips?',
+    content: 'I am experiencing significant cold start times with my Lambda function. Has anyone found effective ways to reduce this? I have tried provisioned concurrency but it is expensive for my use case.',
+    createdAt: '2025-01-08',
+    replies: [
+      { id: 'r1', postId: 'f1', userId: '2', userName: 'Rahul Verma', userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Rahul', content: 'Try using SnapStart if you are using Java! It reduces cold starts significantly.', createdAt: '2025-01-08', likes: 5 },
+      { id: 'r2', postId: 'f1', userId: '1', userName: 'Priya Sharma', userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Priya', content: 'Keep your package size small - only include what you need. Also consider using layers for shared dependencies.', createdAt: '2025-01-09', likes: 3 }
+    ],
+    likes: 8
+  },
+  {
+    id: 'f2',
+    sprintId: 's1',
+    userId: '2',
+    userName: 'Rahul Verma',
+    userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Rahul',
+    title: 'Best practices for DynamoDB single-table design',
+    content: 'Sharing my learnings from implementing single-table design in my sprint project. Key takeaway: access patterns first, then model your data!',
+    createdAt: '2025-01-10',
+    replies: [
+      { id: 'r3', postId: 'f2', userId: '3', userName: 'Ananya Patel', userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Ananya', content: 'Great tips! I found the access pattern analysis really helpful.', createdAt: '2025-01-10', likes: 2 }
+    ],
+    likes: 15
+  },
+  {
+    id: 'f3',
+    sprintId: 's1',
+    userId: '1',
+    userName: 'Priya Sharma',
+    userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Priya',
+    title: 'Sprint Challenge Hints - Week 2',
+    content: 'Here are some hints for this week\'s challenge. Remember to use Step Functions for orchestration! Also check out the new EventBridge Scheduler for time-based workflows.',
+    createdAt: '2025-01-12',
+    replies: [],
+    likes: 42
+  }
+];
+
+// Mock Certification Groups
+export const mockCertificationGroups: CertificationGroup[] = [
+  {
+    id: 'cg1',
+    name: 'Cloud Practitioner',
+    level: 'Foundational',
+    description: 'Start your AWS journey here! Perfect for beginners looking to understand cloud concepts.',
+    members: ['3', '4', '5', '6', '7', '8'],
+    owners: ['1', 'admin1'],
+    color: 'bg-green-500/10 text-green-600 border-green-500/30',
+    scheduledSessions: [
+      { id: 'gs1', groupId: 'cg1', title: 'Weekly Study Session', description: 'Going through Domain 1: Cloud Concepts', date: '2025-01-18', time: '19:00 IST', hostId: '1', hostName: 'Priya Sharma', meetingLink: 'https://meet.example.com/cp-study' }
+    ],
+    messages: [
+      { id: 'gm1', groupId: 'cg1', userId: '1', userName: 'Priya Sharma', userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Priya', content: 'Welcome everyone! Let us use this channel to discuss Cloud Practitioner exam prep. Share resources, ask questions, and support each other!', createdAt: '2025-01-01', replies: [
+        { id: 'gr1', messageId: 'gm1', userId: '5', userName: 'Sneha Reddy', userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sneha', content: 'Thanks for setting this up! Super helpful.', createdAt: '2025-01-01', likes: 3 }
+      ], likes: 12, isPinned: true },
+      { id: 'gm2', groupId: 'cg1', userId: '6', userName: 'Arjun Nair', userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Arjun', content: 'Anyone have good resources for understanding the shared responsibility model?', createdAt: '2025-01-05', replies: [
+        { id: 'gr2', messageId: 'gm2', userId: '1', userName: 'Priya Sharma', userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Priya', content: 'Check out the AWS Well-Architected Framework whitepaper. It explains this really well!', createdAt: '2025-01-05', likes: 5 },
+        { id: 'gr3', messageId: 'gm2', userId: '3', userName: 'Ananya Patel', userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Ananya', content: 'Also Stephane Maarek has a great video on this topic.', createdAt: '2025-01-05', likes: 4 }
+      ], likes: 6 }
+    ]
+  },
+  {
+    id: 'cg2',
+    name: 'Solutions Architect Associate',
+    level: 'Associate',
+    description: 'Design distributed systems on AWS. Most popular certification for architects and developers.',
+    members: ['1', '2', '3', '4', '5'],
+    owners: ['2', 'admin1'],
+    color: 'bg-blue-500/10 text-blue-600 border-blue-500/30',
+    scheduledSessions: [
+      { id: 'gs2', groupId: 'cg2', title: 'Practice Exam Review', description: 'Reviewing answers from practice test #3', date: '2025-01-20', time: '18:00 IST', hostId: '2', hostName: 'Rahul Verma' }
+    ],
+    messages: [
+      { id: 'gm3', groupId: 'cg2', userId: '2', userName: 'Rahul Verma', userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Rahul', content: 'This week we are focusing on VPC and networking concepts. Make sure to understand VPC peering vs Transit Gateway!', createdAt: '2025-01-10', replies: [], likes: 8, isPinned: true }
+    ]
+  },
+  {
+    id: 'cg3',
+    name: 'Developer Associate',
+    level: 'Associate',
+    description: 'Focus on developing and maintaining AWS applications. Great for developers.',
+    members: ['2', '3', '5', '6'],
+    owners: ['1'],
+    color: 'bg-blue-500/10 text-blue-600 border-blue-500/30',
+    scheduledSessions: [],
+    messages: [
+      { id: 'gm4', groupId: 'cg3', userId: '5', userName: 'Sneha Reddy', userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sneha', content: 'Just passed my DVA-C02! Happy to share my study notes.', createdAt: '2025-01-08', replies: [
+        { id: 'gr4', messageId: 'gm4', userId: '6', userName: 'Arjun Nair', userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Arjun', content: 'Congrats! Would love to see your notes!', createdAt: '2025-01-08', likes: 2 }
+      ], likes: 15 }
+    ]
+  },
+  {
+    id: 'cg4',
+    name: 'SysOps Administrator',
+    level: 'Associate',
+    description: 'Operations and deployment on AWS. Perfect for sysadmins transitioning to cloud.',
+    members: ['2', '4', '7'],
+    owners: ['admin1'],
+    color: 'bg-blue-500/10 text-blue-600 border-blue-500/30',
+    scheduledSessions: [],
+    messages: []
+  },
+  {
+    id: 'cg5',
+    name: 'Solutions Architect Professional',
+    level: 'Professional',
+    description: 'Advanced architectural concepts. Recommended after SAA certification.',
+    members: ['1', '2'],
+    owners: ['1'],
+    color: 'bg-purple-500/10 text-purple-600 border-purple-500/30',
+    scheduledSessions: [
+      { id: 'gs3', groupId: 'cg5', title: 'Case Study Deep Dive', description: 'Analyzing complex architecture scenarios', date: '2025-01-25', time: '20:00 IST', hostId: '1', hostName: 'Priya Sharma' }
+    ],
+    messages: []
+  },
+  {
+    id: 'cg6',
+    name: 'DevOps Engineer Professional',
+    level: 'Professional',
+    description: 'CI/CD and automation on AWS. Combines development and operations expertise.',
+    members: ['2'],
+    owners: ['2'],
+    color: 'bg-purple-500/10 text-purple-600 border-purple-500/30',
+    scheduledSessions: [],
+    messages: []
+  }
+];
+
+// ==================== COLLEGE CHAMPS DATA ====================
+
+export interface CollegeTask {
+  id: string;
+  title: string;
+  description: string;
+  points: number;
+  category: 'onboarding' | 'learning' | 'community' | 'event' | 'special';
+  isPredefined: boolean;
+  order?: number;
+}
+
+export interface CollegeTaskCompletion {
+  taskId: string;
+  completedAt: string;
+  verifiedBy?: string;
+  proof?: string;
+  bonusPoints?: number;
+}
+
+export interface CollegeEvent {
+  id: string;
+  title: string;
+  description: string;
+  date: string;
+  type: 'workshop' | 'hackathon' | 'meetup' | 'webinar';
+  attendees: number;
+  pointsAwarded: number;
+  status: 'upcoming' | 'completed';
+}
+
+export interface College {
+  id: string;
+  name: string;
+  shortName: string;
+  logo?: string;
+  location: string;
+  champsLead: string;
+  champsLeadId?: string;
+  totalPoints: number;
+  rank: number;
+  joinedDate: string;
+  completedTasks: CollegeTaskCompletion[];
+  hostedEvents: CollegeEvent[];
+  members: string[];
+  color: string;
+}
+
+export const predefinedTasks: CollegeTask[] = [
+  { id: 'task1', title: 'Register as College Champ', description: 'Complete registration and verify your college email', points: 50, category: 'onboarding', isPredefined: true, order: 1 },
+  { id: 'task2', title: 'Form Core Team', description: 'Recruit at least 3 team members for your college chapter', points: 100, category: 'onboarding', isPredefined: true, order: 2 },
+  { id: 'task3', title: 'Complete AWS Basics Module', description: 'All core team members complete AWS Cloud Practitioner essentials', points: 150, category: 'learning', isPredefined: true, order: 3 },
+  { id: 'task4', title: 'Social Media Setup', description: 'Create official college chapter social media handles', points: 75, category: 'community', isPredefined: true, order: 4 },
+  { id: 'task5', title: 'Host Intro Session', description: 'Conduct an introductory session about AWS for your college', points: 200, category: 'event', isPredefined: true, order: 5 },
+  { id: 'task6', title: 'Get 25 Members', description: 'Grow your chapter to 25+ active members', points: 150, category: 'community', isPredefined: true, order: 6 },
+  { id: 'task7', title: 'First Workshop', description: 'Host a hands-on workshop on any AWS service', points: 250, category: 'event', isPredefined: true, order: 7 },
+  { id: 'task8', title: 'Certification Drive', description: 'Help at least 5 members get AWS certified', points: 300, category: 'learning', isPredefined: true, order: 8 },
+  { id: 'task9', title: 'Cross-College Collaboration', description: 'Collaborate with another college chapter for an event', points: 200, category: 'special', isPredefined: true, order: 9 },
+  { id: 'task10', title: 'Industry Connect', description: 'Invite an industry professional for a guest session', points: 250, category: 'special', isPredefined: true, order: 10 },
+];
+
+export const mockColleges: College[] = [
+  {
+    id: 'college1',
+    name: 'Indian Institute of Technology Delhi',
+    shortName: 'IIT Delhi',
+    location: 'New Delhi',
+    champsLead: 'Rohit Verma',
+    champsLeadId: '5',
+    totalPoints: 1425,
+    rank: 1,
+    joinedDate: '2024-08-15',
+    color: 'from-blue-500 to-cyan-500',
+    completedTasks: [
+      { taskId: 'task1', completedAt: '2024-08-16' },
+      { taskId: 'task2', completedAt: '2024-08-20' },
+      { taskId: 'task3', completedAt: '2024-09-05' },
+      { taskId: 'task4', completedAt: '2024-09-10' },
+      { taskId: 'task5', completedAt: '2024-09-25', bonusPoints: 50 },
+      { taskId: 'task6', completedAt: '2024-10-10' },
+      { taskId: 'task7', completedAt: '2024-10-28', bonusPoints: 100 },
+      { taskId: 'task8', completedAt: '2024-11-15' },
+    ],
+    hostedEvents: [
+      { id: 'e1', title: 'AWS Fundamentals Bootcamp', description: 'Introduction to core AWS services', date: '2024-09-25', type: 'workshop', attendees: 120, pointsAwarded: 200, status: 'completed' },
+      { id: 'e2', title: 'Serverless Architecture Deep Dive', description: 'Building with Lambda and API Gateway', date: '2024-10-28', type: 'workshop', attendees: 85, pointsAwarded: 250, status: 'completed' },
+      { id: 'e3', title: 'Cloud Hackathon 2025', description: 'Build innovative solutions on AWS', date: '2025-02-15', type: 'hackathon', attendees: 0, pointsAwarded: 0, status: 'upcoming' },
+    ],
+    members: ['5', '6', '7', '8'],
+  },
+  {
+    id: 'college2',
+    name: 'Birla Institute of Technology and Science',
+    shortName: 'BITS Pilani',
+    location: 'Pilani, Rajasthan',
+    champsLead: 'Sneha Gupta',
+    champsLeadId: '7',
+    totalPoints: 1275,
+    rank: 2,
+    joinedDate: '2024-08-20',
+    color: 'from-purple-500 to-pink-500',
+    completedTasks: [
+      { taskId: 'task1', completedAt: '2024-08-21' },
+      { taskId: 'task2', completedAt: '2024-08-28' },
+      { taskId: 'task3', completedAt: '2024-09-15' },
+      { taskId: 'task4', completedAt: '2024-09-18' },
+      { taskId: 'task5', completedAt: '2024-10-05' },
+      { taskId: 'task6', completedAt: '2024-10-20' },
+      { taskId: 'task7', completedAt: '2024-11-08' },
+    ],
+    hostedEvents: [
+      { id: 'e4', title: 'Cloud Computing 101', description: 'Getting started with AWS', date: '2024-10-05', type: 'workshop', attendees: 95, pointsAwarded: 200, status: 'completed' },
+      { id: 'e5', title: 'DevOps on AWS', description: 'CI/CD pipelines with CodePipeline', date: '2024-11-08', type: 'workshop', attendees: 70, pointsAwarded: 250, status: 'completed' },
+    ],
+    members: ['7', '9', '10'],
+  },
+  {
+    id: 'college3',
+    name: 'Vellore Institute of Technology',
+    shortName: 'VIT Vellore',
+    location: 'Vellore, Tamil Nadu',
+    champsLead: 'Karthik Raja',
+    totalPoints: 1150,
+    rank: 3,
+    joinedDate: '2024-08-25',
+    color: 'from-amber-500 to-orange-500',
+    completedTasks: [
+      { taskId: 'task1', completedAt: '2024-08-26' },
+      { taskId: 'task2', completedAt: '2024-09-02' },
+      { taskId: 'task3', completedAt: '2024-09-20' },
+      { taskId: 'task4', completedAt: '2024-09-25' },
+      { taskId: 'task5', completedAt: '2024-10-12' },
+      { taskId: 'task6', completedAt: '2024-11-01' },
+      { taskId: 'task7', completedAt: '2024-11-20' },
+    ],
+    hostedEvents: [
+      { id: 'e6', title: 'AWS for Startups', description: 'Building scalable applications', date: '2024-10-12', type: 'webinar', attendees: 150, pointsAwarded: 200, status: 'completed' },
+    ],
+    members: ['11', '12', '13', '14'],
+  },
+  {
+    id: 'college4',
+    name: 'National Institute of Technology Karnataka',
+    shortName: 'NITK Surathkal',
+    location: 'Mangalore, Karnataka',
+    champsLead: 'Arun Kumar',
+    totalPoints: 925,
+    rank: 4,
+    joinedDate: '2024-09-01',
+    color: 'from-green-500 to-emerald-500',
+    completedTasks: [
+      { taskId: 'task1', completedAt: '2024-09-02' },
+      { taskId: 'task2', completedAt: '2024-09-10' },
+      { taskId: 'task3', completedAt: '2024-09-28' },
+      { taskId: 'task4', completedAt: '2024-10-05' },
+      { taskId: 'task5', completedAt: '2024-10-22' },
+      { taskId: 'task6', completedAt: '2024-11-10' },
+    ],
+    hostedEvents: [
+      { id: 'e7', title: 'Intro to AWS', description: 'First college event', date: '2024-10-22', type: 'meetup', attendees: 80, pointsAwarded: 200, status: 'completed' },
+    ],
+    members: ['15', '16'],
+  },
+  {
+    id: 'college5',
+    name: 'Delhi Technological University',
+    shortName: 'DTU',
+    location: 'New Delhi',
+    champsLead: 'Priyanka Singh',
+    totalPoints: 825,
+    rank: 5,
+    joinedDate: '2024-09-05',
+    color: 'from-red-500 to-rose-500',
+    completedTasks: [
+      { taskId: 'task1', completedAt: '2024-09-06' },
+      { taskId: 'task2', completedAt: '2024-09-15' },
+      { taskId: 'task3', completedAt: '2024-10-01' },
+      { taskId: 'task4', completedAt: '2024-10-08' },
+      { taskId: 'task5', completedAt: '2024-10-30' },
+    ],
+    hostedEvents: [
+      { id: 'e8', title: 'Cloud Careers Workshop', description: 'Career paths in cloud computing', date: '2024-10-30', type: 'workshop', attendees: 110, pointsAwarded: 200, status: 'completed' },
+    ],
+    members: ['17', '18', '19'],
+  },
+  {
+    id: 'college6',
+    name: 'Indian Institute of Technology Bombay',
+    shortName: 'IIT Bombay',
+    location: 'Mumbai, Maharashtra',
+    champsLead: 'Vikram Mehta',
+    totalPoints: 675,
+    rank: 6,
+    joinedDate: '2024-09-10',
+    color: 'from-indigo-500 to-violet-500',
+    completedTasks: [
+      { taskId: 'task1', completedAt: '2024-09-11' },
+      { taskId: 'task2', completedAt: '2024-09-22' },
+      { taskId: 'task3', completedAt: '2024-10-10' },
+      { taskId: 'task4', completedAt: '2024-10-18' },
+      { taskId: 'task5', completedAt: '2024-11-05' },
+    ],
+    hostedEvents: [],
+    members: ['20', '21'],
+  },
+  {
+    id: 'college7',
+    name: 'Manipal Institute of Technology',
+    shortName: 'MIT Manipal',
+    location: 'Manipal, Karnataka',
+    champsLead: 'Divya Nair',
+    totalPoints: 525,
+    rank: 7,
+    joinedDate: '2024-09-15',
+    color: 'from-teal-500 to-cyan-500',
+    completedTasks: [
+      { taskId: 'task1', completedAt: '2024-09-16' },
+      { taskId: 'task2', completedAt: '2024-09-28' },
+      { taskId: 'task3', completedAt: '2024-10-15' },
+      { taskId: 'task4', completedAt: '2024-10-25' },
+    ],
+    hostedEvents: [],
+    members: ['22', '23', '24'],
+  },
+  {
+    id: 'college8',
+    name: 'SRM Institute of Science and Technology',
+    shortName: 'SRMIST',
+    location: 'Chennai, Tamil Nadu',
+    champsLead: 'Rajesh Kumar',
+    totalPoints: 375,
+    rank: 8,
+    joinedDate: '2024-09-20',
+    color: 'from-pink-500 to-fuchsia-500',
+    completedTasks: [
+      { taskId: 'task1', completedAt: '2024-09-21' },
+      { taskId: 'task2', completedAt: '2024-10-05' },
+      { taskId: 'task3', completedAt: '2024-10-25' },
+    ],
+    hostedEvents: [],
+    members: ['25'],
+  },
+  {
+    id: 'college9',
+    name: 'PSG College of Technology',
+    shortName: 'PSG Tech',
+    location: 'Coimbatore, Tamil Nadu',
+    champsLead: 'Meera Sundaram',
+    totalPoints: 225,
+    rank: 9,
+    joinedDate: '2024-10-01',
+    color: 'from-sky-500 to-blue-500',
+    completedTasks: [
+      { taskId: 'task1', completedAt: '2024-10-02' },
+      { taskId: 'task2', completedAt: '2024-10-18' },
+    ],
+    hostedEvents: [],
+    members: ['26', '27'],
+  },
+  {
+    id: 'college10',
+    name: 'Amity University',
+    shortName: 'Amity',
+    location: 'Noida, Uttar Pradesh',
+    champsLead: 'Amit Sharma',
+    totalPoints: 100,
+    rank: 10,
+    joinedDate: '2024-10-15',
+    color: 'from-slate-500 to-gray-500',
+    completedTasks: [
+      { taskId: 'task1', completedAt: '2024-10-16' },
+    ],
+    hostedEvents: [],
+    members: ['28'],
+  },
+];
+
+// Helper to get task by ID
+export const getTaskById = (taskId: string): CollegeTask | undefined => {
+  return predefinedTasks.find(task => task.id === taskId);
+};
 
 // Current logged in user (for demo - can be switched between roles)
 export const adminUser: User = mockUsers[0]; // Admin
@@ -794,3 +1343,73 @@ export const getEventLink = (event: Event): string => {
       return '/';
   }
 };
+
+// Generate unique speaker invite link
+export const generateSpeakerInviteLink = (eventType: 'sprint' | 'meetup', eventId: string): string => {
+  const uniqueId = Math.random().toString(36).substring(2, 15);
+  return `speaker-invite-${eventType}-${eventId}-${uniqueId}`;
+};
+
+// Helper function to generate unified events from all sources
+// NOTE: This must be defined AFTER mockColleges to avoid circular dependency
+export const generateUnifiedEvents = (): Event[] => {
+  const events: Event[] = [];
+  
+  // Add Sprint Sessions
+  mockSprints.forEach(sprint => {
+    sprint.sessions.forEach(session => {
+      events.push({
+        id: `sprint-${sprint.id}-${session.id}`,
+        title: session.title,
+        description: session.description,
+        date: session.date,
+        time: session.time,
+        type: 'virtual',
+        category: 'sprint',
+        attendees: sprint.participants,
+        image: session.posterImage || sprint.posterImage,
+        linkedEventId: sprint.id
+      });
+    });
+  });
+  
+  // Add Meetups
+  mockMeetups.forEach(meetup => {
+    events.push({
+      id: `meetup-${meetup.id}`,
+      title: meetup.title,
+      description: meetup.description,
+      date: meetup.date,
+      time: meetup.time,
+      type: meetup.type,
+      category: meetup.title.toLowerCase().includes('workshop') ? 'workshop' : 
+                meetup.title.toLowerCase().includes('certification') ? 'certification' : 'meetup',
+      attendees: meetup.attendees,
+      image: meetup.image,
+      linkedEventId: meetup.id
+    });
+  });
+  
+  // Add College Champs Events
+  mockColleges.forEach(college => {
+    college.hostedEvents.forEach(event => {
+      events.push({
+        id: `champs-${college.id}-${event.id}`,
+        title: `${event.title} - ${college.shortName}`,
+        description: event.description,
+        date: event.date,
+        type: event.type === 'webinar' ? 'virtual' : 
+              event.type === 'hackathon' ? 'hybrid' : 'in-person',
+        category: 'champs',
+        attendees: event.attendees,
+        linkedEventId: college.id
+      });
+    });
+  });
+  
+  // Sort by date (newest first for upcoming, oldest first for past)
+  return events.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+};
+
+// Generate unified events from sprints, meetups, and college champs
+export const mockEvents: Event[] = generateUnifiedEvents();

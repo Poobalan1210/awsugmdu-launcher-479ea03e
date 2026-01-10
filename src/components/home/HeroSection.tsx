@@ -52,7 +52,7 @@ export function HeroSection() {
           {/* Active Sprint Badge */}
           {activeSprint && (
             <motion.div variants={itemVariants}>
-              <Link
+              <Link 
                 to={`/skill-sprint?id=${activeSprint.id}`}
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium hover:bg-primary/20 transition-colors mb-6"
               >
@@ -73,14 +73,15 @@ export function HeroSection() {
             className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight mb-6"
           >
             Welcome to{' '}
-            <span className="gradient-text">AWS User Group</span>
+            <br></br>
+            <span className="gradient-text">AWS User Group Madurai</span>
           </motion.h1>
 
           <motion.p
             variants={itemVariants}
             className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-8"
           >
-            Join a vibrant community of cloud enthusiasts, learn from experts,
+            Join a vibrant community of cloud enthusiasts, learn from experts, 
             participate in hands-on challenges, and accelerate your AWS journey.
           </motion.p>
 

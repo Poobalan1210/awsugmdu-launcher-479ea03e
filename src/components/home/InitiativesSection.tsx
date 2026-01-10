@@ -58,9 +58,9 @@ const containerVariants: Variants = {
 
 const cardVariants: Variants = {
   hidden: { opacity: 0, y: 20, scale: 0.95 },
-  visible: {
-    opacity: 1,
-    y: 0,
+  visible: { 
+    opacity: 1, 
+    y: 0, 
     scale: 1,
     transition: { duration: 0.4 }
   }
@@ -92,8 +92,8 @@ export function InitiativesSection() {
         viewport={{ once: true, margin: "-50px" }}
       >
         {initiatives.map((initiative) => (
-          <motion.div
-            key={initiative.title}
+          <motion.div 
+            key={initiative.title} 
             variants={cardVariants}
             whileHover={{ y: -8, transition: { duration: 0.2 } }}
             className={initiative.highlight ? 'sm:col-span-2 lg:col-span-1' : ''}
@@ -101,7 +101,7 @@ export function InitiativesSection() {
             <Card className={`glass-card h-full relative overflow-hidden group ${initiative.highlight ? 'ring-2 ring-primary/20' : ''}`}>
               {/* Gradient background */}
               <div className={`absolute inset-0 bg-gradient-to-br ${initiative.color} opacity-0 group-hover:opacity-100 transition-opacity duration-300`} />
-
+              
               <CardHeader className="relative z-10">
                 <div className="flex items-center gap-3 mb-2">
                   <motion.div

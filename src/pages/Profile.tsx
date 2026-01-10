@@ -226,7 +226,6 @@ export default function Profile() {
                 
                 <div className="flex-1 text-center md:text-left">
                   <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 mb-2">
-                    <h1 className="text-2xl md:text-3xl font-bold">{user.name}</h1>
                     <Badge variant="outline" className="capitalize">{user.role}</Badge>
                     {isOrganiser && (
                       <Badge className="bg-purple-500/10 text-purple-600 border-purple-500/30 hover:bg-purple-500/20">
@@ -277,24 +276,21 @@ export default function Profile() {
                     {user.linkedIn && (
                       <Button variant="outline" size="sm" asChild>
                         <a href={user.linkedIn} target="_blank" rel="noopener noreferrer">
-                          <Linkedin className="h-4 w-4 mr-2" />
-                          LinkedIn
+                          <Linkedin className="h-4 w-4" />
                         </a>
                       </Button>
                     )}
                     {user.github && (
                       <Button variant="outline" size="sm" asChild>
                         <a href={user.github} target="_blank" rel="noopener noreferrer">
-                          <Github className="h-4 w-4 mr-2" />
-                          GitHub
+                          <Github className="h-4 w-4" />
                         </a>
                       </Button>
                     )}
                     {user.twitter && (
                       <Button variant="outline" size="sm" asChild>
                         <a href={user.twitter} target="_blank" rel="noopener noreferrer">
-                          <Twitter className="h-4 w-4 mr-2" />
-                          Twitter
+                          <Twitter className="h-4 w-4" />
                         </a>
                       </Button>
                     )}

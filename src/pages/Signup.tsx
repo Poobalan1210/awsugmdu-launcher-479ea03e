@@ -4,7 +4,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Eye, EyeOff, Mail, Lock, User, Building2, GraduationCap, 
   Briefcase, MapPin, Globe, ChevronRight, ChevronLeft, Check, 
-  Loader2, Shield, Camera, Upload, ExternalLink, Users, XCircle
+  Loader2, Shield, Camera, Upload, ExternalLink, Users, XCircle,
+  Linkedin, Github, Twitter
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -33,9 +34,14 @@ interface OnboardingData {
   isCollegeChamp: boolean;
   champCollegeId: string;
   // Professional fields
+  designation: string;
   companyName: string;
   companyCity: string;
   country: string;
+  // Social media (optional for all users)
+  linkedIn: string;
+  github: string;
+  twitter: string;
 }
 
 const STEPS = [
@@ -73,9 +79,13 @@ export default function Signup() {
     collegeCity: '',
     isCollegeChamp: false,
     champCollegeId: '',
+    designation: '',
     companyName: '',
     companyCity: '',
     country: '',
+    linkedIn: '',
+    github: '',
+    twitter: '',
   });
 
 
@@ -221,7 +231,7 @@ export default function Signup() {
           }
           return formData.collegeName.trim() && formData.collegeCity.trim();
         } else {
-          return formData.companyName.trim() && formData.companyCity.trim() && formData.country.trim();
+          return formData.designation.trim() && formData.companyName.trim() && formData.companyCity.trim() && formData.country.trim();
         }
       default:
         return false;
@@ -800,6 +810,21 @@ export default function Signup() {
                   ) : (
                     <>
                       <div className="space-y-2">
+                        <Label htmlFor="designation">Role/Designation</Label>
+                        <div className="relative">
+                          <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                          <Input
+                            id="designation"
+                            type="text"
+                            placeholder="e.g., Software Engineer, Solutions Architect"
+                            value={formData.designation}
+                            onChange={(e) => updateFormData('designation', e.target.value)}
+                            className="pl-10"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
                         <Label htmlFor="companyName">Company Name</Label>
                         <div className="relative">
                           <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -845,6 +870,59 @@ export default function Signup() {
                       </div>
                     </>
                   )}
+
+                  {/* Social Media Links (Optional for all users) */}
+                  <div className="pt-4 border-t space-y-4">
+                    <Label className="text-base">Social Media Links (Optional)</Label>
+                    <p className="text-xs text-muted-foreground mb-4">
+                      Add your social media profiles to help others connect with you
+                    </p>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="linkedIn">LinkedIn</Label>
+                      <div className="relative">
+                        <Linkedin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          id="linkedIn"
+                          type="url"
+                          placeholder="https://linkedin.com/in/yourprofile"
+                          value={formData.linkedIn}
+                          onChange={(e) => updateFormData('linkedIn', e.target.value)}
+                          className="pl-10"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="github">GitHub</Label>
+                      <div className="relative">
+                        <Github className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          id="github"
+                          type="url"
+                          placeholder="https://github.com/yourusername"
+                          value={formData.github}
+                          onChange={(e) => updateFormData('github', e.target.value)}
+                          className="pl-10"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="twitter">X</Label>
+                      <div className="relative">
+                        <Twitter className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          id="twitter"
+                          type="url"
+                          placeholder="https://x.com/yourusername"
+                          value={formData.twitter}
+                          onChange={(e) => updateFormData('twitter', e.target.value)}
+                          className="pl-10"
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
             </motion.div>

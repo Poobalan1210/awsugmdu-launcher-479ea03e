@@ -17,7 +17,7 @@ import {
   Rocket, ExternalLink, MessageSquare, Award, Link2,
   Copy, Mail, Edit, Trash2, Eye, FileText, User, Video,
   Upload, X, UserPlus, Check, ChevronDown, GraduationCap,
-  Trophy, ListTodo, ClipboardCheck, Target, UserCheck
+  Trophy, ListTodo, ClipboardCheck, Target
 } from 'lucide-react';
 import { mockSprints, mockMeetups, currentUser, Submission, generateSpeakerInviteLink, Sprint, Session, SessionPerson, mockUsers, User as UserType, predefinedTasks, mockColleges, CollegeTask, College, getTaskById, getUserById } from '@/data/mockData';
 import { Progress } from '@/components/ui/progress';
@@ -25,7 +25,6 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { format, parseISO } from 'date-fns';
 import { toast } from 'sonner';
-import { getPendingMeetupVerifications, approveMeetupVerification, type MeetupVerificationRequest } from '@/lib/meetup';
 
 // Get all submissions across sprints
 const allSubmissions = mockSprints.flatMap(s => 
@@ -1879,15 +1878,6 @@ export default function Admin() {
                     <Calendar className="h-4 w-4" />
                     Meetups
                   </TabsTrigger>
-                  <TabsTrigger value="meetup-verifications" className="gap-2">
-                    <UserCheck className="h-4 w-4" />
-                    Meetup Verifications
-                    {getPendingMeetupVerifications().length > 0 && (
-                      <Badge variant="destructive" className="ml-1 h-5 w-5 p-0 flex items-center justify-center">
-                        {getPendingMeetupVerifications().length}
-                      </Badge>
-                    )}
-                  </TabsTrigger>
                   <TabsTrigger value="participants" className="gap-2">
                     <Users className="h-4 w-4" />
                     Participants
@@ -2063,89 +2053,6 @@ export default function Admin() {
                   </div>
                 </TabsContent>
 
-                <TabsContent value="meetup-verifications" className="space-y-6">
-                  <Card className="glass-card">
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <UserCheck className="h-5 w-5 text-amber-500" />
-                        Pending Meetup Verifications ({getPendingMeetupVerifications().length})
-                      </CardTitle>
-                      <CardDescription>
-                        Review and approve Meetup membership verifications from new signups
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      {getPendingMeetupVerifications().length === 0 ? (
-                        <div className="text-center py-8">
-                          <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-4" />
-                          <p className="text-muted-foreground">All caught up! No pending Meetup verifications.</p>
-                        </div>
-                      ) : (
-                        getPendingMeetupVerifications().map((verification: MeetupVerificationRequest & { submittedAt?: string; status?: string }, index: number) => (
-                          <Card key={index} className="border">
-                            <CardContent className="p-4">
-                              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                                <div className="flex-1 space-y-2">
-                                  <div className="flex items-center gap-2">
-                                    <Mail className="h-4 w-4 text-muted-foreground" />
-                                    <span className="font-medium">{verification.email}</span>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <ExternalLink className="h-4 w-4 text-muted-foreground" />
-                                    <a
-                                      href={verification.meetupProfileUrl}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-primary hover:underline text-sm"
-                                    >
-                                      {verification.meetupProfileUrl}
-                                    </a>
-                                  </div>
-                                  {verification.submittedAt && (
-                                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                      <Clock className="h-3 w-3" />
-                                      Submitted: {format(parseISO(verification.submittedAt), 'MMM d, yyyy h:mm a')}
-                                    </div>
-                                  )}
-                                </div>
-                                <div className="flex gap-2">
-                                  <Button
-                                    size="sm"
-                                    onClick={() => {
-                                      approveMeetupVerification(verification.email);
-                                      toast.success(`Meetup membership verified for ${verification.email}`);
-                                      // Force re-render by updating state (in production, this would be handled by state management)
-                                      window.location.reload();
-                                    }}
-                                    className="gap-1"
-                                  >
-                                    <CheckCircle className="h-4 w-4" />
-                                    Approve
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => {
-                                      const pending = getPendingMeetupVerifications();
-                                      const updated = pending.filter(v => v.email !== verification.email);
-                                      localStorage.setItem('pendingMeetupVerifications', JSON.stringify(updated));
-                                      toast.success(`Verification removed for ${verification.email}`);
-                                      window.location.reload();
-                                    }}
-                                    className="gap-1"
-                                  >
-                                    <XCircle className="h-4 w-4" />
-                                    Reject
-                                  </Button>
-                                </div>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        ))
-                      )}
-                    </CardContent>
-                  </Card>
-                </TabsContent>
 
                 <TabsContent value="participants">
                   <Card className="glass-card">

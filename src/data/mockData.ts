@@ -107,21 +107,19 @@ export interface Meetup {
   id: string;
   title: string;
   description: string;
+  richDescription?: string; // HTML content for rich text display
   date: string;
   time: string;
   type: 'virtual' | 'in-person' | 'hybrid';
   location?: string;
   meetingLink?: string;
+  meetupUrl?: string; // External meetup.com registration link
   status: 'upcoming' | 'ongoing' | 'completed';
   attendees: number;
   maxAttendees?: number;
   registeredUsers: string[];
   speakers: MeetupSpeaker[];
   image?: string;
-  agenda?: AgendaItem[];
-  highlights?: string[];
-  prerequisites?: string[];
-  whatToExpect?: string;
 }
 
 export interface MeetupSpeaker {
@@ -785,31 +783,36 @@ export const mockMeetups: Meetup[] = [
     id: 'm1',
     title: 'AWS re:Invent Recap 2024',
     description: 'Catch up on all the exciting announcements from AWS re:Invent 2024. Join us for a comprehensive overview of new services, features, and best practices shared at the event.',
+    richDescription: `<h2>About This Event</h2>
+<p>Get the inside scoop on everything announced at <strong>AWS re:Invent 2024</strong>. Our expert speakers will break down the most impactful announcements and share practical insights on how to leverage these new services in your projects.</p>
+
+<h3>What You'll Learn</h3>
+<ul>
+  <li>Overview of 50+ new service announcements</li>
+  <li>Deep dive into AI/ML updates including Amazon Bedrock enhancements</li>
+  <li>New compute and serverless innovations</li>
+  <li>Networking session with AWS Community Builders</li>
+</ul>
+
+<h3>Event Agenda</h3>
+<p><strong>18:00</strong> - Welcome & Introduction<br/>
+<strong>18:15</strong> - New Compute Services Overview<br/>
+<strong>18:45</strong> - Serverless Updates and Lambda SnapStart<br/>
+<strong>19:15</strong> - Break & Networking<br/>
+<strong>19:30</strong> - Q&A Panel<br/>
+<strong>20:00</strong> - Closing & Next Steps</p>
+
+<p><em>Don't miss this opportunity to learn from certified AWS professionals!</em></p>`,
     date: '2024-12-15',
     time: '18:00 IST',
     type: 'hybrid',
     location: 'Tech Hub, Bangalore',
     meetingLink: 'https://meet.example.com/reinvent-recap',
+    meetupUrl: 'https://www.meetup.com/aws-user-group/events/reinvent-recap-2024',
     status: 'completed',
     attendees: 120,
     maxAttendees: 150,
     registeredUsers: ['1', '2', '3', '4', '5', '6'],
-    whatToExpect: 'Get the inside scoop on everything announced at AWS re:Invent 2024. Our expert speakers will break down the most impactful announcements and share practical insights on how to leverage these new services in your projects.',
-    highlights: [
-      'Overview of 50+ new service announcements',
-      'Deep dive into AI/ML updates including Amazon Bedrock enhancements',
-      'New compute and serverless innovations',
-      'Networking session with AWS Community Builders',
-      'Q&A with certified AWS professionals'
-    ],
-    agenda: [
-      { time: '18:00', title: 'Welcome & Introduction', description: 'Overview of the event and what to expect' },
-      { time: '18:15', title: 'New Compute Services Overview', description: 'EC2 updates, Lambda enhancements, and container services', speakerId: 'ms1' },
-      { time: '18:45', title: 'Serverless Updates and Lambda SnapStart', description: 'Deep dive into serverless innovations', speakerId: 'ms2' },
-      { time: '19:15', title: 'Break & Networking', description: 'Refreshments and casual networking' },
-      { time: '19:30', title: 'Q&A Panel', description: 'Open floor for questions with all speakers' },
-      { time: '20:00', title: 'Closing & Next Steps', description: 'Wrap up and upcoming community events' }
-    ],
     speakers: [
       {
         id: 'ms1',
@@ -842,37 +845,43 @@ export const mockMeetups: Meetup[] = [
     id: 'm2',
     title: 'Hands-on Workshop: Container Services',
     description: 'Deep dive into ECS and EKS with hands-on labs. Learn container orchestration on AWS from industry experts. Bring your laptop!',
+    richDescription: `<h2>Container Services Workshop</h2>
+<p>This is a <strong>hands-on workshop</strong> where you will deploy real containerized applications on AWS. By the end of this session, you will have practical experience with both ECS and EKS.</p>
+
+<h3>Prerequisites</h3>
+<ul>
+  <li>Basic understanding of Docker and containers</li>
+  <li>AWS account with console access</li>
+  <li>Laptop with AWS CLI installed</li>
+  <li>Familiarity with command line operations</li>
+</ul>
+
+<h3>What's Included</h3>
+<ul>
+  <li>Hands-on lab with real AWS environments</li>
+  <li>Deploy your first ECS Fargate service</li>
+  <li>Set up an EKS cluster from scratch</li>
+  <li>Best practices for container security</li>
+  <li>Take-home reference materials and code samples</li>
+</ul>
+
+<h3>Schedule</h3>
+<p><strong>10:00</strong> - Welcome & Setup<br/>
+<strong>10:30</strong> - ECS vs EKS: When to use what<br/>
+<strong>11:15</strong> - Hands-on Lab 1: ECS Fargate<br/>
+<strong>12:15</strong> - Lunch Break (provided)<br/>
+<strong>13:00</strong> - Hands-on Lab 2: EKS Setup<br/>
+<strong>14:30</strong> - Advanced Topics & Q&A<br/>
+<strong>15:00</strong> - Wrap Up & Certificates</p>`,
     date: '2025-01-25',
     time: '10:00 IST',
     type: 'in-person',
     location: 'AWS Office, Hyderabad',
+    meetupUrl: 'https://www.meetup.com/aws-user-group/events/container-workshop-2025',
     status: 'upcoming',
     attendees: 35,
     maxAttendees: 50,
     registeredUsers: ['3', '4', '5'],
-    whatToExpect: 'This is a hands-on workshop where you will deploy real containerized applications on AWS. By the end of this session, you will have practical experience with both ECS and EKS, understanding when to use each service.',
-    prerequisites: [
-      'Basic understanding of Docker and containers',
-      'AWS account with console access',
-      'Laptop with AWS CLI installed',
-      'Familiarity with command line operations'
-    ],
-    highlights: [
-      'Hands-on lab with real AWS environments',
-      'Deploy your first ECS Fargate service',
-      'Set up an EKS cluster from scratch',
-      'Best practices for container security',
-      'Take-home reference materials and code samples'
-    ],
-    agenda: [
-      { time: '10:00', title: 'Welcome & Setup', description: 'Environment setup and prerequisites check' },
-      { time: '10:30', title: 'ECS vs EKS: When to use what', description: 'Understanding the container landscape on AWS', speakerId: 'ms3' },
-      { time: '11:15', title: 'Hands-on Lab 1: ECS Fargate', description: 'Deploy a containerized application on ECS' },
-      { time: '12:15', title: 'Lunch Break', description: 'Networking lunch provided' },
-      { time: '13:00', title: 'Hands-on Lab 2: EKS Setup', description: 'Create and configure an EKS cluster' },
-      { time: '14:30', title: 'Advanced Topics & Q&A', description: 'Security, monitoring, and best practices' },
-      { time: '15:00', title: 'Wrap Up & Certificates', description: 'Completion certificates and next steps' }
-    ],
     speakers: [
       {
         id: 'ms3',
@@ -891,34 +900,40 @@ export const mockMeetups: Meetup[] = [
     id: 'm3',
     title: 'AWS Community Day - Cloud Native',
     description: 'A full-day event dedicated to cloud native technologies. Multiple tracks covering containers, serverless, and microservices. Networking opportunities included!',
+    richDescription: `<h2>AWS Community Day 2025</h2>
+<p>Our <strong>flagship annual event</strong> bringing together cloud enthusiasts, developers, and architects. Experience a full day of learning, networking, and hands-on sessions with some of the best minds in the AWS ecosystem.</p>
+
+<h3>Event Highlights</h3>
+<ul>
+  <li>Multiple tracks: Containers, Serverless, and Data</li>
+  <li>Keynote by AWS Hero</li>
+  <li>Interactive panel discussions</li>
+  <li>Hands-on workshops in breakout rooms</li>
+  <li>Swag, prizes, and networking lunch</li>
+  <li>Certificate of participation for all attendees</li>
+</ul>
+
+<h3>Full Day Schedule</h3>
+<p><strong>09:00</strong> - Registration & Breakfast<br/>
+<strong>09:30</strong> - Opening Keynote: State of Cloud Native on AWS<br/>
+<strong>10:30</strong> - Microservices Architecture Patterns<br/>
+<strong>11:30</strong> - Breakout Sessions (Choose your track)<br/>
+<strong>12:30</strong> - Networking Lunch<br/>
+<strong>13:30</strong> - Hands-on Workshop<br/>
+<strong>15:30</strong> - Panel Discussion: Future of Cloud Native<br/>
+<strong>16:30</strong> - Closing & Lucky Draw</p>
+
+<p><em>Join us for an unforgettable day of cloud learning!</em></p>`,
     date: '2025-02-15',
     time: '09:00 IST',
     type: 'hybrid',
     location: 'Convention Center, Chennai',
     meetingLink: 'https://meet.example.com/community-day',
+    meetupUrl: 'https://www.meetup.com/aws-user-group/events/community-day-2025',
     status: 'upcoming',
     attendees: 85,
     maxAttendees: 200,
     registeredUsers: ['1', '2', '3'],
-    whatToExpect: 'AWS Community Day is our flagship annual event bringing together cloud enthusiasts, developers, and architects. Experience a full day of learning, networking, and hands-on sessions with some of the best minds in the AWS ecosystem.',
-    highlights: [
-      'Multiple tracks: Containers, Serverless, and Data',
-      'Keynote by AWS Hero',
-      'Interactive panel discussions',
-      'Hands-on workshops in breakout rooms',
-      'Swag, prizes, and networking lunch',
-      'Certificate of participation for all attendees'
-    ],
-    agenda: [
-      { time: '09:00', title: 'Registration & Breakfast', description: 'Check-in and networking breakfast' },
-      { time: '09:30', title: 'Opening Keynote', description: 'State of Cloud Native on AWS' },
-      { time: '10:30', title: 'Microservices Architecture Patterns', description: 'Design patterns for scalable applications', speakerId: 'ms4' },
-      { time: '11:30', title: 'Breakout Sessions', description: 'Choose your track: Containers / Serverless / Data' },
-      { time: '12:30', title: 'Networking Lunch', description: 'Connect with fellow cloud enthusiasts' },
-      { time: '13:30', title: 'Hands-on Workshop', description: 'Build and deploy a microservices application' },
-      { time: '15:30', title: 'Panel Discussion', description: 'Future of Cloud Native development' },
-      { time: '16:30', title: 'Closing & Lucky Draw', description: 'Prizes, certificates, and next steps' }
-    ],
     speakers: [
       {
         id: 'ms4',
@@ -938,10 +953,23 @@ export const mockMeetups: Meetup[] = [
     id: 'm4',
     title: 'AWS Certification Study Group Kickoff',
     description: 'Weekly study group for Solutions Architect Associate certification. Join fellow learners and prepare together with structured study materials.',
+    richDescription: `<h2>Certification Study Group</h2>
+<p>Join our <strong>weekly study group</strong> for the AWS Solutions Architect Associate certification. Prepare together with structured study materials and peer support.</p>
+
+<h3>What to Expect</h3>
+<ul>
+  <li>Weekly virtual sessions covering exam domains</li>
+  <li>Shared study resources and practice questions</li>
+  <li>Peer support and accountability partners</li>
+  <li>Tips from recently certified members</li>
+</ul>
+
+<p>Whether you're just starting your certification journey or looking for study partners, this group is for you!</p>`,
     date: '2025-01-10',
     time: '19:00 IST',
     type: 'virtual',
     meetingLink: 'https://meet.example.com/study-group',
+    meetupUrl: 'https://www.meetup.com/aws-user-group/events/study-group-kickoff',
     status: 'upcoming',
     attendees: 28,
     maxAttendees: 40,

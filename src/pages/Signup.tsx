@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Eye, EyeOff, Mail, Lock, User, Building2, GraduationCap, 
   Briefcase, MapPin, Globe, ChevronRight, ChevronLeft, Check, 
-  Loader2, Shield, Camera, Upload
+  Loader2, Shield, Camera, Upload, ExternalLink, Users, XCircle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,6 +16,7 @@ import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp
 import { useToast } from '@/hooks/use-toast';
 import logo from '@/assets/logo.png';
 import { mockColleges } from '@/data/mockData';
+import { submitMeetupVerification, normalizeMeetupProfileUrl, getMeetupGroupUrl } from '@/lib/meetup';
 
 type UserType = 'student' | 'professional';
 
@@ -25,6 +26,7 @@ interface OnboardingData {
   password: string;
   profilePhoto: string;
   userType: UserType | '';
+  meetupEmail: string;
   // Student fields
   collegeName: string;
   collegeCity: string;
@@ -39,8 +41,9 @@ interface OnboardingData {
 const STEPS = [
   { id: 1, title: 'Account', description: 'Create your account' },
   { id: 2, title: 'Verify', description: 'Verify your email' },
-  { id: 3, title: 'Profile', description: 'Upload your photo & choose role' },
-  { id: 4, title: 'Details', description: 'Complete your profile' },
+  { id: 3, title: 'Meetup', description: 'Verify Meetup membership' },
+  { id: 4, title: 'Profile', description: 'Upload your photo & choose role' },
+  { id: 5, title: 'Details', description: 'Complete your profile' },
 ];
 
 export default function Signup() {
@@ -50,6 +53,10 @@ export default function Signup() {
   const [otpValue, setOtpValue] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [otpVerified, setOtpVerified] = useState(false);
+  const [meetupVerified, setMeetupVerified] = useState(false);
+  const [meetupPending, setMeetupPending] = useState(false);
+  const [meetupVerifying, setMeetupVerifying] = useState(false);
+  const [meetupError, setMeetupError] = useState<string | null>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -61,6 +68,7 @@ export default function Signup() {
     password: '',
     profilePhoto: '',
     userType: '',
+    meetupEmail: '',
     collegeName: '',
     collegeCity: '',
     isCollegeChamp: false,
@@ -69,6 +77,7 @@ export default function Signup() {
     companyCity: '',
     country: '',
   });
+
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -116,7 +125,7 @@ export default function Signup() {
         title: "Email verified!",
         description: "Your email has been successfully verified.",
       });
-      // Auto-advance to next step
+      // Auto-advance to next step (Meetup verification)
       setTimeout(() => setCurrentStep(3), 500);
     } else {
       setIsLoading(false);
@@ -125,6 +134,59 @@ export default function Signup() {
         description: "Please enter a valid 6-digit code.",
         variant: "destructive",
       });
+    }
+  };
+
+  const handleSubmitMeetupVerification = async () => {
+    if (!formData.meetupEmail.trim()) {
+      setMeetupError('Please provide your Meetup profile URL or username.');
+      return;
+    }
+
+    setMeetupVerifying(true);
+    setMeetupError(null);
+    
+    try {
+      // Normalize the Meetup profile URL
+      const normalizedUrl = normalizeMeetupProfileUrl(formData.meetupEmail);
+      
+      const result = await submitMeetupVerification(
+        formData.email,
+        normalizedUrl
+      );
+      
+      if (result.isPending) {
+        setMeetupPending(true);
+        setMeetupVerified(true); // Allow them to proceed with pending status
+        toast({
+          title: "Verification submitted!",
+          description: "Your Meetup profile has been submitted for admin review. You can continue with signup, but your account will be pending verification.",
+        });
+        setTimeout(() => setCurrentStep(4), 500);
+      } else if (result.isMember) {
+        setMeetupVerified(true);
+        toast({
+          title: "Meetup membership verified!",
+          description: `Welcome, ${result.meetupName || 'member'}!`,
+        });
+        setTimeout(() => setCurrentStep(4), 500);
+      } else {
+        setMeetupError(result.error || 'Please provide a valid Meetup profile URL.');
+        toast({
+          title: "Invalid profile URL",
+          description: result.error || 'Please check your Meetup profile URL and try again.',
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      setMeetupError(error instanceof Error ? error.message : 'Verification failed');
+      toast({
+        title: "Verification error",
+        description: "An error occurred while submitting your verification.",
+        variant: "destructive",
+      });
+    } finally {
+      setMeetupVerifying(false);
     }
   };
 
@@ -149,8 +211,10 @@ export default function Signup() {
       case 2:
         return otpVerified;
       case 3:
-        return formData.userType !== '' && formData.profilePhoto !== '';
+        return meetupVerified || meetupPending;
       case 4:
+        return formData.userType !== '' && formData.profilePhoto !== '';
+      case 5:
         if (formData.userType === 'student') {
           if (formData.isCollegeChamp) {
             return formData.champCollegeId !== '';
@@ -165,7 +229,7 @@ export default function Signup() {
   };
 
   const nextStep = () => {
-    if (currentStep < 4) {
+    if (currentStep < 5) {
       setCurrentStep(prev => prev + 1);
     } else {
       handleSubmit();
@@ -386,8 +450,154 @@ export default function Signup() {
                 </div>
               )}
 
-              {/* Step 3: Profile Photo & User Type Selection */}
+              {/* Step 3: Meetup Membership Verification */}
               {currentStep === 3 && (
+                <div className="space-y-6">
+                  <div className="text-center">
+                    <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 mb-4">
+                      <Users className="h-8 w-8 text-primary" />
+                    </div>
+                    <h3 className="text-lg font-semibold mb-2">Verify Meetup Membership</h3>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      To join AWS User Group Madurai, you must be a member of our Meetup group. 
+                      Please provide your membership details URL for verification.
+                    </p>
+                  </div>
+
+                  {meetupVerified ? (
+                    <div className="text-center py-4">
+                      <div className={`inline-flex items-center justify-center w-16 h-16 rounded-full mb-4 ${
+                        meetupPending ? 'bg-amber-500/10' : 'bg-green-500/10'
+                      }`}>
+                        {meetupPending ? (
+                          <Loader2 className="h-8 w-8 text-amber-500 animate-spin" />
+                        ) : (
+                          <Check className="h-8 w-8 text-green-500" />
+                        )}
+                      </div>
+                      <p className={`font-medium mb-2 ${
+                        meetupPending ? 'text-amber-600' : 'text-green-600'
+                      }`}>
+                        {meetupPending 
+                          ? 'Verification submitted for review!' 
+                          : 'Meetup membership verified!'}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {meetupPending 
+                          ? 'Your profile has been submitted. An admin will verify your membership soon. You can continue with signup.'
+                          : 'You\'re all set to continue with your registration.'}
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="meetupEmail">Meetup Membership Details URL</Label>
+                          <div className="relative">
+                            <ExternalLink className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                            <Input
+                              id="meetupEmail"
+                              type="text"
+                              placeholder="https://www.meetup.com/members/.../group/.../"
+                              value={formData.meetupEmail}
+                              onChange={(e) => updateFormData('meetupEmail', e.target.value)}
+                              className="pl-10"
+                              disabled={meetupVerifying}
+                            />
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            Paste the complete URL from your membership details page. 
+                            The URL format should be: <code className="text-xs bg-muted px-1 rounded">https://www.meetup.com/members/.../group/.../</code>
+                          </p>
+                        </div>
+
+                        {meetupError && (
+                          <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/20">
+                            <div className="flex items-start gap-3">
+                              <XCircle className="h-5 w-5 text-destructive mt-0.5 flex-shrink-0" />
+                              <div className="flex-1">
+                                <p className="text-sm font-medium text-destructive mb-1">Invalid URL</p>
+                                <p className="text-sm text-muted-foreground">{meetupError}</p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                          <p className="text-sm font-medium text-blue-600 mb-2">
+                            ⚠️ Important: Use a web browser (not the Meetup mobile app)
+                          </p>
+                          <p className="text-sm font-medium text-blue-600 mb-3">
+                            How to get your membership details URL:
+                          </p>
+                          <ol className="text-xs text-muted-foreground space-y-2 list-decimal list-inside">
+                            <li>Open a <strong className="text-foreground">web browser</strong> (Chrome, Firefox, Safari, etc.) - <span className="text-amber-600 font-medium">do not use the Meetup mobile app</span></li>
+                            <li>Go to <a href="https://www.meetup.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-medium">meetup.com</a> and log in to your account</li>
+                            <li>Click on your profile picture or name in the top right corner</li>
+                            <li>Navigate to your profile page</li>
+                            <li>Look for the section showing all the groups you are a member of</li>
+                            <li>Find <strong className="text-foreground">"AWS User Group Madurai"</strong> in the list</li>
+                            <li><strong className="text-foreground">Important:</strong> Look for <strong className="text-foreground">"Membership Details"</strong> link/text <span className="text-amber-600">below the group name</span> (do NOT click on the group name itself)</li>
+                            <li>Click on <strong className="text-foreground">"Membership Details"</strong> - this will open the membership details page</li>
+                            <li>Copy the complete URL from your browser's address bar</li>
+                            <li>Paste it in the field above</li>
+                          </ol>
+                          <p className="text-xs text-muted-foreground mt-3 pt-3 border-t border-blue-500/20">
+                            <strong className="text-blue-600">Expected URL format:</strong><br />
+                            <code className="text-xs bg-muted px-1 rounded">https://www.meetup.com/members/[your-id]/group/[group-id]</code><br />
+                            <span className="text-xs text-muted-foreground italic">(with or without trailing slash)</span>
+                          </p>
+                        </div>
+
+                        <Button
+                          onClick={handleSubmitMeetupVerification}
+                          className="w-full"
+                          disabled={meetupVerifying || !formData.meetupEmail.trim()}
+                        >
+                          {meetupVerifying ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Verifying...
+                            </>
+                          ) : (
+                            <>
+                              <Users className="mr-2 h-4 w-4" />
+                              Verify Membership
+                            </>
+                          )}
+                        </Button>
+
+                        <div className="p-4 rounded-lg bg-muted/50 border">
+                          <p className="text-sm text-muted-foreground mb-2">
+                            <strong>Not a member yet?</strong>
+                          </p>
+                          <Button
+                            variant="link"
+                            className="p-0 h-auto text-primary"
+                            asChild
+                          >
+                            <a
+                              href={getMeetupGroupUrl()}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1"
+                            >
+                              Join AWS User Group Madurai on Meetup
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          </Button>
+                          <p className="text-xs text-muted-foreground mt-2">
+                            After joining, return here and follow the steps above to get your membership details URL.
+                          </p>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Step 4: Profile Photo & User Type Selection */}
+              {currentStep === 4 && (
                 <div className="space-y-6">
                   {/* Profile Photo Upload */}
                   <div className="space-y-3">
@@ -488,8 +698,8 @@ export default function Signup() {
                 </div>
               )}
 
-              {/* Step 4: Details based on user type */}
-              {currentStep === 4 && (
+              {/* Step 5: Details based on user type */}
+              {currentStep === 5 && (
                 <div className="space-y-4">
                   {formData.userType === 'student' ? (
                     <>
@@ -652,7 +862,7 @@ export default function Signup() {
               Back
             </Button>
 
-            {currentStep !== 2 && (
+            {currentStep !== 2 && currentStep !== 3 && (
               <Button
                 onClick={nextStep}
                 disabled={!canProceed() || isLoading}
@@ -663,7 +873,7 @@ export default function Signup() {
                     <Loader2 className="h-4 w-4 animate-spin" />
                     Processing...
                   </>
-                ) : currentStep === 4 ? (
+                ) : currentStep === 5 ? (
                   <>
                     Complete Setup
                     <Check className="h-4 w-4" />

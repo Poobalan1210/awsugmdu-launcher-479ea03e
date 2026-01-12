@@ -33,16 +33,49 @@ function parseContent(content: string): string {
   return marked.parse(content) as string;
 }
 
-const getStatusBadge = (status: Sprint['status']) => {
-  switch (status) {
-    case 'active':
-      return <Badge className="bg-green-500/10 text-green-600 border-green-500/30">Active</Badge>;
-    case 'upcoming':
-      return <Badge variant="secondary">Upcoming</Badge>;
-    case 'completed':
-      return <Badge variant="outline">Completed</Badge>;
-  }
-};
+function SprintCard({ sprint, onSelect }: { sprint: Sprint; onSelect: () => void }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      whileHover={{ y: -5 }}
+      transition={{ duration: 0.3 }}
+    >
+      <Card className="glass-card hover-lift cursor-pointer h-full" onClick={onSelect}>
+        <CardContent className="p-6">
+          <div className="flex items-start justify-between mb-4">
+            <Badge variant="outline" className="mb-2">{sprint.theme}</Badge>
+            <span className="text-sm text-muted-foreground">
+              {format(parseISO(sprint.startDate), 'MMM yyyy')}
+            </span>
+          </div>
+          
+          <h3 className="text-xl font-bold mb-2">{sprint.title}</h3>
+          
+          <p className="text-sm text-muted-foreground mb-4 line-clamp-2">
+            {sprint.description}
+          </p>
+          
+          <div className="flex items-center gap-4 text-sm text-muted-foreground">
+            <div className="flex items-center gap-1">
+              <Users className="h-4 w-4" />
+              {sprint.participants}
+            </div>
+            <div className="flex items-center gap-1">
+              <Video className="h-4 w-4" />
+              {sprint.sessions.length} sessions
+            </div>
+          </div>
+          
+          <Button className="w-full mt-4" variant={sprint.status === 'active' ? 'default' : 'outline'}>
+            {sprint.status === 'active' ? 'Join Sprint' : 'View Details'}
+            <ChevronRight className="h-4 w-4 ml-1" />
+          </Button>
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
+}
 
 function SessionCard({ session, isExpanded, onToggle }: { 
   session: Session; 
@@ -311,50 +344,6 @@ function SessionCard({ session, isExpanded, onToggle }: {
   );
 }
 
-function SprintCard({ sprint, onSelect }: { sprint: Sprint; onSelect: () => void }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      whileHover={{ y: -5 }}
-      transition={{ duration: 0.3 }}
-    >
-      <Card className="glass-card hover-lift cursor-pointer h-full" onClick={onSelect}>
-        <CardContent className="p-6">
-          <div className="flex items-start justify-between mb-4">
-            {getStatusBadge(sprint.status)}
-            <span className="text-sm text-muted-foreground">
-              {format(parseISO(sprint.startDate), 'MMM yyyy')}
-            </span>
-          </div>
-          
-          <h3 className="text-xl font-bold mb-2">{sprint.title}</h3>
-          <Badge variant="outline" className="mb-4">{sprint.theme}</Badge>
-          
-          <p className="text-sm text-muted-foreground mb-4 line-clamp-2">
-            {sprint.description}
-          </p>
-          
-          <div className="flex items-center gap-4 text-sm text-muted-foreground">
-            <div className="flex items-center gap-1">
-              <Users className="h-4 w-4" />
-              {sprint.participants}
-            </div>
-            <div className="flex items-center gap-1">
-              <Video className="h-4 w-4" />
-              {sprint.sessions.length} sessions
-            </div>
-          </div>
-          
-          <Button className="w-full mt-4" variant={sprint.status === 'active' ? 'default' : 'outline'}>
-            {sprint.status === 'active' ? 'Join Sprint' : 'View Details'}
-            <ChevronRight className="h-4 w-4 ml-1" />
-          </Button>
-        </CardContent>
-      </Card>
-    </motion.div>
-  );
-}
 
 function JoinSprintDialog({ sprint, open, onOpenChange }: { 
   sprint: Sprint; 
@@ -486,19 +475,7 @@ function SprintDetail({ sprint, onBack }: { sprint: Sprint; onBack: () => void }
       </div>
 
       <div className="glass-card p-6 md:p-8 rounded-lg">
-        {sprint.posterImage && (
-          <div className="relative h-48 md:h-64 -mx-6 -mt-6 md:-mx-8 md:-mt-8 mb-6 overflow-hidden rounded-t-lg">
-            <img 
-              src={sprint.posterImage} 
-              alt={sprint.title}
-              className="w-full h-full object-cover"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-background to-transparent" />
-          </div>
-        )}
-        
         <div className="flex flex-wrap items-center gap-4 mb-4">
-          {getStatusBadge(sprint.status)}
           <Badge variant="outline" className="text-base">{sprint.theme}</Badge>
         </div>
         

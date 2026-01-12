@@ -42,7 +42,6 @@ export interface Sprint {
   submissions: Submission[];
   githubRepo?: string;
   registeredUsers: string[];
-  posterImage?: string;
 }
 
 export interface SessionPerson {
@@ -468,7 +467,6 @@ export const mockSprints: Sprint[] = [
     participants: 45,
     githubRepo: 'https://github.com/aws-ug/serverless-sprint-2025',
     registeredUsers: ['3', '4', '5', '6', '7', '8'],
-    posterImage: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=800&h=400&fit=crop',
     sessions: [
       {
         id: 'ses1',
@@ -511,14 +509,32 @@ export const mockSprints: Sprint[] = [
         date: '2025-01-05',
         time: '18:00 IST',
         duration: '90 minutes',
-        description: 'Learn the fundamentals of serverless computing and AWS Lambda. We will cover the basics of event-driven architecture and how to build your first Lambda function.',
-        agenda: [
-          'What is Serverless Computing?',
-          'AWS Lambda fundamentals',
-          'Event-driven architecture patterns',
-          'Hands-on: Your first Lambda function',
-          'Q&A session'
-        ],
+        description: 'Learn the fundamentals of serverless computing and AWS Lambda.',
+        richDescription: `## What You'll Learn
+
+In this hands-on session, we'll cover the **fundamentals of serverless computing** and dive deep into AWS Lambda.
+
+### Topics Covered
+
+- **What is Serverless Computing?** - Understanding the paradigm shift
+- **AWS Lambda Fundamentals** - Functions, triggers, and execution model
+- **Event-driven Architecture** - Building reactive applications
+- **Cold Starts & Optimization** - Performance best practices
+
+### Prerequisites
+
+1. Basic understanding of cloud concepts
+2. AWS Free Tier account (recommended)
+3. Familiarity with any programming language
+
+### Resources
+
+- [AWS Lambda Documentation](https://docs.aws.amazon.com/lambda)
+- GitHub repo with code samples
+- Session recording available after the event
+
+> **Pro Tip:** Bring your laptop for the hands-on portion!`,
+        meetupUrl: 'https://www.meetup.com/aws-user-group/events/serverless-intro',
         meetingLink: 'https://meet.example.com/ses1',
         posterImage: 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=600&h=300&fit=crop'
       },
@@ -563,14 +579,39 @@ export const mockSprints: Sprint[] = [
         date: '2025-01-15',
         time: '18:00 IST',
         duration: '90 minutes',
-        description: 'Deep dive into REST and WebSocket APIs using Amazon API Gateway. Learn how to create, deploy, and manage APIs at scale.',
-        agenda: [
-          'API Gateway Overview',
-          'REST vs WebSocket APIs',
-          'Integration with Lambda',
-          'Authentication and Authorization',
-          'Best practices and cost optimization'
-        ],
+        description: 'Deep dive into REST and WebSocket APIs using Amazon API Gateway.',
+        richDescription: `## API Gateway Deep Dive
+
+Learn how to build **production-ready APIs** using Amazon API Gateway. This session covers everything from basics to advanced patterns.
+
+### What We'll Cover
+
+1. **REST APIs** - Creating RESTful endpoints
+2. **WebSocket APIs** - Real-time communication
+3. **Lambda Integration** - Seamless backend connections
+4. **Security** - API keys, throttling, and IAM
+
+### Code Examples
+
+\`\`\`javascript
+// Sample Lambda handler
+export const handler = async (event) => {
+  return {
+    statusCode: 200,
+    body: JSON.stringify({ message: "Hello from Lambda!" })
+  };
+};
+\`\`\`
+
+### Best Practices
+
+- Use **stages** for dev/staging/prod environments
+- Implement proper **error handling**
+- Configure **caching** for improved performance
+- Set up **CloudWatch** monitoring
+
+*Bring your questions for the Q&A session!*`,
+        meetupUrl: 'https://www.meetup.com/aws-user-group/events/api-gateway-session',
         meetingLink: 'https://meet.example.com/ses2',
         posterImage: 'https://images.unsplash.com/photo-1544197150-b99a580bb7a8?w=600&h=300&fit=crop'
       }
@@ -628,7 +669,6 @@ export const mockSprints: Sprint[] = [
     status: 'upcoming',
     participants: 32,
     registeredUsers: ['3', '4'],
-    posterImage: 'https://images.unsplash.com/photo-1677442136019-21780ecad995?w=800&h=400&fit=crop',
     sessions: [
       {
         id: 'ses3',
@@ -661,14 +701,33 @@ export const mockSprints: Sprint[] = [
         date: '2025-02-08',
         time: '18:00 IST',
         duration: '90 minutes',
-        description: 'Introduction to foundation models and Amazon Bedrock. Learn how to integrate AI capabilities into your applications.',
-        agenda: [
-          'Introduction to Generative AI',
-          'Amazon Bedrock Overview',
-          'Available Foundation Models',
-          'Hands-on: Your first Bedrock app',
-          'Prompt Engineering basics'
-        ],
+        description: 'Introduction to foundation models and Amazon Bedrock.',
+        richDescription: `# Amazon Bedrock Fundamentals
+
+Discover how to build **AI-powered applications** using Amazon Bedrock's foundation models.
+
+## Session Highlights
+
+- 🤖 **Foundation Models** - Claude, Titan, Llama, and more
+- 🔧 **Bedrock API** - Integrating AI into your apps
+- ✨ **Prompt Engineering** - Getting better results
+- 🛡️ **Guardrails** - Responsible AI practices
+
+## Prerequisites
+
+- AWS account with Bedrock access enabled
+- Basic Python or JavaScript knowledge
+- Curiosity about AI/ML!
+
+## What You'll Build
+
+A simple chatbot using Amazon Bedrock that can:
+1. Answer questions about AWS services
+2. Generate code snippets
+3. Summarize documents
+
+*Limited seats available - register now!*`,
+        meetupUrl: 'https://www.meetup.com/aws-user-group/events/bedrock-intro',
         posterImage: 'https://images.unsplash.com/photo-1676299081847-824916de030a?w=600&h=300&fit=crop'
       }
     ],
@@ -685,7 +744,6 @@ export const mockSprints: Sprint[] = [
     participants: 38,
     githubRepo: 'https://github.com/aws-ug/security-sprint-2024',
     registeredUsers: ['1', '2', '3', '4', '5'],
-    posterImage: 'https://images.unsplash.com/photo-1563986768609-322da13575f3?w=800&h=400&fit=crop',
     sessions: [
       {
         id: 'ses4',
@@ -734,13 +792,42 @@ export const mockSprints: Sprint[] = [
         time: '18:00 IST',
         duration: '120 minutes',
         description: 'Understanding IAM policies, roles, and best practices for secure AWS architectures.',
-        agenda: [
-          'IAM Fundamentals',
-          'Policy deep dive',
-          'Roles and cross-account access',
-          'Best practices',
-          'Common pitfalls to avoid'
-        ],
+        richDescription: `## AWS IAM Security Deep Dive
+
+Master **Identity and Access Management** - the foundation of AWS security.
+
+### Topics Covered
+
+| Topic | Duration |
+|-------|----------|
+| IAM Fundamentals | 20 min |
+| Policy Deep Dive | 30 min |
+| Roles & Cross-Account | 25 min |
+| Hands-on Lab | 30 min |
+| Q&A | 15 min |
+
+### Key Takeaways
+
+- ✅ Write **least-privilege** policies
+- ✅ Implement **role-based access control**
+- ✅ Set up **cross-account access** securely
+- ✅ Audit with **IAM Access Analyzer**
+
+### Sample Policy
+
+\`\`\`json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": "s3:GetObject",
+    "Resource": "arn:aws:s3:::my-bucket/*"
+  }]
+}
+\`\`\`
+
+*Recording available below for those who missed the live session!*`,
+        youtubeUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
         recordingUrl: 'https://youtube.com/watch?v=security-session',
         posterImage: 'https://images.unsplash.com/photo-1555949963-aa79dcee981c?w=600&h=300&fit=crop'
       }
@@ -1467,7 +1554,7 @@ export const generateUnifiedEvents = (): Event[] => {
         type: 'virtual',
         category: 'sprint',
         attendees: sprint.participants,
-        image: session.posterImage || sprint.posterImage,
+        image: session.posterImage,
         linkedEventId: sprint.id
       });
     });

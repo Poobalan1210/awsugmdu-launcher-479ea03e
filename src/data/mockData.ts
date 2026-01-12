@@ -72,9 +72,12 @@ export interface Session {
   time: string;
   duration?: string;
   description: string;
+  richDescription?: string; // HTML/Markdown content for rich text display
   agenda?: string[];
   meetingLink?: string;
+  meetupUrl?: string; // External meetup.com registration link
   recordingUrl?: string;
+  youtubeUrl?: string; // YouTube video link for past sessions
   slidesUrl?: string;
   posterImage?: string;
 }

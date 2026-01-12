@@ -87,8 +87,7 @@ export async function submitMeetupVerification(
         },
         body: JSON.stringify({
           email,
-          meetupProfileUrl,
-          meetupUsername,
+          meetupProfileUrl: normalizedUrl,
           groupUrlname: MEETUP_GROUP_URLNAME,
         }),
       });
@@ -103,7 +102,7 @@ export async function submitMeetupVerification(
         isPending: data.isPending || true,
         meetupName: data.meetupName,
         meetupId: data.meetupId,
-        meetupProfileUrl: data.meetupProfileUrl || meetupProfileUrl,
+        meetupProfileUrl: data.meetupProfileUrl || normalizedUrl,
         error: data.error,
       };
     }

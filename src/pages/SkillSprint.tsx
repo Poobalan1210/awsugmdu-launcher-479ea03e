@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
@@ -16,12 +16,22 @@ import {
   Rocket, Calendar, Users, Github, MessageSquare, 
   Video, Send, ThumbsUp, Clock, ExternalLink,
   ChevronRight, ChevronDown, Linkedin, User,
-  CheckCircle, Image, FileText, PlayCircle, Link2
+  CheckCircle, Image, FileText, PlayCircle, Link2, Youtube
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
 import { mockSprints, mockForumPosts, Sprint, Session, currentUser, mockUsers, getUserById } from '@/data/mockData';
 import { format, parseISO } from 'date-fns';
+import { marked } from 'marked';
+
+// Helper to parse markdown or HTML content
+function parseContent(content: string): string {
+  const hasHtmlTags = /<[a-z][\s\S]*>/i.test(content);
+  if (hasHtmlTags) {
+    return content;
+  }
+  return marked.parse(content) as string;
+}
 
 const getStatusBadge = (status: Sprint['status']) => {
   switch (status) {
@@ -39,6 +49,13 @@ function SessionCard({ session, isExpanded, onToggle }: {
   isExpanded: boolean;
   onToggle: () => void;
 }) {
+  const parsedDescription = useMemo(() => {
+    if (session.richDescription) {
+      return parseContent(session.richDescription);
+    }
+    return null;
+  }, [session.richDescription]);
+
   return (
     <Collapsible open={isExpanded} onOpenChange={onToggle}>
       <Card className="glass-card overflow-hidden">
@@ -217,7 +234,14 @@ function SessionCard({ session, isExpanded, onToggle }: {
                 {/* Session Details */}
                 <div>
                   <h4 className="font-semibold mb-2">About this Session</h4>
-                  <p className="text-muted-foreground">{session.description}</p>
+                  {parsedDescription ? (
+                    <div 
+                      className="prose prose-sm max-w-none dark:prose-invert text-muted-foreground"
+                      dangerouslySetInnerHTML={{ __html: parsedDescription }}
+                    />
+                  ) : (
+                    <p className="text-muted-foreground">{session.description}</p>
+                  )}
                 </div>
 
                 {/* Agenda */}
@@ -237,11 +261,27 @@ function SessionCard({ session, isExpanded, onToggle }: {
 
                 {/* Action Buttons */}
                 <div className="flex flex-wrap gap-3 pt-4 border-t">
-                  {session.meetingLink && (
+                  {session.meetupUrl && (
                     <Button asChild>
+                      <a href={session.meetupUrl} target="_blank" rel="noopener noreferrer">
+                        <ExternalLink className="h-4 w-4 mr-2" />
+                        Register on Meetup
+                      </a>
+                    </Button>
+                  )}
+                  {session.meetingLink && (
+                    <Button asChild variant={session.meetupUrl ? "outline" : "default"}>
                       <a href={session.meetingLink} target="_blank" rel="noopener noreferrer">
                         <Video className="h-4 w-4 mr-2" />
                         Join Session
+                      </a>
+                    </Button>
+                  )}
+                  {session.youtubeUrl && (
+                    <Button variant="outline" asChild>
+                      <a href={session.youtubeUrl} target="_blank" rel="noopener noreferrer">
+                        <Youtube className="h-4 w-4 mr-2" />
+                        Watch on YouTube
                       </a>
                     </Button>
                   )}
@@ -280,28 +320,13 @@ function SprintCard({ sprint, onSelect }: { sprint: Sprint; onSelect: () => void
       transition={{ duration: 0.3 }}
     >
       <Card className="glass-card hover-lift cursor-pointer h-full" onClick={onSelect}>
-        {sprint.posterImage && (
-          <div className="relative h-40 overflow-hidden rounded-t-lg">
-            <img 
-              src={sprint.posterImage} 
-              alt={sprint.title}
-              className="w-full h-full object-cover"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-background/80 to-transparent" />
-            <div className="absolute top-3 left-3">
-              {getStatusBadge(sprint.status)}
-            </div>
+        <CardContent className="p-6">
+          <div className="flex items-start justify-between mb-4">
+            {getStatusBadge(sprint.status)}
+            <span className="text-sm text-muted-foreground">
+              {format(parseISO(sprint.startDate), 'MMM yyyy')}
+            </span>
           </div>
-        )}
-        <CardContent className={sprint.posterImage ? "p-5" : "p-6"}>
-          {!sprint.posterImage && (
-            <div className="flex items-start justify-between mb-4">
-              {getStatusBadge(sprint.status)}
-              <span className="text-sm text-muted-foreground">
-                {format(parseISO(sprint.startDate), 'MMM yyyy')}
-              </span>
-            </div>
-          )}
           
           <h3 className="text-xl font-bold mb-2">{sprint.title}</h3>
           <Badge variant="outline" className="mb-4">{sprint.theme}</Badge>

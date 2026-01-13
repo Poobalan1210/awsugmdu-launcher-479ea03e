@@ -56,7 +56,7 @@ export default function SpeakerInvite() {
   if (!isValidInvite) {
     return (
       <div className="min-h-screen flex flex-col">
-        <Header isLoggedIn={false} />
+        <Header />
         <main className="flex-1 container mx-auto px-4 py-8 flex items-center justify-center">
           <Card className="glass-card max-w-md">
             <CardContent className="p-8 text-center">
@@ -79,7 +79,7 @@ export default function SpeakerInvite() {
   if (submitted) {
     return (
       <div className="min-h-screen flex flex-col">
-        <Header isLoggedIn={false} />
+        <Header />
         <main className="flex-1 container mx-auto px-4 py-8 flex items-center justify-center">
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
@@ -113,7 +113,7 @@ export default function SpeakerInvite() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <Header isLoggedIn={false} />
+      <Header />
       
       <main className="flex-1 container mx-auto px-4 py-8">
         <motion.div

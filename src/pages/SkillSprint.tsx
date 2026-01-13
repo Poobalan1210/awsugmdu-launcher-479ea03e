@@ -66,11 +66,6 @@ function SprintCard({ sprint, onSelect }: { sprint: Sprint; onSelect: () => void
               {sprint.sessions.length} sessions
             </div>
           </div>
-          
-          <Button className="w-full mt-4" variant={sprint.status === 'active' ? 'default' : 'outline'}>
-            {sprint.status === 'active' ? 'Join Sprint' : 'View Details'}
-            <ChevronRight className="h-4 w-4 ml-1" />
-          </Button>
         </CardContent>
       </Card>
     </motion.div>
@@ -295,11 +290,18 @@ function SessionCard({ session, isExpanded, onToggle }: {
                 {/* Action Buttons */}
                 <div className="flex flex-wrap gap-3 pt-4 border-t">
                   {session.meetupUrl && (
-                    <Button asChild>
-                      <a href={session.meetupUrl} target="_blank" rel="noopener noreferrer">
-                        <ExternalLink className="h-4 w-4 mr-2" />
-                        Register on Meetup
-                      </a>
+                    <Button 
+                      onClick={() => {
+                        // Add session to user activity
+                        toast.success(`Registered for "${session.title}"! Redirecting to Meetup...`);
+                        // Redirect to meetup after a brief delay
+                        setTimeout(() => {
+                          window.open(session.meetupUrl, '_blank', 'noopener,noreferrer');
+                        }, 500);
+                      }}
+                    >
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      Register on Meetup
                     </Button>
                   )}
                   {session.meetingLink && (

@@ -15,9 +15,12 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/contexts/AuthContext';
+import { getCurrentUser } from 'aws-amplify/auth';
 import logo from '@/assets/logo.png';
 import { mockColleges } from '@/data/mockData';
 import { submitMeetupVerification, normalizeMeetupProfileUrl, getMeetupGroupUrl } from '@/lib/meetup';
+import { createUserProfile } from '@/lib/userProfile';
 
 type UserType = 'student' | 'professional';
 
@@ -65,6 +68,8 @@ export default function Signup() {
   const [meetupError, setMeetupError] = useState<string | null>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { signUp, confirmSignUp, resendConfirmationCode, uploadProfilePhoto, signIn } = useAuth();
+  const [userId, setUserId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -91,21 +96,35 @@ export default function Signup() {
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        toast({
-          title: "File too large",
-          description: "Please upload an image smaller than 5MB.",
-          variant: "destructive",
-        });
-        return;
-      }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        updateFormData('profilePhoto', reader.result as string);
-      };
-      reader.readAsDataURL(file);
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast({
+        title: "File too large",
+        description: "Please upload an image smaller than 5MB.",
+        variant: "destructive",
+      });
+      return;
     }
+
+    // Store photo as base64 data URL temporarily
+    // Will upload to S3 after user signs in (in step 5)
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      updateFormData('profilePhoto', reader.result as string);
+      toast({
+        title: "Photo selected!",
+        description: "Your photo will be uploaded after you complete signup.",
+      });
+    };
+    reader.onerror = () => {
+      toast({
+        title: "Error",
+        description: "Failed to read the image file.",
+        variant: "destructive",
+      });
+    };
+    reader.readAsDataURL(file);
   };
 
   const updateFormData = (field: keyof OnboardingData, value: string | boolean) => {
@@ -113,37 +132,63 @@ export default function Signup() {
   };
 
   const handleSendOTP = async () => {
+    if (!formData.name.trim() || !formData.email.trim() || formData.password.length < 8) {
+      toast({
+        title: "Validation error",
+        description: "Please fill in all required fields with a password of at least 8 characters.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsLoading(true);
-    // Simulate sending OTP
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    setOtpSent(true);
-    setIsLoading(false);
-    toast({
-      title: "Verification code sent!",
-      description: `We've sent a 6-digit code to ${formData.email}`,
-    });
+    try {
+      const output = await signUp(formData.email, formData.password, formData.name);
+      setUserId(output.userId);
+      setOtpSent(true);
+      toast({
+        title: "Verification code sent!",
+        description: `We've sent a 6-digit code to ${formData.email}`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Sign up failed",
+        description: error.message || "Failed to create account. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleVerifyOTP = async () => {
+    if (otpValue.length !== 6) {
+      toast({
+        title: "Invalid code",
+        description: "Please enter a valid 6-digit code.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsLoading(true);
-    // Simulate OTP verification (accept any 6-digit code for demo)
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    if (otpValue.length === 6) {
+    try {
+      await confirmSignUp(formData.email, otpValue);
       setOtpVerified(true);
-      setIsLoading(false);
       toast({
         title: "Email verified!",
         description: "Your email has been successfully verified.",
       });
       // Auto-advance to next step (Meetup verification)
       setTimeout(() => setCurrentStep(3), 500);
-    } else {
-      setIsLoading(false);
+    } catch (error: any) {
       toast({
-        title: "Invalid code",
-        description: "Please enter a valid 6-digit code.",
+        title: "Verification failed",
+        description: error.message || "Invalid verification code. Please try again.",
         variant: "destructive",
       });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -201,17 +246,75 @@ export default function Signup() {
   };
 
   const handleSubmit = async () => {
+    if (!userId) {
+      toast({
+        title: "Error",
+        description: "User ID not found. Please start over.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsLoading(true);
-    // Simulate account creation
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    toast({
-      title: "Welcome to AWS User Group!",
-      description: "Your account has been created successfully.",
-    });
-    
-    // Navigate to home
-    navigate('/');
+    try {
+      // Sign in first to get authentication token for API calls
+      await signIn(formData.email, formData.password);
+
+      // Wait a moment for auth session to be ready
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Now create user profile in DynamoDB (with auth token)
+      // Photo is stored as base64 (works without S3 credentials)
+      // Can be uploaded to S3 later from profile page if needed
+      try {
+        await createUserProfile({
+          userId,
+          email: formData.email,
+          name: formData.name,
+          avatar: formData.profilePhoto, // Base64 data URL
+          userType: formData.userType as 'student' | 'professional',
+          meetupEmail: formData.meetupEmail,
+          collegeName: formData.collegeName || undefined,
+          collegeCity: formData.collegeCity || undefined,
+          isCollegeChamp: formData.isCollegeChamp || undefined,
+          champCollegeId: formData.champCollegeId || undefined,
+          designation: formData.designation || undefined,
+          companyName: formData.companyName || undefined,
+          companyCity: formData.companyCity || undefined,
+          country: formData.country || undefined,
+          linkedIn: formData.linkedIn || undefined,
+          github: formData.github || undefined,
+          twitter: formData.twitter || undefined,
+        });
+      } catch (profileError: any) {
+        // If profile creation fails, log but don't block signup
+        // User is already signed in, profile can be created/updated later
+        console.error('Profile creation failed:', profileError);
+        toast({
+          title: "Profile creation warning",
+          description: "You're signed in, but profile creation failed. You can complete your profile later.",
+          variant: "default",
+        });
+      }
+
+      toast({
+        title: "Welcome to AWS User Group!",
+        description: "Your account has been created successfully.",
+      });
+
+      // Navigate to home
+      navigate('/');
+    } catch (error: any) {
+      console.error('Signup error:', error);
+      const errorMessage = error.message || "Failed to create your account. Please try again.";
+      toast({
+        title: "Account creation failed",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const canProceed = () => {
@@ -443,8 +546,23 @@ export default function Signup() {
                       </Button>
                       <button
                         type="button"
-                        onClick={handleSendOTP}
+                        onClick={async () => {
+                          try {
+                            await resendConfirmationCode(formData.email);
+                            toast({
+                              title: "Code resent!",
+                              description: "A new verification code has been sent to your email.",
+                            });
+                          } catch (error: any) {
+                            toast({
+                              title: "Failed to resend",
+                              description: error.message || "Please try again.",
+                              variant: "destructive",
+                            });
+                          }
+                        }}
                         className="w-full text-sm text-muted-foreground hover:text-primary"
+                        disabled={isLoading}
                       >
                         Didn't receive the code? Resend
                       </button>

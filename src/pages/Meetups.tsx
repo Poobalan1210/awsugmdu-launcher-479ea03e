@@ -11,7 +11,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   Calendar, MapPin, Users, Video, Clock, 
-  ArrowLeft, ExternalLink,
+  ArrowLeft, ExternalLink, PlayCircle,
   Linkedin, Github
 } from 'lucide-react';
 import { mockMeetups, Meetup } from '@/data/mockData';
@@ -66,10 +66,10 @@ function MeetupCard({ meetup, onSelect }: { meetup: Meetup; onSelect: () => void
         )}
         <CardContent className="p-5">
           <div className="flex flex-wrap gap-2 mb-3">
-            <Badge variant={meetup.type === 'virtual' ? 'secondary' : meetup.type === 'in-person' ? 'default' : 'outline'}>
+            <Badge variant={meetup.type === 'virtual' ? 'secondary' : 'default'}>
               {meetup.type === 'virtual' && <Video className="h-3 w-3 mr-1" />}
               {meetup.type === 'in-person' && <MapPin className="h-3 w-3 mr-1" />}
-              {meetup.type.charAt(0).toUpperCase() + meetup.type.slice(1)}
+              {meetup.type === 'virtual' ? 'Virtual' : 'In-Person'}
             </Badge>
           </div>
           
@@ -116,8 +116,8 @@ function MeetupCard({ meetup, onSelect }: { meetup: Meetup; onSelect: () => void
             </div>
           )}
 
-          <Button className="w-full" variant={isUpcoming ? 'default' : 'outline'}>
-            {isUpcoming ? 'View & Register' : 'View Details'}
+          <Button className="w-full" variant="outline">
+            View Details
           </Button>
         </CardContent>
       </Card>
@@ -127,6 +127,7 @@ function MeetupCard({ meetup, onSelect }: { meetup: Meetup; onSelect: () => void
 
 function MeetupDetail({ meetup, onBack }: { meetup: Meetup; onBack: () => void }) {
   const eventDate = parseISO(meetup.date);
+  const isUpcoming = !isPast(eventDate);
 
   // Parse markdown or HTML content
   const parsedDescription = useMemo(() => {
@@ -160,10 +161,10 @@ function MeetupDetail({ meetup, onBack }: { meetup: Meetup; onBack: () => void }
       <Card className="glass-card">
         <CardContent className="p-6">
           <div className="flex flex-wrap gap-2 mb-4">
-            <Badge variant="secondary">
+            <Badge variant={meetup.type === 'virtual' ? 'secondary' : 'default'}>
               {meetup.type === 'virtual' && <Video className="h-3 w-3 mr-1" />}
               {meetup.type === 'in-person' && <MapPin className="h-3 w-3 mr-1" />}
-              {meetup.type}
+              {meetup.type === 'virtual' ? 'Virtual' : 'In-Person'}
             </Badge>
           </div>
           
@@ -191,47 +192,78 @@ function MeetupDetail({ meetup, onBack }: { meetup: Meetup; onBack: () => void }
             </div>
           </div>
 
-          {/* Register on Meetup Button */}
-          {meetup.meetupUrl && (
-            <div className="flex flex-wrap gap-4">
-              <Button size="lg" asChild className="gap-2">
-                <a href={meetup.meetupUrl} target="_blank" rel="noopener noreferrer">
-                  <ExternalLink className="h-4 w-4" />
-                  Register on Meetup
-                </a>
-              </Button>
-              {meetup.meetingLink && (
-                <Button variant="outline" size="lg" asChild>
-                  <a href={meetup.meetingLink} target="_blank" rel="noopener noreferrer" className="gap-2">
-                    <ExternalLink className="h-4 w-4" />
-                    Join Meeting
-                  </a>
-                </Button>
-              )}
-            </div>
-          )}
+          {/* Action Buttons - Different for upcoming vs past events and event type */}
+          <div className="flex flex-wrap gap-4">
+            {meetup.type === 'in-person' ? (
+              // In-person events: only meetup links
+              <>
+                {isUpcoming ? (
+                  meetup.meetupUrl && (
+                    <Button size="lg" asChild className="gap-2">
+                      <a href={meetup.meetupUrl} target="_blank" rel="noopener noreferrer">
+                        <ExternalLink className="h-4 w-4" />
+                        Register on Meetup
+                      </a>
+                    </Button>
+                  )
+                ) : (
+                  meetup.meetupUrl && (
+                    <Button size="lg" asChild className="gap-2">
+                      <a href={meetup.meetupUrl} target="_blank" rel="noopener noreferrer">
+                        <ExternalLink className="h-4 w-4" />
+                        View on Meetup
+                      </a>
+                    </Button>
+                  )
+                )}
+              </>
+            ) : (
+              // Virtual events: meetup + meeting/recording links
+              <>
+                {isUpcoming ? (
+                  <>
+                    {meetup.meetupUrl && (
+                      <Button size="lg" asChild className="gap-2">
+                        <a href={meetup.meetupUrl} target="_blank" rel="noopener noreferrer">
+                          <ExternalLink className="h-4 w-4" />
+                          Register on Meetup
+                        </a>
+                      </Button>
+                    )}
+                    {meetup.meetingLink && (
+                      <Button variant="outline" size="lg" asChild className="gap-2">
+                        <a href={meetup.meetingLink} target="_blank" rel="noopener noreferrer">
+                          <Video className="h-4 w-4" />
+                          Join Event
+                        </a>
+                      </Button>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {meetup.meetupUrl && (
+                      <Button size="lg" asChild className="gap-2">
+                        <a href={meetup.meetupUrl} target="_blank" rel="noopener noreferrer">
+                          <ExternalLink className="h-4 w-4" />
+                          View on Meetup
+                        </a>
+                      </Button>
+                    )}
+                    {meetup.meetingLink && (
+                      <Button variant="outline" size="lg" asChild className="gap-2">
+                        <a href={meetup.meetingLink} target="_blank" rel="noopener noreferrer">
+                          <PlayCircle className="h-4 w-4" />
+                          Watch Recording
+                        </a>
+                      </Button>
+                    )}
+                  </>
+                )}
+              </>
+            )}
+          </div>
         </CardContent>
       </Card>
-
-      {/* Rich Description Section - Supports HTML and Markdown */}
-      {parsedDescription && (
-        <Card className="glass-card">
-          <CardContent className="pt-6">
-            <div 
-              className="prose prose-sm max-w-none dark:prose-invert
-                prose-headings:text-foreground prose-headings:font-semibold
-                prose-h2:text-xl prose-h2:mt-0 prose-h2:mb-4
-                prose-h3:text-lg prose-h3:mt-6 prose-h3:mb-3
-                prose-p:text-muted-foreground prose-p:leading-relaxed
-                prose-ul:text-muted-foreground prose-ul:my-4
-                prose-li:my-1
-                prose-strong:text-foreground
-                prose-em:text-muted-foreground"
-              dangerouslySetInnerHTML={{ __html: parsedDescription }}
-            />
-          </CardContent>
-        </Card>
-      )}
 
       {/* Speakers Section */}
       {meetup.speakers.length > 0 && (
@@ -273,6 +305,26 @@ function MeetupDetail({ meetup, onBack }: { meetup: Meetup; onBack: () => void }
                 </div>
               ))}
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Rich Description Section - Supports HTML and Markdown */}
+      {parsedDescription && (
+        <Card className="glass-card">
+          <CardContent className="pt-6">
+            <div 
+              className="prose prose-sm max-w-none dark:prose-invert
+                prose-headings:text-foreground prose-headings:font-semibold
+                prose-h2:text-xl prose-h2:mt-0 prose-h2:mb-4
+                prose-h3:text-lg prose-h3:mt-6 prose-h3:mb-3
+                prose-p:text-muted-foreground prose-p:leading-relaxed
+                prose-ul:text-muted-foreground prose-ul:my-4
+                prose-li:my-1
+                prose-strong:text-foreground
+                prose-em:text-muted-foreground"
+              dangerouslySetInnerHTML={{ __html: parsedDescription }}
+            />
           </CardContent>
         </Card>
       )}

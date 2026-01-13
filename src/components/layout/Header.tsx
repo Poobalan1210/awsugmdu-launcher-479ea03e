@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Menu, X, User, LogOut, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import { useAuth } from '@/contexts/AuthContext';
 import logo from '@/assets/logo.png';
-import { currentUser } from '@/data/mockData';
 
 // Sorted alphabetically with Home first
 const navItems = [{
@@ -28,18 +28,23 @@ const navItems = [{
   name: 'Store',
   path: '/store'
 }];
-interface HeaderProps {
-  isLoggedIn?: boolean;
-  onLogout?: () => void;
-}
-export function Header({
-  isLoggedIn = true,
-  onLogout
-}: HeaderProps) {
+export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const location = useLocation();
-  const isAdmin = currentUser.role === 'admin';
-  const isSpeaker = currentUser.role === 'speaker';
+  const navigate = useNavigate();
+  const { user, isAuthenticated, signOut } = useAuth();
+  
+  const handleLogout = async () => {
+    try {
+      await signOut();
+      navigate('/');
+    } catch (error) {
+      console.error('Logout failed:', error);
+    }
+  };
+
+  const isAdmin = user?.role === 'admin';
+  const isSpeaker = user?.role === 'speaker';
   return <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container mx-auto flex h-16 items-center justify-between px-4">
         {/* Logo */}
@@ -61,29 +66,30 @@ export function Header({
 
         {/* Auth Section */}
         <div className="flex items-center gap-4">
-          {isLoggedIn ? <DropdownMenu>
+          {isAuthenticated && user ? (
+            <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-10 w-10 rounded-full">
                   <Avatar className="h-10 w-10 border-2 border-primary">
-                    <AvatarImage src={currentUser.avatar} alt={currentUser.name} />
-                    <AvatarFallback>{currentUser.name.charAt(0)}</AvatarFallback>
+                    <AvatarImage src={user.avatar} alt={user.name} />
+                    <AvatarFallback>{user.name?.charAt(0) || 'U'}</AvatarFallback>
                   </Avatar>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent className="w-56" align="end">
                 <div className="flex items-center gap-2 p-2">
                   <Avatar className="h-8 w-8">
-                    <AvatarImage src={currentUser.avatar} alt={currentUser.name} />
-                    <AvatarFallback>{currentUser.name.charAt(0)}</AvatarFallback>
+                    <AvatarImage src={user.avatar} alt={user.name} />
+                    <AvatarFallback>{user.name?.charAt(0) || 'U'}</AvatarFallback>
                   </Avatar>
                   <div className="flex flex-col">
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium">{currentUser.name}</p>
+                      <p className="text-sm font-medium">{user.name}</p>
                       <Badge variant="outline" className="text-xs capitalize">
-                        {currentUser.role}
+                        {user.role}
                       </Badge>
                     </div>
-                    <p className="text-xs text-muted-foreground">{currentUser.points} points</p>
+                    <p className="text-xs text-muted-foreground">{user.points} points</p>
                   </div>
                 </div>
                 <DropdownMenuSeparator />
@@ -93,26 +99,31 @@ export function Header({
                     Profile
                   </Link>
                 </DropdownMenuItem>
-                {(isAdmin || isSpeaker) && <DropdownMenuItem asChild>
+                {(isAdmin || isSpeaker) && (
+                  <DropdownMenuItem asChild>
                     <Link to="/admin" className="flex items-center gap-2 cursor-pointer">
                       <Shield className="h-4 w-4" />
                       Admin Panel
                     </Link>
-                  </DropdownMenuItem>}
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={onLogout} className="text-destructive cursor-pointer">
+                <DropdownMenuItem onClick={handleLogout} className="text-destructive cursor-pointer">
                   <LogOut className="h-4 w-4 mr-2" />
                   Log out
                 </DropdownMenuItem>
               </DropdownMenuContent>
-            </DropdownMenu> : <div className="hidden sm:flex items-center gap-2">
+            </DropdownMenu>
+          ) : (
+            <div className="hidden sm:flex items-center gap-2">
               <Button variant="ghost" asChild>
                 <Link to="/login">Log in</Link>
               </Button>
               <Button asChild>
                 <Link to="/signup">Sign up</Link>
               </Button>
-            </div>}
+            </div>
+          )}
 
           {/* Mobile Menu Button */}
           <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
@@ -131,7 +142,8 @@ export function Header({
                 <Shield className="h-4 w-4" />
                 Admin Panel
               </Link>}
-            {!isLoggedIn && <div className="flex flex-col gap-2 pt-4 border-t border-border mt-2">
+            {!isAuthenticated && (
+              <div className="flex flex-col gap-2 pt-4 border-t border-border mt-2">
                 <Button variant="outline" asChild>
                   <Link to="/login" onClick={() => setMobileMenuOpen(false)}>
                     Log in
@@ -142,7 +154,8 @@ export function Header({
                     Sign up
                   </Link>
                 </Button>
-              </div>}
+              </div>
+            )}
           </nav>
         </div>}
     </header>;

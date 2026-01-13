@@ -1,0 +1,10 @@
+# Terraform state files
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.backup
+*.tfvars
+
+# Lambda dependencies and builds
+lambda/*/node_modules/
+lambda/*/*.zip

@@ -893,7 +893,7 @@ export const mockMeetups: Meetup[] = [
 <strong>20:00</strong> - Closing & Next Steps</p>
 
 <p><em>Don't miss this opportunity to learn from certified AWS professionals!</em></p>`,
-    date: '2024-12-15',
+    date: '2025-12-15',
     time: '18:00 IST',
     type: 'hybrid',
     location: 'Tech Hub, Bangalore',
@@ -963,7 +963,7 @@ export const mockMeetups: Meetup[] = [
 <strong>13:00</strong> - Hands-on Lab 2: EKS Setup<br/>
 <strong>14:30</strong> - Advanced Topics & Q&A<br/>
 <strong>15:00</strong> - Wrap Up & Certificates</p>`,
-    date: '2025-01-25',
+    date: '2026-02-25',
     time: '10:00 IST',
     type: 'in-person',
     location: 'AWS Office, Hyderabad',

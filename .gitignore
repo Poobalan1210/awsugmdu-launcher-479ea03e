@@ -1,1 +1,14 @@
 node_modules
+
+# Environment variables
+.env.local
+.env*.local
+
+# Terraform
+infrastructure/terraform/.terraform/
+infrastructure/terraform/.terraform.lock.hcl
+infrastructure/terraform/terraform.tfstate
+infrastructure/terraform/terraform.tfstate.backup
+infrastructure/terraform/*.tfvars
+infrastructure/terraform/lambda/*/node_modules/
+infrastructure/terraform/lambda/*/*.zip

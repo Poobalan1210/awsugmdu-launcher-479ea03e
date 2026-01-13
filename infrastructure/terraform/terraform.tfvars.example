@@ -1,0 +1,12 @@
+# Copy this file to terraform.tfvars and customize the values
+# terraform.tfvars is gitignored, so your values won't be committed
+
+aws_region = "us-east-1"
+environment = "dev"
+project_name = "awsug"
+
+# Add your frontend URLs here (for CORS)
+allowed_cors_origins = [
+  "http://localhost:5173",
+  "https://yourdomain.com"
+]

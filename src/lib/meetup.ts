@@ -72,65 +72,16 @@ export async function submitMeetupVerification(
       return {
         isMember: false,
         isPending: false,
-        error: `The URL you provided is not for AWS User Group Madurai. Please make sure you're copying the membership details URL from the correct group.`,
+        error: `The URL you provided is not for AWS User Group Madurai. Please make sure you're copying the membership details URL from the correct group. Expected group ID: ${MEETUP_GROUP_ID}`,
       };
     }
 
-    // Option 1: If you have a backend API endpoint
-    const backendEndpoint = import.meta.env.VITE_MEETUP_VERIFY_API || '/api/submit-meetup-verification';
-    
-    if (backendEndpoint && backendEndpoint !== '/api/submit-meetup-verification') {
-      const response = await fetch(backendEndpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email,
-          meetupProfileUrl: normalizedUrl,
-          groupUrlname: MEETUP_GROUP_URLNAME,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`API request failed: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      return {
-        isMember: data.isMember || false,
-        isPending: data.isPending || true,
-        meetupName: data.meetupName,
-        meetupId: data.meetupId,
-        meetupProfileUrl: data.meetupProfileUrl || normalizedUrl,
-        error: data.error,
-      };
-    }
-
-    // Option 2: Store locally (for demo/development)
-    // In production, this should be stored in your backend database
-    const verificationData: MeetupVerificationRequest = {
-      email,
-      meetupProfileUrl: normalizedUrl,
-    };
-
-    // Store in localStorage for demo purposes
-    // In production, send to your backend
-    const pendingVerifications = JSON.parse(
-      localStorage.getItem('pendingMeetupVerifications') || '[]'
-    );
-    pendingVerifications.push({
-      ...verificationData,
-      submittedAt: new Date().toISOString(),
-      status: 'pending',
-    });
-    localStorage.setItem('pendingMeetupVerifications', JSON.stringify(pendingVerifications));
-
-    // Since we've verified the group ID matches, we can auto-approve
-    // Or you can set isPending: true if you want manual admin approval
+    // Simple frontend validation - if group ID matches, approve
+    // No Lambda API call needed for this simple validation
     return {
       isMember: true, // Auto-approved since group ID matches
       isPending: false,
+      meetupName: 'AWS User Group Madurai',
       meetupProfileUrl: normalizedUrl,
       error: undefined,
     };

@@ -3,7 +3,16 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Loader2 } from 'lucide-react';
 
 export function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  // TODO: Re-enable authentication check once GUI is completed
+  // Temporarily disabled to allow access to all pages during development
+  const ENABLE_AUTH_CHECK = false;
+  
   const { isAuthenticated, isLoading } = useAuth();
+  
+  // Skip authentication check if disabled
+  if (!ENABLE_AUTH_CHECK) {
+    return <>{children}</>;
+  }
   
   if (isLoading) {
     return (

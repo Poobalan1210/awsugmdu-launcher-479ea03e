@@ -2,6 +2,39 @@
 
 export type UserRole = 'admin' | 'speaker' | 'participant';
 
+// Extended roles for community management
+export type CommunityRole = 'volunteer' | 'organiser' | 'champ' | 'cloud_club_captain' | 'speaker' | 'admin';
+
+export interface UserRoleAssignment {
+  id: string;
+  userId: string;
+  role: CommunityRole;
+  assignedAt: string;
+  assignedBy: string;
+}
+
+// Role metadata for display
+export const communityRoles: { value: CommunityRole; label: string; description: string; color: string; icon: string }[] = [
+  { value: 'volunteer', label: 'Volunteer', description: 'Helps with event organization and community activities', color: 'bg-blue-500', icon: '🙋' },
+  { value: 'organiser', label: 'Organiser', description: 'Organizes and manages community events', color: 'bg-purple-500', icon: '📋' },
+  { value: 'champ', label: 'Champ', description: 'Community champion and active contributor', color: 'bg-amber-500', icon: '🏆' },
+  { value: 'cloud_club_captain', label: 'Cloud Club Captain', description: 'Leads college cloud clubs and student initiatives', color: 'bg-emerald-500', icon: '☁️' },
+  { value: 'speaker', label: 'Speaker', description: 'Delivers sessions and talks at events', color: 'bg-rose-500', icon: '🎤' },
+  { value: 'admin', label: 'Admin', description: 'Full administrative access to the platform', color: 'bg-red-600', icon: '👑' },
+];
+
+// Mock user role assignments
+export const mockUserRoles: UserRoleAssignment[] = [
+  { id: 'ur1', userId: 'admin1', role: 'admin', assignedAt: '2023-01-01', assignedBy: 'system' },
+  { id: 'ur2', userId: 'admin1', role: 'organiser', assignedAt: '2023-01-01', assignedBy: 'system' },
+  { id: 'ur3', userId: '1', role: 'speaker', assignedAt: '2024-01-15', assignedBy: 'admin1' },
+  { id: 'ur4', userId: '1', role: 'organiser', assignedAt: '2024-02-01', assignedBy: 'admin1' },
+  { id: 'ur5', userId: '2', role: 'speaker', assignedAt: '2024-02-20', assignedBy: 'admin1' },
+  { id: 'ur6', userId: '3', role: 'volunteer', assignedAt: '2024-03-01', assignedBy: 'admin1' },
+  { id: 'ur7', userId: '5', role: 'champ', assignedAt: '2024-04-15', assignedBy: 'admin1' },
+  { id: 'ur8', userId: '6', role: 'cloud_club_captain', assignedAt: '2024-05-01', assignedBy: 'admin1' },
+];
+
 export interface User {
   id: string;
   name: string;

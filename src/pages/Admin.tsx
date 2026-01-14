@@ -12,14 +12,15 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { 
   Plus, Calendar, Users, CheckCircle, XCircle, Clock,
   Rocket, ExternalLink, MessageSquare, Award, Link2,
   Copy, Mail, Edit, Trash2, Eye, FileText, User, Video,
   Upload, X, UserPlus, Check, ChevronDown, GraduationCap,
-  Trophy, ListTodo, ClipboardCheck, Target
+  Trophy, ListTodo, ClipboardCheck, Target, Shield, UserCog
 } from 'lucide-react';
-import { mockSprints, mockMeetups, currentUser, Submission, generateSpeakerInviteLink, Sprint, Session, SessionPerson, mockUsers, User as UserType, predefinedTasks, mockColleges, CollegeTask, College, getTaskById, getUserById } from '@/data/mockData';
+import { mockSprints, mockMeetups, currentUser, Submission, generateSpeakerInviteLink, Sprint, Session, SessionPerson, mockUsers, User as UserType, predefinedTasks, mockColleges, CollegeTask, College, getTaskById, getUserById, communityRoles, mockUserRoles, CommunityRole, UserRoleAssignment } from '@/data/mockData';
 import { Progress } from '@/components/ui/progress';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
@@ -1775,6 +1776,217 @@ function CollegeChampsTab() {
   );
 }
 
+// Role Management Tab Component
+function RoleManagementTab() {
+  const [userRoles, setUserRoles] = useState<UserRoleAssignment[]>(mockUserRoles);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedUser, setSelectedUser] = useState<UserType | null>(null);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+
+  const filteredUsers = mockUsers.filter(user => 
+    user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    user.email.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const getUserRoles = (userId: string): CommunityRole[] => {
+    return userRoles.filter(ur => ur.userId === userId).map(ur => ur.role);
+  };
+
+  const handleToggleRole = (userId: string, role: CommunityRole) => {
+    const existingRoleAssignment = userRoles.find(ur => ur.userId === userId && ur.role === role);
+    
+    if (existingRoleAssignment) {
+      // Remove role
+      setUserRoles(prev => prev.filter(ur => !(ur.userId === userId && ur.role === role)));
+      toast.success(`Removed ${role} role`);
+    } else {
+      // Add role
+      const newAssignment: UserRoleAssignment = {
+        id: `ur-${Date.now()}`,
+        userId,
+        role,
+        assignedAt: new Date().toISOString().split('T')[0],
+        assignedBy: currentUser.id
+      };
+      setUserRoles(prev => [...prev, newAssignment]);
+      toast.success(`Assigned ${role} role`);
+    }
+  };
+
+  const getRoleInfo = (role: CommunityRole) => {
+    return communityRoles.find(r => r.value === role);
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card className="glass-card">
+        <CardHeader>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Shield className="h-5 w-5 text-primary" />
+                Role Management
+              </CardTitle>
+              <CardDescription>Assign and manage user roles across the community</CardDescription>
+            </div>
+            <Input
+              placeholder="Search users..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="max-w-xs"
+            />
+          </div>
+        </CardHeader>
+        <CardContent>
+          {/* Role Legend */}
+          <div className="flex flex-wrap gap-2 mb-6 p-4 bg-muted/50 rounded-lg">
+            <span className="text-sm font-medium text-muted-foreground mr-2">Available Roles:</span>
+            {communityRoles.map(role => (
+              <Badge key={role.value} variant="outline" className="gap-1">
+                <span>{role.icon}</span>
+                {role.label}
+              </Badge>
+            ))}
+          </div>
+
+          {/* Users Table */}
+          <div className="rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>User</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Current Roles</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredUsers.map(user => {
+                  const roles = getUserRoles(user.id);
+                  return (
+                    <TableRow key={user.id}>
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-9 w-9">
+                            <AvatarImage src={user.avatar} />
+                            <AvatarFallback>{user.name.charAt(0)}</AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <p className="font-medium">{user.name}</p>
+                            <p className="text-xs text-muted-foreground">{user.designation}</p>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {user.email}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-1">
+                          {roles.length > 0 ? (
+                            roles.map(role => {
+                              const roleInfo = getRoleInfo(role);
+                              return (
+                                <Badge 
+                                  key={role} 
+                                  variant="secondary"
+                                  className="gap-1"
+                                >
+                                  <span>{roleInfo?.icon}</span>
+                                  {roleInfo?.label}
+                                </Badge>
+                              );
+                            })
+                          ) : (
+                            <span className="text-sm text-muted-foreground">No roles assigned</span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Dialog open={isDialogOpen && selectedUser?.id === user.id} onOpenChange={(open) => {
+                          setIsDialogOpen(open);
+                          if (!open) setSelectedUser(null);
+                        }}>
+                          <DialogTrigger asChild>
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => {
+                                setSelectedUser(user);
+                                setIsDialogOpen(true);
+                              }}
+                              className="gap-1"
+                            >
+                              <UserCog className="h-4 w-4" />
+                              Manage Roles
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent>
+                            <DialogHeader>
+                              <DialogTitle>Manage Roles for {user.name}</DialogTitle>
+                              <DialogDescription>
+                                Toggle roles on or off for this user. Changes are saved automatically.
+                              </DialogDescription>
+                            </DialogHeader>
+                            <div className="py-4">
+                              <div className="flex items-center gap-3 mb-6 p-4 bg-muted/50 rounded-lg">
+                                <Avatar className="h-12 w-12">
+                                  <AvatarImage src={user.avatar} />
+                                  <AvatarFallback>{user.name.charAt(0)}</AvatarFallback>
+                                </Avatar>
+                                <div>
+                                  <p className="font-medium">{user.name}</p>
+                                  <p className="text-sm text-muted-foreground">{user.email}</p>
+                                </div>
+                              </div>
+                              <div className="space-y-3">
+                                {communityRoles.map(role => {
+                                  const hasRole = roles.includes(role.value);
+                                  return (
+                                    <div 
+                                      key={role.value}
+                                      className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${hasRole ? 'bg-primary/10 border-primary' : 'hover:bg-muted/50'}`}
+                                    >
+                                      <div className="flex items-center gap-3">
+                                        <span className="text-xl">{role.icon}</span>
+                                        <div>
+                                          <p className="font-medium">{role.label}</p>
+                                          <p className="text-xs text-muted-foreground">{role.description}</p>
+                                        </div>
+                                      </div>
+                                      <Button
+                                        variant={hasRole ? "default" : "outline"}
+                                        size="sm"
+                                        onClick={() => handleToggleRole(user.id, role.value)}
+                                      >
+                                        {hasRole ? (
+                                          <>
+                                            <Check className="h-4 w-4 mr-1" />
+                                            Assigned
+                                          </>
+                                        ) : (
+                                          'Assign'
+                                        )}
+                                      </Button>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </DialogContent>
+                        </Dialog>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 export default function Admin() {
   const [activeTab, setActiveTab] = useState('submissions');
   const isAdmin = currentUser.role === 'admin';
@@ -1884,6 +2096,10 @@ export default function Admin() {
                   <TabsTrigger value="college-champs" className="gap-2">
                     <GraduationCap className="h-4 w-4" />
                     College Champs
+                  </TabsTrigger>
+                  <TabsTrigger value="role-management" className="gap-2">
+                    <Shield className="h-4 w-4" />
+                    Roles
                   </TabsTrigger>
                 </>
               )}
@@ -2077,6 +2293,10 @@ export default function Admin() {
 
                 <TabsContent value="college-champs">
                   <CollegeChampsTab />
+                </TabsContent>
+
+                <TabsContent value="role-management">
+                  <RoleManagementTab />
                 </TabsContent>
               </>
             )}

@@ -14,7 +14,7 @@ import {
   Linkedin, Github, Twitter, ExternalLink, Building, User,
   Mic, BookOpen, CheckCircle, Clock, Award, Shield
 } from 'lucide-react';
-import { currentUser, mockSprints, mockBadges, getUserById, mockUsers, mockMeetups, mockColleges } from '@/data/mockData';
+import { currentUser, mockSprints, mockBadges, getUserById, mockUsers, mockMeetups, mockColleges, mockUserRoles, communityRoles, CommunityRole } from '@/data/mockData';
 import { format, parseISO } from 'date-fns';
 
 export default function Profile() {
@@ -58,8 +58,14 @@ export default function Profile() {
   const isChampCaptain = mockColleges.some(college => college.champsLeadId === user.id);
   const champCollege = mockColleges.find(college => college.champsLeadId === user.id);
 
-  // Check if user is an organiser (admin role)
-  const isOrganiser = user.role === 'admin';
+  // Get user's community roles
+  const userCommunityRoles = mockUserRoles
+    .filter(ur => ur.userId === user.id)
+    .map(ur => ur.role);
+
+  const getRoleInfo = (role: CommunityRole) => {
+    return communityRoles.find(r => r.value === role);
+  };
 
   const activitySummary = {
     sprintsCompleted: userSprintsParticipated.filter(s => s.status === 'completed').length,
@@ -226,20 +232,45 @@ export default function Profile() {
                 
                 <div className="flex-1 text-center md:text-left">
                   <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 mb-2">
-                    <Badge variant="outline" className="capitalize">{user.role}</Badge>
-                    {isOrganiser && (
-                      <Badge className="bg-purple-500/10 text-purple-600 border-purple-500/30 hover:bg-purple-500/20">
-                        <Shield className="h-3 w-3 mr-1" />
-                        Organiser
-                      </Badge>
-                    )}
-                    {isChampCaptain && (
+                    <h1 className="text-2xl md:text-3xl font-bold">{user.name}</h1>
+                  </div>
+                  
+                  {/* Community Roles */}
+                  {userCommunityRoles.length > 0 && (
+                    <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 mb-3">
+                      {userCommunityRoles.map(role => {
+                        const roleInfo = getRoleInfo(role);
+                        if (!roleInfo) return null;
+                        return (
+                          <Badge 
+                            key={role}
+                            className={`${
+                              role === 'admin' ? 'bg-red-500/10 text-red-600 border-red-500/30 hover:bg-red-500/20' :
+                              role === 'organiser' ? 'bg-purple-500/10 text-purple-600 border-purple-500/30 hover:bg-purple-500/20' :
+                              role === 'speaker' ? 'bg-rose-500/10 text-rose-600 border-rose-500/30 hover:bg-rose-500/20' :
+                              role === 'champ' ? 'bg-amber-500/10 text-amber-600 border-amber-500/30 hover:bg-amber-500/20' :
+                              role === 'volunteer' ? 'bg-blue-500/10 text-blue-600 border-blue-500/30 hover:bg-blue-500/20' :
+                              role === 'cloud_club_captain' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/20' :
+                              ''
+                            }`}
+                          >
+                            <span className="mr-1">{roleInfo.icon}</span>
+                            {roleInfo.label}
+                          </Badge>
+                        );
+                      })}
+                    </div>
+                  )}
+                  
+                  {/* Champ Captain badge from college lead */}
+                  {isChampCaptain && !userCommunityRoles.includes('champ') && (
+                    <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 mb-3">
                       <Badge className="bg-amber-500/10 text-amber-600 border-amber-500/30 hover:bg-amber-500/20">
                         <Award className="h-3 w-3 mr-1" />
                         Champ Captain
                       </Badge>
-                    )}
-                  </div>
+                    </div>
+                  )}
                   
                   {user.designation && (
                     <div className="flex items-center justify-center md:justify-start gap-2 text-muted-foreground mb-2">

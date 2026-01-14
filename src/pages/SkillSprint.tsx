@@ -515,20 +515,6 @@ function SprintDetail({ sprint, onBack }: { sprint: Sprint; onBack: () => void }
           )}
         </div>
 
-        {sprint.status !== 'completed' && (
-          <div className="mt-6 flex gap-3">
-            <Button size="lg" onClick={() => setJoinDialogOpen(true)}>
-              <Rocket className="h-4 w-4 mr-2" />
-              {isRegistered ? 'Already Joined' : 'Join This Sprint'}
-            </Button>
-            {isRegistered && (
-              <Badge variant="secondary" className="flex items-center gap-1 px-4">
-                <CheckCircle className="h-4 w-4" />
-                Registered
-              </Badge>
-            )}
-          </div>
-        )}
       </div>
 
       <JoinSprintDialog 

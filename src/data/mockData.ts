@@ -1014,7 +1014,7 @@ export const mockMeetups: Meetup[] = [
 <strong>16:30</strong> - Closing & Lucky Draw</p>
 
 <p><em>Join us for an unforgettable day of cloud learning!</em></p>`,
-    date: '2025-02-15',
+    date: '2026-02-15',
     time: '09:00 IST',
     type: 'hybrid',
     location: 'Convention Center, Chennai',
@@ -1055,7 +1055,7 @@ export const mockMeetups: Meetup[] = [
 </ul>
 
 <p>Whether you're just starting your certification journey or looking for study partners, this group is for you!</p>`,
-    date: '2025-01-10',
+    date: '2026-01-20',
     time: '19:00 IST',
     type: 'virtual',
     meetingLink: 'https://meet.example.com/study-group',

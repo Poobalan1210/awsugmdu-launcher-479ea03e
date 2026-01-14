@@ -56,15 +56,21 @@ function SprintCard({ sprint, onSelect }: { sprint: Sprint; onSelect: () => void
             {sprint.description}
           </p>
           
-          <div className="flex items-center gap-4 text-sm text-muted-foreground">
-            <div className="flex items-center gap-1">
-              <Users className="h-4 w-4" />
-              {sprint.participants}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4 text-sm text-muted-foreground">
+              <div className="flex items-center gap-1">
+                <Users className="h-4 w-4" />
+                {sprint.participants}
+              </div>
+              <div className="flex items-center gap-1">
+                <Video className="h-4 w-4" />
+                {sprint.sessions.length} sessions
+              </div>
             </div>
-            <div className="flex items-center gap-1">
-              <Video className="h-4 w-4" />
-              {sprint.sessions.length} sessions
-            </div>
+            <Button size="sm" variant="outline" className="gap-1">
+              View Details
+              <ChevronRight className="h-4 w-4" />
+            </Button>
           </div>
         </CardContent>
       </Card>

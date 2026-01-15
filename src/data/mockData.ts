@@ -3,7 +3,7 @@
 export type UserRole = 'admin' | 'speaker' | 'participant';
 
 // Extended roles for community management
-export type CommunityRole = 'volunteer' | 'organiser' | 'champ' | 'cloud_club_captain' | 'speaker' | 'admin';
+export type CommunityRole = 'member' | 'volunteer' | 'organiser' | 'champ' | 'cloud_club_captain' | 'speaker' | 'admin';
 
 export interface UserRoleAssignment {
   id: string;
@@ -13,8 +13,20 @@ export interface UserRoleAssignment {
   assignedBy: string;
 }
 
+// Activity tracking for points
+export interface PointActivity {
+  id: string;
+  userId: string;
+  points: number;
+  reason: string;
+  type: 'adhoc' | 'submission' | 'badge' | 'event';
+  awardedBy?: string;
+  awardedAt: string;
+}
+
 // Role metadata for display
 export const communityRoles: { value: CommunityRole; label: string; description: string; color: string; icon: string }[] = [
+  { value: 'member', label: 'Member', description: 'Community member with basic access', color: 'bg-gray-500', icon: '👤' },
   { value: 'volunteer', label: 'Volunteer', description: 'Helps with event organization and community activities', color: 'bg-blue-500', icon: '🙋' },
   { value: 'organiser', label: 'Organiser', description: 'Organizes and manages community events', color: 'bg-purple-500', icon: '📋' },
   { value: 'champ', label: 'Champ', description: 'Community champion and active contributor', color: 'bg-amber-500', icon: '🏆' },
@@ -23,8 +35,21 @@ export const communityRoles: { value: CommunityRole; label: string; description:
   { value: 'admin', label: 'Admin', description: 'Full administrative access to the platform', color: 'bg-red-600', icon: '👑' },
 ];
 
-// Mock user role assignments
+// Mock user role assignments - all users get 'member' role by default
 export const mockUserRoles: UserRoleAssignment[] = [
+  // Default member roles for all users
+  { id: 'ur-m1', userId: 'admin1', role: 'member', assignedAt: '2023-01-01', assignedBy: 'system' },
+  { id: 'ur-m2', userId: '1', role: 'member', assignedAt: '2024-01-15', assignedBy: 'system' },
+  { id: 'ur-m3', userId: '2', role: 'member', assignedAt: '2024-02-20', assignedBy: 'system' },
+  { id: 'ur-m4', userId: '3', role: 'member', assignedAt: '2024-01-10', assignedBy: 'system' },
+  { id: 'ur-m5', userId: '4', role: 'member', assignedAt: '2024-03-05', assignedBy: 'system' },
+  { id: 'ur-m6', userId: '5', role: 'member', assignedAt: '2024-04-12', assignedBy: 'system' },
+  { id: 'ur-m7', userId: '6', role: 'member', assignedAt: '2024-05-01', assignedBy: 'system' },
+  { id: 'ur-m8', userId: '7', role: 'member', assignedAt: '2024-06-18', assignedBy: 'system' },
+  { id: 'ur-m9', userId: '8', role: 'member', assignedAt: '2024-02-28', assignedBy: 'system' },
+  { id: 'ur-m10', userId: '9', role: 'member', assignedAt: '2024-07-22', assignedBy: 'system' },
+  { id: 'ur-m11', userId: '10', role: 'member', assignedAt: '2024-08-10', assignedBy: 'system' },
+  // Additional roles
   { id: 'ur1', userId: 'admin1', role: 'admin', assignedAt: '2023-01-01', assignedBy: 'system' },
   { id: 'ur2', userId: 'admin1', role: 'organiser', assignedAt: '2023-01-01', assignedBy: 'system' },
   { id: 'ur3', userId: '1', role: 'speaker', assignedAt: '2024-01-15', assignedBy: 'admin1' },
@@ -33,6 +58,14 @@ export const mockUserRoles: UserRoleAssignment[] = [
   { id: 'ur6', userId: '3', role: 'volunteer', assignedAt: '2024-03-01', assignedBy: 'admin1' },
   { id: 'ur7', userId: '5', role: 'champ', assignedAt: '2024-04-15', assignedBy: 'admin1' },
   { id: 'ur8', userId: '6', role: 'cloud_club_captain', assignedAt: '2024-05-01', assignedBy: 'admin1' },
+];
+
+// Mock point activities
+export const mockPointActivities: PointActivity[] = [
+  { id: 'pa1', userId: '1', points: 100, reason: 'Sprint submission approved', type: 'submission', awardedAt: '2024-06-15' },
+  { id: 'pa2', userId: '1', points: 50, reason: 'Community contribution', type: 'adhoc', awardedBy: 'admin1', awardedAt: '2024-07-01' },
+  { id: 'pa3', userId: '2', points: 150, reason: 'Speaker session delivered', type: 'event', awardedAt: '2024-06-20' },
+  { id: 'pa4', userId: '3', points: 25, reason: 'Helped with event setup', type: 'adhoc', awardedBy: 'admin1', awardedAt: '2024-07-10' },
 ];
 
 export interface User {

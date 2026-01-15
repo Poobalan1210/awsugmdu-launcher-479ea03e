@@ -1897,7 +1897,6 @@ function MembersTab() {
                 <TableRow>
                   <TableHead>Member</TableHead>
                   <TableHead>Contact</TableHead>
-                  <TableHead>Roles</TableHead>
                   <TableHead>Points</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -1925,27 +1924,6 @@ function MembersTab() {
                           <p className="text-muted-foreground">{user.email}</p>
                           {user.company && (
                             <p className="text-xs text-muted-foreground">{user.company}</p>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-1">
-                          {roles.length > 0 ? (
-                            roles.map(role => {
-                              const roleInfo = getRoleInfo(role);
-                              return (
-                                <Badge 
-                                  key={role} 
-                                  variant="secondary"
-                                  className="gap-1"
-                                >
-                                  <span>{roleInfo?.icon}</span>
-                                  {roleInfo?.label}
-                                </Badge>
-                              );
-                            })
-                          ) : (
-                            <span className="text-sm text-muted-foreground">—</span>
                           )}
                         </div>
                       </TableCell>
@@ -2004,75 +1982,56 @@ function MembersTab() {
                                 </div>
                               </div>
 
-                              {/* Role Management Section */}
+                              {/* Current Roles */}
                               <div>
                                 <h4 className="font-medium mb-3 flex items-center gap-2">
                                   <Shield className="h-4 w-4 text-primary" />
-                                  Manage Roles
+                                  Assigned Roles
                                 </h4>
-                                <div className="space-y-2">
-                                  {communityRoles.map(role => {
-                                    const hasRole = roles.includes(role.value);
-                                    const isMemberRole = role.value === 'member';
-                                    return (
-                                      <div 
-                                        key={role.value}
-                                        className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${hasRole ? 'bg-primary/10 border-primary' : 'hover:bg-muted/50'}`}
-                                      >
-                                        <div className="flex items-center gap-3">
-                                          <span className="text-xl">{role.icon}</span>
-                                          <div>
-                                            <p className="font-medium text-sm">{role.label}</p>
-                                            <p className="text-xs text-muted-foreground">{role.description}</p>
-                                          </div>
-                                        </div>
-                                        <Button
-                                          variant={hasRole ? "default" : "outline"}
-                                          size="sm"
-                                          onClick={() => handleToggleRole(user.id, role.value)}
-                                          disabled={isMemberRole && hasRole}
-                                        >
-                                          {hasRole ? (
-                                            <>
-                                              <Check className="h-4 w-4 mr-1" />
-                                              {isMemberRole ? 'Default' : 'Assigned'}
-                                            </>
-                                          ) : (
-                                            'Assign'
-                                          )}
-                                        </Button>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-
-                              {/* Points Activity Section */}
-                              <div>
-                                <h4 className="font-medium mb-3 flex items-center gap-2">
-                                  <Award className="h-4 w-4 text-amber-500" />
-                                  Points Activity
-                                </h4>
-                                <div className="space-y-2 max-h-40 overflow-y-auto">
-                                  {getUserActivities(user.id).length > 0 ? (
-                                    getUserActivities(user.id).map(activity => (
-                                      <div key={activity.id} className="flex items-center justify-between p-2 bg-muted/30 rounded text-sm">
-                                        <div className="flex-1">
-                                          <p className="font-medium">{activity.reason}</p>
-                                          <p className="text-xs text-muted-foreground">
-                                            {format(parseISO(activity.awardedAt), 'MMM d, yyyy')}
-                                            {activity.type === 'adhoc' && ' • Ad-hoc award'}
-                                          </p>
-                                        </div>
-                                        <Badge variant="outline" className="text-green-600 border-green-600">
-                                          +{activity.points}
+                                <div className="flex flex-wrap gap-2 mb-3">
+                                  {roles.filter(r => r !== 'member').length > 0 ? (
+                                    roles.filter(r => r !== 'member').map(role => {
+                                      const roleInfo = getRoleInfo(role);
+                                      return (
+                                        <Badge key={role} variant="secondary" className="gap-1">
+                                          <span>{roleInfo?.icon}</span>
+                                          {roleInfo?.label}
                                         </Badge>
-                                      </div>
-                                    ))
+                                      );
+                                    })
                                   ) : (
-                                    <p className="text-sm text-muted-foreground text-center py-4">No activity recorded yet</p>
+                                    <p className="text-sm text-muted-foreground">No special roles assigned</p>
                                   )}
                                 </div>
+                                <Popover>
+                                  <PopoverTrigger asChild>
+                                    <Button variant="outline" size="sm" className="gap-2 w-full justify-between">
+                                      <div className="flex items-center gap-1 flex-wrap">
+                                        <UserCog className="h-4 w-4" />
+                                        <span>Manage Roles</span>
+                                      </div>
+                                      <ChevronDown className="h-4 w-4 opacity-50" />
+                                    </Button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-56 p-1" align="start">
+                                    {communityRoles.filter(r => r.value !== 'member').map(role => {
+                                      const hasRole = roles.includes(role.value);
+                                      return (
+                                        <Button
+                                          key={role.value}
+                                          variant="ghost"
+                                          size="sm"
+                                          className={`w-full justify-start gap-2 ${hasRole ? 'bg-primary/10' : ''}`}
+                                          onClick={() => handleToggleRole(user.id, role.value)}
+                                        >
+                                          {hasRole && <Check className="h-4 w-4" />}
+                                          <span>{role.icon}</span>
+                                          <span>{role.label}</span>
+                                        </Button>
+                                      );
+                                    })}
+                                  </PopoverContent>
+                                </Popover>
                               </div>
 
                               {/* Additional Actions */}

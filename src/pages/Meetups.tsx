@@ -16,6 +16,8 @@ import {
 } from 'lucide-react';
 import { mockMeetups, Meetup } from '@/data/mockData';
 import { format, parseISO, isPast } from 'date-fns';
+import { getMeetups } from '@/lib/meetups';
+import { useQuery } from '@tanstack/react-query';
 
 // Configure marked for safe HTML rendering
 marked.setOptions({
@@ -56,11 +58,11 @@ function MeetupCard({ meetup, onSelect }: { meetup: Meetup; onSelect: () => void
     <motion.div variants={cardVariants} whileHover={{ y: -5 }}>
       <Card className="glass-card h-full overflow-hidden cursor-pointer" onClick={onSelect}>
         {meetup.image && (
-          <div className="h-40 overflow-hidden">
+          <div className="h-64 overflow-hidden bg-muted/20 flex items-center justify-center">
             <img 
               src={meetup.image} 
               alt={meetup.title} 
-              className="w-full h-full object-cover transition-transform duration-300 hover:scale-105"
+              className="w-full h-full object-contain transition-transform duration-300 hover:scale-105"
             />
           </div>
         )}
@@ -146,124 +148,135 @@ function MeetupDetail({ meetup, onBack }: { meetup: Meetup; onBack: () => void }
         Back to Meetups
       </Button>
 
-      {/* Event Poster - Full width, separate from content */}
-      {meetup.image && (
-        <div className="rounded-xl overflow-hidden">
-          <img 
-            src={meetup.image} 
-            alt={meetup.title} 
-            className="w-full h-auto object-contain"
-          />
-        </div>
-      )}
-
-      {/* Event Details Card - Below the poster */}
-      <Card className="glass-card">
-        <CardContent className="p-6">
-          <div className="flex flex-wrap gap-2 mb-4">
-            <Badge variant={meetup.type === 'virtual' ? 'secondary' : 'default'}>
-              {meetup.type === 'virtual' && <Video className="h-3 w-3 mr-1" />}
-              {meetup.type === 'in-person' && <MapPin className="h-3 w-3 mr-1" />}
-              {meetup.type === 'virtual' ? 'Virtual' : 'In-Person'}
-            </Badge>
-          </div>
-          
-          <h1 className="text-2xl md:text-3xl font-bold mb-4">{meetup.title}</h1>
-          <p className="text-muted-foreground mb-6">{meetup.description}</p>
-          
-          <div className="flex flex-wrap gap-6 text-sm mb-6">
-            <div className="flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-primary" />
-              {format(eventDate, 'EEEE, MMMM d, yyyy')}
-            </div>
-            <div className="flex items-center gap-2">
-              <Clock className="h-4 w-4 text-primary" />
-              {meetup.time}
-            </div>
-            {meetup.location && (
-              <div className="flex items-center gap-2">
-                <MapPin className="h-4 w-4 text-primary" />
-                {meetup.location}
+      {/* Two-column layout: Content on left, Poster on right */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Left Column: Event Details */}
+        <div className="lg:col-span-2 space-y-6">
+          <Card className="glass-card">
+            <CardContent className="p-6">
+              <div className="flex flex-wrap gap-2 mb-4">
+                <Badge variant={meetup.type === 'virtual' ? 'secondary' : 'default'}>
+                  {meetup.type === 'virtual' && <Video className="h-3 w-3 mr-1" />}
+                  {meetup.type === 'in-person' && <MapPin className="h-3 w-3 mr-1" />}
+                  {meetup.type === 'virtual' ? 'Virtual' : 'In-Person'}
+                </Badge>
               </div>
-            )}
-            <div className="flex items-center gap-2">
-              <Users className="h-4 w-4 text-primary" />
-              {meetup.attendees} registered
-            </div>
-          </div>
+              
+              <h1 className="text-2xl md:text-3xl font-bold mb-4">{meetup.title}</h1>
+              <p className="text-muted-foreground mb-6">{meetup.description}</p>
+              
+              <div className="flex flex-wrap gap-6 text-sm mb-6">
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-primary" />
+                  {format(eventDate, 'EEEE, MMMM d, yyyy')}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-primary" />
+                  {meetup.time}
+                </div>
+                {meetup.location && (
+                  <div className="flex items-center gap-2">
+                    <MapPin className="h-4 w-4 text-primary" />
+                    {meetup.location}
+                  </div>
+                )}
+                <div className="flex items-center gap-2">
+                  <Users className="h-4 w-4 text-primary" />
+                  {meetup.attendees} registered
+                </div>
+              </div>
 
-          {/* Action Buttons - Different for upcoming vs past events and event type */}
-          <div className="flex flex-wrap gap-4">
-            {meetup.type === 'in-person' ? (
-              // In-person events: only meetup links
-              <>
-                {isUpcoming ? (
-                  meetup.meetupUrl && (
-                    <Button size="lg" asChild className="gap-2">
-                      <a href={meetup.meetupUrl} target="_blank" rel="noopener noreferrer">
-                        <ExternalLink className="h-4 w-4" />
-                        Register on Meetup
-                      </a>
-                    </Button>
-                  )
-                ) : (
-                  meetup.meetupUrl && (
-                    <Button size="lg" asChild className="gap-2">
-                      <a href={meetup.meetupUrl} target="_blank" rel="noopener noreferrer">
-                        <ExternalLink className="h-4 w-4" />
-                        View on Meetup
-                      </a>
-                    </Button>
-                  )
-                )}
-              </>
-            ) : (
-              // Virtual events: meetup + meeting/recording links
-              <>
-                {isUpcoming ? (
+              {/* Action Buttons - Different for upcoming vs past events and event type */}
+              <div className="flex flex-wrap gap-4">
+                {meetup.type === 'in-person' ? (
+                  // In-person events: only meetup links
                   <>
-                    {meetup.meetupUrl && (
-                      <Button size="lg" asChild className="gap-2">
-                        <a href={meetup.meetupUrl} target="_blank" rel="noopener noreferrer">
-                          <ExternalLink className="h-4 w-4" />
-                          Register on Meetup
-                        </a>
-                      </Button>
-                    )}
-                    {meetup.meetingLink && (
-                      <Button variant="outline" size="lg" asChild className="gap-2">
-                        <a href={meetup.meetingLink} target="_blank" rel="noopener noreferrer">
-                          <Video className="h-4 w-4" />
-                          Join Event
-                        </a>
-                      </Button>
+                    {isUpcoming ? (
+                      meetup.meetupUrl && (
+                        <Button size="lg" asChild className="gap-2">
+                          <a href={meetup.meetupUrl} target="_blank" rel="noopener noreferrer">
+                            <ExternalLink className="h-4 w-4" />
+                            Register on Meetup
+                          </a>
+                        </Button>
+                      )
+                    ) : (
+                      meetup.meetupUrl && (
+                        <Button size="lg" asChild className="gap-2">
+                          <a href={meetup.meetupUrl} target="_blank" rel="noopener noreferrer">
+                            <ExternalLink className="h-4 w-4" />
+                            View on Meetup
+                          </a>
+                        </Button>
+                      )
                     )}
                   </>
                 ) : (
+                  // Virtual events: meetup + meeting/recording links
                   <>
-                    {meetup.meetupUrl && (
-                      <Button size="lg" asChild className="gap-2">
-                        <a href={meetup.meetupUrl} target="_blank" rel="noopener noreferrer">
-                          <ExternalLink className="h-4 w-4" />
-                          View on Meetup
-                        </a>
-                      </Button>
-                    )}
-                    {meetup.meetingLink && (
-                      <Button variant="outline" size="lg" asChild className="gap-2">
-                        <a href={meetup.meetingLink} target="_blank" rel="noopener noreferrer">
-                          <PlayCircle className="h-4 w-4" />
-                          Watch Recording
-                        </a>
-                      </Button>
+                    {isUpcoming ? (
+                      <>
+                        {meetup.meetupUrl && (
+                          <Button size="lg" asChild className="gap-2">
+                            <a href={meetup.meetupUrl} target="_blank" rel="noopener noreferrer">
+                              <ExternalLink className="h-4 w-4" />
+                              Register on Meetup
+                            </a>
+                          </Button>
+                        )}
+                        {meetup.meetingLink && (
+                          <Button variant="outline" size="lg" asChild className="gap-2">
+                            <a href={meetup.meetingLink} target="_blank" rel="noopener noreferrer">
+                              <Video className="h-4 w-4" />
+                              Join Event
+                            </a>
+                          </Button>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        {meetup.meetupUrl && (
+                          <Button size="lg" asChild className="gap-2">
+                            <a href={meetup.meetupUrl} target="_blank" rel="noopener noreferrer">
+                              <ExternalLink className="h-4 w-4" />
+                              View on Meetup
+                            </a>
+                          </Button>
+                        )}
+                        {meetup.meetingLink && (
+                          <Button variant="outline" size="lg" asChild className="gap-2">
+                            <a href={meetup.meetingLink} target="_blank" rel="noopener noreferrer">
+                              <PlayCircle className="h-4 w-4" />
+                              Watch Recording
+                            </a>
+                          </Button>
+                        )}
+                      </>
                     )}
                   </>
                 )}
-              </>
-            )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Right Column: Event Poster */}
+        {meetup.image && (
+          <div className="lg:col-span-1">
+            <Card className="glass-card sticky top-4">
+              <CardContent className="p-0">
+                <div className="rounded-xl overflow-hidden bg-muted/20 flex items-center justify-center">
+                  <img 
+                    src={meetup.image} 
+                    alt={meetup.title} 
+                    className="w-full h-auto object-contain"
+                  />
+                </div>
+              </CardContent>
+            </Card>
           </div>
-        </CardContent>
-      </Card>
+        )}
+      </div>
 
       {/* Speakers Section */}
       {meetup.speakers.length > 0 && (
@@ -335,12 +348,29 @@ function MeetupDetail({ meetup, onBack }: { meetup: Meetup; onBack: () => void }
 export default function Meetups() {
   const [searchParams] = useSearchParams();
   const meetupId = searchParams.get('id');
+  
+  // Fetch meetups from backend
+  const { data: allMeetups = [], isLoading } = useQuery({
+    queryKey: ['meetups'],
+    queryFn: async () => {
+      try {
+        return await getMeetups();
+      } catch (error) {
+        console.error('Error fetching meetups:', error);
+        // Fallback to mock data
+        return mockMeetups;
+      }
+    },
+    staleTime: 60000, // Cache for 1 minute
+  });
+
   const [selectedMeetup, setSelectedMeetup] = useState<Meetup | null>(
-    meetupId ? mockMeetups.find(m => m.id === meetupId) || null : null
+    meetupId ? allMeetups.find(m => m.id === meetupId) || null : null
   );
 
-  const upcomingMeetups = mockMeetups.filter(m => m.status === 'upcoming');
-  const pastMeetups = mockMeetups.filter(m => m.status === 'completed');
+  // Filter meetups - only show published (upcoming/completed), not drafts
+  const upcomingMeetups = allMeetups.filter(m => m.status === 'upcoming');
+  const pastMeetups = allMeetups.filter(m => m.status === 'completed');
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -381,46 +411,75 @@ export default function Meetups() {
               </TabsList>
 
               <TabsContent value="upcoming">
-                <motion.div
-                  className="grid gap-6 md:grid-cols-2 lg:grid-cols-3"
-                  variants={containerVariants}
-                  initial="hidden"
-                  animate="visible"
-                >
-                  {upcomingMeetups.map((meetup) => (
-                    <MeetupCard
-                      key={meetup.id}
-                      meetup={meetup}
-                      onSelect={() => setSelectedMeetup(meetup)}
-                    />
-                  ))}
-                </motion.div>
-                {upcomingMeetups.length === 0 && (
+                {isLoading ? (
                   <Card className="glass-card">
                     <CardContent className="p-12 text-center">
-                      <Calendar className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                      <h3 className="text-lg font-semibold mb-2">No Upcoming Events</h3>
-                      <p className="text-muted-foreground">Check back soon for new events!</p>
+                      <Calendar className="h-12 w-12 mx-auto mb-4 text-muted-foreground animate-pulse" />
+                      <p className="text-muted-foreground">Loading events...</p>
                     </CardContent>
                   </Card>
+                ) : (
+                  <>
+                    <motion.div
+                      className="grid gap-6 md:grid-cols-2 lg:grid-cols-3"
+                      variants={containerVariants}
+                      initial="hidden"
+                      animate="visible"
+                    >
+                      {upcomingMeetups.map((meetup) => (
+                        <MeetupCard
+                          key={meetup.id}
+                          meetup={meetup}
+                          onSelect={() => setSelectedMeetup(meetup)}
+                        />
+                      ))}
+                    </motion.div>
+                    {upcomingMeetups.length === 0 && (
+                      <Card className="glass-card">
+                        <CardContent className="p-12 text-center">
+                          <Calendar className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                          <h3 className="text-lg font-semibold mb-2">No Upcoming Events</h3>
+                          <p className="text-muted-foreground">Check back soon for new events!</p>
+                        </CardContent>
+                      </Card>
+                    )}
+                  </>
                 )}
               </TabsContent>
 
               <TabsContent value="past">
-                <motion.div
-                  className="grid gap-6 md:grid-cols-2 lg:grid-cols-3"
-                  variants={containerVariants}
-                  initial="hidden"
-                  animate="visible"
-                >
-                  {pastMeetups.map((meetup) => (
-                    <MeetupCard
-                      key={meetup.id}
-                      meetup={meetup}
-                      onSelect={() => setSelectedMeetup(meetup)}
-                    />
-                  ))}
-                </motion.div>
+                {isLoading ? (
+                  <Card className="glass-card">
+                    <CardContent className="p-12 text-center">
+                      <Calendar className="h-12 w-12 mx-auto mb-4 text-muted-foreground animate-pulse" />
+                      <p className="text-muted-foreground">Loading events...</p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <motion.div
+                    className="grid gap-6 md:grid-cols-2 lg:grid-cols-3"
+                    variants={containerVariants}
+                    initial="hidden"
+                    animate="visible"
+                  >
+                    {pastMeetups.map((meetup) => (
+                      <MeetupCard
+                        key={meetup.id}
+                        meetup={meetup}
+                        onSelect={() => setSelectedMeetup(meetup)}
+                      />
+                    ))}
+                  </motion.div>
+                )}
+                {!isLoading && pastMeetups.length === 0 && (
+                  <Card className="glass-card">
+                    <CardContent className="p-12 text-center">
+                      <Calendar className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                      <h3 className="text-lg font-semibold mb-2">No Past Events</h3>
+                      <p className="text-muted-foreground">Past events will appear here.</p>
+                    </CardContent>
+                  </Card>
+                )}
               </TabsContent>
             </Tabs>
           </>

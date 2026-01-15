@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import * as React from 'react';
 import { motion } from 'framer-motion';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
@@ -20,7 +21,9 @@ import {
   Upload, X, UserPlus, Check, ChevronDown, GraduationCap,
   Trophy, ListTodo, ClipboardCheck, Target, Shield, UserCog
 } from 'lucide-react';
-import { mockSprints, mockMeetups, currentUser, Submission, generateSpeakerInviteLink, Sprint, Session, SessionPerson, mockUsers, User as UserType, predefinedTasks, mockColleges, CollegeTask, College, getTaskById, getUserById, communityRoles, mockUserRoles, CommunityRole, UserRoleAssignment, PointActivity, mockPointActivities } from '@/data/mockData';
+import { mockSprints, mockMeetups, currentUser, Submission, generateSpeakerInviteLink, Sprint, Session, SessionPerson, mockUsers, User as UserType, predefinedTasks, mockColleges, CollegeTask, College, getTaskById, getUserById, communityRoles, mockUserRoles, CommunityRole, UserRoleAssignment, PointActivity, mockPointActivities, Meetup } from '@/data/mockData';
+import { createMeetup, updateMeetup, publishMeetup, getMeetups, CreateMeetupData, UpdateMeetupData } from '@/lib/meetups';
+import { uploadFileToS3 } from '@/lib/s3Upload';
 import { Progress } from '@/components/ui/progress';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
@@ -1033,38 +1036,86 @@ function AddSessionDialog({ sprint }: { sprint: Sprint }) {
   );
 }
 
-function CreateMeetupDialog() {
+function CreateMeetupDialog({ onSuccess }: { onSuccess?: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
+    richDescription: '',
     date: '',
     time: '',
     type: 'virtual' as 'virtual' | 'in-person' | 'hybrid',
     location: '',
     meetingLink: '',
+    meetupUrl: '',
+    image: '',
     maxAttendees: ''
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    toast.success('Meetup created successfully!');
+    setLoading(true);
+    
+    try {
+      const meetupData: CreateMeetupData = {
+        title: formData.title,
+        description: formData.description,
+        richDescription: formData.richDescription || undefined,
+        date: formData.date,
+        time: formData.time,
+        type: formData.type,
+        location: formData.location || undefined,
+        meetingLink: formData.meetingLink || undefined,
+        meetupUrl: formData.meetupUrl || undefined,
+        image: formData.image || undefined,
+        maxAttendees: formData.maxAttendees ? parseInt(formData.maxAttendees) : undefined
+      };
+      
+      await createMeetup(meetupData);
+      toast.success('Meetup created successfully!');
+      setOpen(false);
+      onSuccess?.();
+      
+      // Reset form
+      setFormData({
+        title: '',
+        description: '',
+        richDescription: '',
+        date: '',
+        time: '',
+        type: 'virtual',
+        location: '',
+        meetingLink: '',
+        meetupUrl: '',
+        image: '',
+        maxAttendees: ''
+      });
+    } catch (error) {
+      console.error('Error creating meetup:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to create meetup');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <Dialog>
+    <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button className="gap-2"><Plus className="h-4 w-4" />Create Meetup</Button>
       </DialogTrigger>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Create New Meetup</DialogTitle>
           <DialogDescription>
-            Schedule a new meetup for the community.
+            Schedule a new meetup for the community. The event will be created as a draft.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label>Title</Label>
+            <Label>Title *</Label>
             <Input 
               placeholder="e.g., AWS Community Day"
               value={formData.title}
@@ -1072,9 +1123,10 @@ function CreateMeetupDialog() {
               required
             />
           </div>
+          
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Date</Label>
+              <Label>Date *</Label>
               <Input 
                 type="date"
                 value={formData.date}
@@ -1083,7 +1135,7 @@ function CreateMeetupDialog() {
               />
             </div>
             <div className="space-y-2">
-              <Label>Time</Label>
+              <Label>Time *</Label>
               <Input 
                 type="time"
                 value={formData.time}
@@ -1092,9 +1144,10 @@ function CreateMeetupDialog() {
               />
             </div>
           </div>
+          
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Type</Label>
+              <Label>Event Type *</Label>
               <Select 
                 value={formData.type}
                 onValueChange={(value: 'virtual' | 'in-person' | 'hybrid') => 
@@ -1116,9 +1169,92 @@ function CreateMeetupDialog() {
                 placeholder="e.g., 100"
                 value={formData.maxAttendees}
                 onChange={(e) => setFormData({ ...formData, maxAttendees: e.target.value })}
+                min="1"
               />
             </div>
           </div>
+          
+          <div className="space-y-2">
+            <Label>Event Poster Image</Label>
+            <div className="flex gap-2">
+              <Input
+                value={formData.image}
+                onChange={(e) => setFormData({ ...formData, image: e.target.value })}
+                placeholder="https://example.com/poster.jpg or upload file"
+                className="flex-1"
+              />
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  
+                  // Validate file size (max 5MB)
+                  if (file.size > 5 * 1024 * 1024) {
+                    toast.error('File size must be less than 5MB');
+                    return;
+                  }
+                  
+                  setUploadingImage(true);
+                  try {
+                    const imageUrl = await uploadFileToS3(file, 'meetup-posters');
+                    setFormData({ ...formData, image: imageUrl });
+                    toast.success('Image uploaded successfully!');
+                  } catch (error) {
+                    console.error('Upload error:', error);
+                    toast.error(error instanceof Error ? error.message : 'Failed to upload image');
+                  } finally {
+                    setUploadingImage(false);
+                    if (fileInputRef.current) {
+                      fileInputRef.current.value = '';
+                    }
+                  }
+                }}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadingImage}
+              >
+                {uploadingImage ? (
+                  <Clock className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Upload className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
+            {formData.image && (
+              <div className="mt-2">
+                <img
+                  src={formData.image}
+                  alt="Poster preview"
+                  className="w-full h-40 object-cover rounded-lg border"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = 'none';
+                  }}
+                />
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Upload an image file or paste an image URL. Supported formats: JPEG, PNG, GIF, WebP (max 5MB)
+            </p>
+          </div>
+          
+          <div className="space-y-2">
+            <Label>Meetup URL *</Label>
+            <Input 
+              placeholder="https://www.meetup.com/..."
+              value={formData.meetupUrl}
+              onChange={(e) => setFormData({ ...formData, meetupUrl: e.target.value })}
+              required
+            />
+          </div>
+          
           {(formData.type === 'in-person' || formData.type === 'hybrid') && (
             <div className="space-y-2">
               <Label>Location</Label>
@@ -1129,6 +1265,7 @@ function CreateMeetupDialog() {
               />
             </div>
           )}
+          
           {(formData.type === 'virtual' || formData.type === 'hybrid') && (
             <div className="space-y-2">
               <Label>Meeting Link</Label>
@@ -1139,20 +1276,531 @@ function CreateMeetupDialog() {
               />
             </div>
           )}
+          
           <div className="space-y-2">
-            <Label>Description</Label>
+            <Label>Short Description *</Label>
             <Textarea 
               rows={3}
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              placeholder="Describe the meetup..."
+              placeholder="Brief description of the meetup..."
               required
             />
           </div>
-          <Button type="submit" className="w-full">Create Meetup</Button>
+          
+          <div className="space-y-2">
+            <Label>Rich Description (Markdown/HTML)</Label>
+            <Textarea 
+              rows={8}
+              value={formData.richDescription}
+              onChange={(e) => setFormData({ ...formData, richDescription: e.target.value })}
+              placeholder="Detailed description with markdown or HTML formatting..."
+              className="font-mono text-sm"
+            />
+            <p className="text-xs text-muted-foreground">
+              Supports Markdown and HTML. This will be displayed on the meetup detail page.
+            </p>
+          </div>
+          
+          <div className="flex gap-2 pt-4 border-t">
+            <Button type="submit" className="flex-1" disabled={loading}>
+              {loading ? 'Creating...' : 'Create Meetup'}
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+          </div>
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ================== MEETUPS MANAGEMENT ==================
+
+function EditMeetupDialog({ meetup, onSuccess }: { meetup: Meetup; onSuccess?: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const [formData, setFormData] = useState({
+    title: meetup.title,
+    description: meetup.description,
+    richDescription: meetup.richDescription || '',
+    date: meetup.date,
+    time: meetup.time,
+    type: meetup.type,
+    location: meetup.location || '',
+    meetingLink: meetup.meetingLink || '',
+    meetupUrl: meetup.meetupUrl || '',
+    image: meetup.image || '',
+    maxAttendees: meetup.maxAttendees?.toString() || ''
+  });
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    
+    try {
+      const updateData: UpdateMeetupData = {
+        title: formData.title,
+        description: formData.description,
+        richDescription: formData.richDescription || undefined,
+        date: formData.date,
+        time: formData.time,
+        type: formData.type,
+        location: formData.location || undefined,
+        meetingLink: formData.meetingLink || undefined,
+        meetupUrl: formData.meetupUrl || undefined,
+        image: formData.image || undefined,
+        maxAttendees: formData.maxAttendees ? parseInt(formData.maxAttendees) : undefined
+      };
+      
+      await updateMeetup(meetup.id, updateData);
+      toast.success('Meetup updated successfully!');
+      setOpen(false);
+      onSuccess?.();
+    } catch (error) {
+      console.error('Error updating meetup:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to update meetup');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" className="gap-1">
+          <Edit className="h-4 w-4" />
+          Edit
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Edit Meetup</DialogTitle>
+          <DialogDescription>
+            Update meetup details and description.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label>Title *</Label>
+            <Input 
+              placeholder="e.g., AWS Community Day"
+              value={formData.title}
+              onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+              required
+            />
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Date *</Label>
+              <Input 
+                type="date"
+                value={formData.date}
+                onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Time *</Label>
+              <Input 
+                type="time"
+                value={formData.time}
+                onChange={(e) => setFormData({ ...formData, time: e.target.value })}
+                required
+              />
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Event Type *</Label>
+              <Select 
+                value={formData.type}
+                onValueChange={(value: 'virtual' | 'in-person' | 'hybrid') => 
+                  setFormData({ ...formData, type: value })
+                }
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="virtual">Virtual</SelectItem>
+                  <SelectItem value="in-person">In-Person</SelectItem>
+                  <SelectItem value="hybrid">Hybrid</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Max Attendees</Label>
+              <Input 
+                type="number"
+                placeholder="e.g., 100"
+                value={formData.maxAttendees}
+                onChange={(e) => setFormData({ ...formData, maxAttendees: e.target.value })}
+                min="1"
+              />
+            </div>
+          </div>
+          
+          <div className="space-y-2">
+            <Label>Event Poster Image</Label>
+            <div className="flex gap-2">
+              <Input
+                value={formData.image}
+                onChange={(e) => setFormData({ ...formData, image: e.target.value })}
+                placeholder="https://example.com/poster.jpg or upload file"
+                className="flex-1"
+              />
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  
+                  // Validate file size (max 5MB)
+                  if (file.size > 5 * 1024 * 1024) {
+                    toast.error('File size must be less than 5MB');
+                    return;
+                  }
+                  
+                  setUploadingImage(true);
+                  try {
+                    const imageUrl = await uploadFileToS3(file, 'meetup-posters');
+                    setFormData({ ...formData, image: imageUrl });
+                    toast.success('Image uploaded successfully!');
+                  } catch (error) {
+                    console.error('Upload error:', error);
+                    toast.error(error instanceof Error ? error.message : 'Failed to upload image');
+                  } finally {
+                    setUploadingImage(false);
+                    if (fileInputRef.current) {
+                      fileInputRef.current.value = '';
+                    }
+                  }
+                }}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadingImage}
+              >
+                {uploadingImage ? (
+                  <Clock className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Upload className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
+            {formData.image && (
+              <div className="mt-2">
+                <img
+                  src={formData.image}
+                  alt="Poster preview"
+                  className="w-full h-40 object-cover rounded-lg border"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = 'none';
+                  }}
+                />
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Upload an image file or paste an image URL. Supported formats: JPEG, PNG, GIF, WebP (max 5MB)
+            </p>
+          </div>
+          
+          <div className="space-y-2">
+            <Label>Meetup URL *</Label>
+            <Input 
+              placeholder="https://www.meetup.com/..."
+              value={formData.meetupUrl}
+              onChange={(e) => setFormData({ ...formData, meetupUrl: e.target.value })}
+              required
+            />
+          </div>
+          
+          {(formData.type === 'in-person' || formData.type === 'hybrid') && (
+            <div className="space-y-2">
+              <Label>Location</Label>
+              <Input 
+                placeholder="e.g., Tech Hub, Bangalore"
+                value={formData.location}
+                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+              />
+            </div>
+          )}
+          
+          {(formData.type === 'virtual' || formData.type === 'hybrid') && (
+            <div className="space-y-2">
+              <Label>Meeting Link</Label>
+              <Input 
+                placeholder="https://meet.example.com/..."
+                value={formData.meetingLink}
+                onChange={(e) => setFormData({ ...formData, meetingLink: e.target.value })}
+              />
+            </div>
+          )}
+          
+          <div className="space-y-2">
+            <Label>Short Description *</Label>
+            <Textarea 
+              rows={3}
+              value={formData.description}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              placeholder="Brief description of the meetup..."
+              required
+            />
+          </div>
+          
+          <div className="space-y-2">
+            <Label>Rich Description (Markdown/HTML)</Label>
+            <Textarea 
+              rows={8}
+              value={formData.richDescription}
+              onChange={(e) => setFormData({ ...formData, richDescription: e.target.value })}
+              placeholder="Detailed description with markdown or HTML formatting..."
+              className="font-mono text-sm"
+            />
+            <p className="text-xs text-muted-foreground">
+              Supports Markdown and HTML. This will be displayed on the meetup detail page.
+            </p>
+          </div>
+          
+          <div className="flex gap-2 pt-4 border-t">
+            <Button type="submit" className="flex-1" disabled={loading}>
+              {loading ? 'Updating...' : 'Update Meetup'}
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function MeetupsManagementTab() {
+  const [meetups, setMeetups] = useState<Meetup[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filterStatus, setFilterStatus] = useState<'all' | 'draft' | 'upcoming' | 'completed'>('all');
+
+  const loadMeetups = async () => {
+    try {
+      setLoading(true);
+      const allMeetups = await getMeetups();
+      setMeetups(allMeetups);
+    } catch (error) {
+      console.error('Error loading meetups:', error);
+      toast.error('Failed to load meetups');
+      // Fallback to mock data
+      setMeetups(mockMeetups);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  React.useEffect(() => {
+    loadMeetups();
+  }, []);
+
+  const handlePublish = async (meetup: Meetup, publish: boolean) => {
+    try {
+      await publishMeetup(meetup.id, publish);
+      toast.success(publish ? 'Meetup published successfully!' : 'Meetup unpublished');
+      loadMeetups();
+    } catch (error) {
+      console.error('Error publishing meetup:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to publish meetup');
+    }
+  };
+
+  const filteredMeetups = filterStatus === 'all' 
+    ? meetups 
+    : meetups.filter(m => m.status === filterStatus);
+
+  const draftMeetups = meetups.filter(m => m.status === 'draft');
+  const upcomingMeetups = meetups.filter(m => m.status === 'upcoming');
+  const completedMeetups = meetups.filter(m => m.status === 'completed');
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <h2 className="text-xl font-semibold">Manage Meetups</h2>
+        <CreateMeetupDialog onSuccess={loadMeetups} />
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card className="glass-card">
+          <CardContent className="p-4 text-center">
+            <div className="text-3xl font-bold text-primary">{draftMeetups.length}</div>
+            <p className="text-sm text-muted-foreground">Draft</p>
+          </CardContent>
+        </Card>
+        <Card className="glass-card">
+          <CardContent className="p-4 text-center">
+            <div className="text-3xl font-bold text-green-500">{upcomingMeetups.length}</div>
+            <p className="text-sm text-muted-foreground">Upcoming</p>
+          </CardContent>
+        </Card>
+        <Card className="glass-card">
+          <CardContent className="p-4 text-center">
+            <div className="text-3xl font-bold text-amber-500">{completedMeetups.length}</div>
+            <p className="text-sm text-muted-foreground">Completed</p>
+          </CardContent>
+        </Card>
+        <Card className="glass-card">
+          <CardContent className="p-4 text-center">
+            <div className="text-3xl font-bold text-blue-500">{meetups.length}</div>
+            <p className="text-sm text-muted-foreground">Total</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Filter */}
+      <div className="flex gap-2">
+        <Button
+          variant={filterStatus === 'all' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setFilterStatus('all')}
+        >
+          All
+        </Button>
+        <Button
+          variant={filterStatus === 'draft' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setFilterStatus('draft')}
+        >
+          Draft ({draftMeetups.length})
+        </Button>
+        <Button
+          variant={filterStatus === 'upcoming' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setFilterStatus('upcoming')}
+        >
+          Upcoming ({upcomingMeetups.length})
+        </Button>
+        <Button
+          variant={filterStatus === 'completed' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setFilterStatus('completed')}
+        >
+          Completed ({completedMeetups.length})
+        </Button>
+      </div>
+
+      {/* Meetups List */}
+      {loading ? (
+        <Card className="glass-card">
+          <CardContent className="p-12 text-center">
+            <p className="text-muted-foreground">Loading meetups...</p>
+          </CardContent>
+        </Card>
+      ) : filteredMeetups.length === 0 ? (
+        <Card className="glass-card">
+          <CardContent className="p-12 text-center">
+            <Calendar className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+            <h3 className="text-lg font-semibold mb-2">No Meetups Found</h3>
+            <p className="text-muted-foreground">
+              {filterStatus === 'all' 
+                ? 'Create your first meetup to get started!' 
+                : `No ${filterStatus} meetups found.`}
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          {filteredMeetups.map(meetup => (
+            <Card key={meetup.id} className="glass-card">
+              <CardContent className="p-4">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-2">
+                      <h3 className="font-semibold text-lg">{meetup.title}</h3>
+                      <Badge 
+                        variant={
+                          meetup.status === 'upcoming' ? 'default' : 
+                          meetup.status === 'draft' ? 'secondary' : 
+                          'outline'
+                        } 
+                        className="capitalize"
+                      >
+                        {meetup.status}
+                      </Badge>
+                      <Badge variant="outline" className="capitalize">
+                        {meetup.type}
+                      </Badge>
+                    </div>
+                    <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <Calendar className="h-4 w-4" />
+                        {format(parseISO(meetup.date), 'MMM d, yyyy')} at {meetup.time}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Users className="h-4 w-4" />
+                        {meetup.attendees}/{meetup.maxAttendees || '∞'} attendees
+                      </span>
+                      {meetup.speakers.length > 0 && (
+                        <span className="flex items-center gap-1">
+                          <User className="h-4 w-4" />
+                          {meetup.speakers.length} speakers
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {meetup.status === 'draft' && (
+                      <Button 
+                        variant="default" 
+                        size="sm" 
+                        className="gap-1"
+                        onClick={() => handlePublish(meetup, true)}
+                      >
+                        <Rocket className="h-4 w-4" />
+                        Publish
+                      </Button>
+                    )}
+                    {meetup.status === 'upcoming' && (
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="gap-1"
+                        onClick={() => handlePublish(meetup, false)}
+                      >
+                        <XCircle className="h-4 w-4" />
+                        Unpublish
+                      </Button>
+                    )}
+                    <SpeakerInviteDialog 
+                      eventType="meetup" 
+                      eventId={meetup.id} 
+                      eventTitle={meetup.title}
+                    />
+                    <EditMeetupDialog meetup={meetup} onSuccess={loadMeetups} />
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="gap-1"
+                      onClick={() => window.open(`/meetups?id=${meetup.id}`, '_blank')}
+                    >
+                      <Eye className="h-4 w-4" />
+                      View
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -2323,60 +2971,7 @@ export default function Admin() {
                 </TabsContent>
 
                 <TabsContent value="meetups">
-                  <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-xl font-semibold">Manage Meetups</h2>
-                    <CreateMeetupDialog />
-                  </div>
-                  <div className="space-y-4">
-                    {mockMeetups.map(meetup => (
-                      <Card key={meetup.id} className="glass-card">
-                        <CardContent className="p-4">
-                          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-2">
-                                <h3 className="font-semibold text-lg">{meetup.title}</h3>
-                                <Badge variant={meetup.status === 'upcoming' ? 'default' : 'secondary'} className="capitalize">
-                                  {meetup.status}
-                                </Badge>
-                                <Badge variant="outline" className="capitalize">
-                                  {meetup.type}
-                                </Badge>
-                              </div>
-                              <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
-                                <span className="flex items-center gap-1">
-                                  <Calendar className="h-4 w-4" />
-                                  {format(parseISO(meetup.date), 'MMM d, yyyy')} at {meetup.time}
-                                </span>
-                                <span className="flex items-center gap-1">
-                                  <Users className="h-4 w-4" />
-                                  {meetup.attendees}/{meetup.maxAttendees || '∞'} attendees
-                                </span>
-                                <span className="flex items-center gap-1">
-                                  <User className="h-4 w-4" />
-                                  {meetup.speakers.length} speakers
-                                </span>
-                              </div>
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                              <SpeakerInviteDialog 
-                                eventType="meetup" 
-                                eventId={meetup.id} 
-                                eventTitle={meetup.title}
-                              />
-                              <Button variant="outline" size="sm" className="gap-1">
-                                <Eye className="h-4 w-4" />
-                                View
-                              </Button>
-                              <Button variant="outline" size="sm" className="gap-1">
-                                <Edit className="h-4 w-4" />
-                                Edit
-                              </Button>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
+                  <MeetupsManagementTab />
                 </TabsContent>
 
 

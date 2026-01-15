@@ -13,7 +13,10 @@ export async function callApi<T = any>(
   options: RequestInit = {}
 ): Promise<T> {
   if (!API_ENDPOINT) {
-    throw new Error('API endpoint not configured. Please check your .env.local file.');
+    const errorMsg = 'API endpoint not configured. Please create a .env.local file with VITE_API_ENDPOINT. ' +
+      'See .env.example for reference. If backend is not deployed yet, you can use a placeholder URL for testing.';
+    console.error(errorMsg);
+    throw new Error(errorMsg);
   }
 
   try {

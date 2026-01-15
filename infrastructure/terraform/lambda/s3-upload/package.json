@@ -1,0 +1,10 @@
+{
+  "name": "s3-upload",
+  "version": "1.0.0",
+  "description": "Lambda function to generate presigned URLs for S3 uploads",
+  "main": "index.js",
+  "dependencies": {
+    "@aws-sdk/s3-request-presigner": "^3.0.0",
+    "@aws-sdk/client-s3": "^3.0.0"
+  }
+}

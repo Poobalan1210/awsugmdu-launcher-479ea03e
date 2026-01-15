@@ -54,7 +54,13 @@ variable "project_name" {
 variable "allowed_cors_origins" {
   description = "Allowed CORS origins for API and S3"
   type        = list(string)
-  default     = ["http://localhost:5173", "https://yourdomain.com"]
+  default     = [
+    "http://localhost:5173",
+    "http://localhost:8080",
+    "http://localhost:3000",
+    "http://localhost:5174",
+    "https://yourdomain.com"
+  ]
 }
 
 # Data sources
@@ -88,6 +94,44 @@ resource "aws_dynamodb_table" "users" {
   }
 }
 
+# DynamoDB Table for Meetups
+resource "aws_dynamodb_table" "meetups" {
+  name           = "${var.project_name}-meetups"
+  billing_mode   = "PAY_PER_REQUEST"
+  hash_key       = "id"
+
+  attribute {
+    name = "id"
+    type = "S"
+  }
+
+  attribute {
+    name = "status"
+    type = "S"
+  }
+
+  attribute {
+    name = "date"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name     = "status-index"
+    hash_key = "status"
+    projection_type = "ALL"
+  }
+
+  global_secondary_index {
+    name     = "date-index"
+    hash_key = "date"
+    projection_type = "ALL"
+  }
+
+  tags = {
+    Name = "${var.project_name}-meetups-table"
+  }
+}
+
 # S3 Bucket for Profile Photos
 resource "aws_s3_bucket" "profile_photos" {
   bucket = "${var.project_name}-profile-photos-${data.aws_caller_identity.current.account_id}"
@@ -95,6 +139,53 @@ resource "aws_s3_bucket" "profile_photos" {
   tags = {
     Name = "${var.project_name}-profile-photos"
   }
+}
+
+# S3 Bucket for Meetup Posters
+resource "aws_s3_bucket" "meetup_posters" {
+  bucket = "${var.project_name}-meetup-posters-${data.aws_caller_identity.current.account_id}"
+
+  tags = {
+    Name = "${var.project_name}-meetup-posters"
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "meetup_posters" {
+  bucket = aws_s3_bucket.meetup_posters.id
+
+  block_public_acls       = false
+  block_public_policy     = false
+  ignore_public_acls       = false
+  restrict_public_buckets  = false
+}
+
+resource "aws_s3_bucket_cors_configuration" "meetup_posters" {
+  bucket = aws_s3_bucket.meetup_posters.id
+
+  cors_rule {
+    allowed_headers = ["*"]
+    allowed_methods = ["GET", "PUT", "POST", "DELETE", "HEAD"]
+    allowed_origins = var.allowed_cors_origins
+    expose_headers  = ["ETag", "x-amz-server-side-encryption", "x-amz-request-id", "x-amz-id-2"]
+    max_age_seconds = 3000
+  }
+}
+
+resource "aws_s3_bucket_policy" "meetup_posters" {
+  bucket = aws_s3_bucket.meetup_posters.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "PublicReadGetObject"
+        Effect    = "Allow"
+        Principal = "*"
+        Action    = "s3:GetObject"
+        Resource  = "${aws_s3_bucket.meetup_posters.arn}/*"
+      }
+    ]
+  })
 }
 
 resource "aws_s3_bucket_public_access_block" "profile_photos" {
@@ -167,11 +258,49 @@ resource "aws_iam_role_policy" "lambda_dynamodb" {
           "dynamodb:PutItem",
           "dynamodb:GetItem",
           "dynamodb:UpdateItem",
-          "dynamodb:Query"
+          "dynamodb:DeleteItem",
+          "dynamodb:Query",
+          "dynamodb:Scan"
         ]
         Resource = [
           aws_dynamodb_table.users.arn,
-          "${aws_dynamodb_table.users.arn}/index/*"
+          "${aws_dynamodb_table.users.arn}/index/*",
+          aws_dynamodb_table.meetups.arn,
+          "${aws_dynamodb_table.meetups.arn}/index/*"
+        ]
+      }
+    ]
+  })
+}
+
+# IAM Policy for Lambda to access S3
+resource "aws_iam_role_policy" "lambda_s3" {
+  name = "${var.project_name}-lambda-s3-policy"
+  role = aws_iam_role.lambda_execution.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:DeleteObject"
+        ]
+        Resource = [
+          "${aws_s3_bucket.profile_photos.arn}/*",
+          "${aws_s3_bucket.meetup_posters.arn}/*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:ListBucket"
+        ]
+        Resource = [
+          aws_s3_bucket.profile_photos.arn,
+          aws_s3_bucket.meetup_posters.arn
         ]
       }
     ]
@@ -196,6 +325,20 @@ data "archive_file" "meetup_verification" {
   type        = "zip"
   source_dir  = "${path.module}/lambda/meetup-verification"
   output_path = "${path.module}/lambda/meetup-verification.zip"
+  excludes    = ["node_modules", "*.zip"]
+}
+
+data "archive_file" "meetups_crud" {
+  type        = "zip"
+  source_dir  = "${path.module}/lambda/meetups-crud"
+  output_path = "${path.module}/lambda/meetups-crud.zip"
+  excludes    = ["node_modules", "*.zip"]
+}
+
+data "archive_file" "s3_upload" {
+  type        = "zip"
+  source_dir  = "${path.module}/lambda/s3-upload"
+  output_path = "${path.module}/lambda/s3-upload.zip"
   excludes    = ["node_modules", "*.zip"]
 }
 
@@ -236,6 +379,49 @@ resource "aws_lambda_function" "meetup_verification" {
   }
 }
 
+# Lambda: Meetups CRUD
+resource "aws_lambda_function" "meetups_crud" {
+  filename         = data.archive_file.meetups_crud.output_path
+  function_name    = "${var.project_name}-meetups-crud"
+  role            = aws_iam_role.lambda_execution.arn
+  handler         = "index.handler"
+  source_code_hash = data.archive_file.meetups_crud.output_base64sha256
+  runtime         = "nodejs20.x"
+  timeout         = 30
+
+  environment {
+    variables = {
+      MEETUPS_TABLE_NAME = aws_dynamodb_table.meetups.name
+    }
+  }
+
+  tags = {
+    Name = "${var.project_name}-meetups-crud"
+  }
+}
+
+# Lambda: S3 Upload (Presigned URL Generator)
+resource "aws_lambda_function" "s3_upload" {
+  filename         = data.archive_file.s3_upload.output_path
+  function_name    = "${var.project_name}-s3-upload"
+  role            = aws_iam_role.lambda_execution.arn
+  handler         = "index.handler"
+  source_code_hash = data.archive_file.s3_upload.output_base64sha256
+  runtime         = "nodejs20.x"
+  timeout         = 30
+
+  environment {
+    variables = {
+      MEETUP_POSTERS_BUCKET = aws_s3_bucket.meetup_posters.id
+      PROFILE_PHOTOS_BUCKET = aws_s3_bucket.profile_photos.id
+    }
+  }
+
+  tags = {
+    Name = "${var.project_name}-s3-upload"
+  }
+}
+
 
 # API Gateway
 resource "aws_api_gateway_rest_api" "api" {
@@ -265,6 +451,30 @@ resource "aws_api_gateway_resource" "meetup_verify" {
   path_part   = "verify"
 }
 
+resource "aws_api_gateway_resource" "meetups" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  parent_id   = aws_api_gateway_rest_api.api.root_resource_id
+  path_part   = "meetups"
+}
+
+resource "aws_api_gateway_resource" "meetups_id" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  parent_id   = aws_api_gateway_resource.meetups.id
+  path_part   = "{id}"
+}
+
+resource "aws_api_gateway_resource" "meetups_id_publish" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  parent_id   = aws_api_gateway_resource.meetups_id.id
+  path_part   = "publish"
+}
+
+resource "aws_api_gateway_resource" "upload" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  parent_id   = aws_api_gateway_rest_api.api.root_resource_id
+  path_part   = "upload"
+}
+
 # API Gateway Methods
 resource "aws_api_gateway_method" "users_post" {
   rest_api_id   = aws_api_gateway_rest_api.api.id
@@ -277,6 +487,77 @@ resource "aws_api_gateway_method" "meetup_verify_post" {
   rest_api_id   = aws_api_gateway_rest_api.api.id
   resource_id   = aws_api_gateway_resource.meetup_verify.id
   http_method   = "POST"
+  authorization = "NONE"
+}
+
+# Meetups CRUD Methods
+resource "aws_api_gateway_method" "meetups_get" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.meetups.id
+  http_method   = "GET"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "meetups_post" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.meetups.id
+  http_method   = "POST"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "meetups_options" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.meetups.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "meetups_id_get" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.meetups_id.id
+  http_method   = "GET"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "meetups_id_put" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.meetups_id.id
+  http_method   = "PUT"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "meetups_id_options" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.meetups_id.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "meetups_id_publish_patch" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.meetups_id_publish.id
+  http_method   = "PATCH"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "meetups_id_publish_options" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.meetups_id_publish.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "upload_post" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.upload.id
+  http_method   = "POST"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "upload_options" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.upload.id
+  http_method   = "OPTIONS"
   authorization = "NONE"
 }
 
@@ -301,6 +582,219 @@ resource "aws_api_gateway_integration" "meetup_verify_lambda" {
   uri                     = aws_lambda_function.meetup_verification.invoke_arn
 }
 
+# Meetups CRUD Integrations
+resource "aws_api_gateway_integration" "meetups_get_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.meetups.id
+  http_method = aws_api_gateway_method.meetups_get.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.meetups_crud.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "meetups_post_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.meetups.id
+  http_method = aws_api_gateway_method.meetups_post.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.meetups_crud.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "meetups_options_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.meetups.id
+  http_method = aws_api_gateway_method.meetups_options.http_method
+
+  type = "MOCK"
+  
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "meetups_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.meetups.id
+  http_method = aws_api_gateway_method.meetups_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin" = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "meetups_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.meetups.id
+  http_method = aws_api_gateway_method.meetups_options.http_method
+  status_code = aws_api_gateway_method_response.meetups_options_200.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+  }
+}
+
+resource "aws_api_gateway_integration" "meetups_id_get_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.meetups_id.id
+  http_method = aws_api_gateway_method.meetups_id_get.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.meetups_crud.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "meetups_id_put_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.meetups_id.id
+  http_method = aws_api_gateway_method.meetups_id_put.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.meetups_crud.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "meetups_id_options_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.meetups_id.id
+  http_method = aws_api_gateway_method.meetups_id_options.http_method
+
+  type = "MOCK"
+  
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "meetups_id_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.meetups_id.id
+  http_method = aws_api_gateway_method.meetups_id_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin" = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "meetups_id_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.meetups_id.id
+  http_method = aws_api_gateway_method.meetups_id_options.http_method
+  status_code = aws_api_gateway_method_response.meetups_id_options_200.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+  }
+}
+
+resource "aws_api_gateway_integration" "meetups_id_publish_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.meetups_id_publish.id
+  http_method = aws_api_gateway_method.meetups_id_publish_patch.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.meetups_crud.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "meetups_id_publish_options_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.meetups_id_publish.id
+  http_method = aws_api_gateway_method.meetups_id_publish_options.http_method
+
+  type = "MOCK"
+  
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "meetups_id_publish_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.meetups_id_publish.id
+  http_method = aws_api_gateway_method.meetups_id_publish_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin" = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "meetups_id_publish_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.meetups_id_publish.id
+  http_method = aws_api_gateway_method.meetups_id_publish_options.http_method
+  status_code = aws_api_gateway_method_response.meetups_id_publish_options_200.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+  }
+}
+
+resource "aws_api_gateway_integration" "upload_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.upload.id
+  http_method = aws_api_gateway_method.upload_post.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.s3_upload.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "upload_options_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.upload.id
+  http_method = aws_api_gateway_method.upload_options.http_method
+
+  type = "MOCK"
+  
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "upload_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.upload.id
+  http_method = aws_api_gateway_method.upload_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin" = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "upload_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.upload.id
+  http_method = aws_api_gateway_method.upload_options.http_method
+  status_code = aws_api_gateway_method_response.upload_options_200.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+  }
+}
+
 # Lambda Permissions for API Gateway
 resource "aws_lambda_permission" "api_users" {
   statement_id  = "AllowExecutionFromAPIGateway"
@@ -318,11 +812,33 @@ resource "aws_lambda_permission" "api_meetup" {
   source_arn    = "${aws_api_gateway_rest_api.api.execution_arn}/*/*"
 }
 
+resource "aws_lambda_permission" "api_meetups_crud" {
+  statement_id  = "AllowExecutionFromAPIGateway"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.meetups_crud.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.api.execution_arn}/*/*"
+}
+
+resource "aws_lambda_permission" "api_s3_upload" {
+  statement_id  = "AllowExecutionFromAPIGateway"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.s3_upload.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.api.execution_arn}/*/*"
+}
+
 # API Gateway Deployment
 resource "aws_api_gateway_deployment" "api" {
   depends_on = [
     aws_api_gateway_integration.users_lambda,
     aws_api_gateway_integration.meetup_verify_lambda,
+    aws_api_gateway_integration.meetups_get_lambda,
+    aws_api_gateway_integration.meetups_post_lambda,
+    aws_api_gateway_integration.meetups_id_get_lambda,
+    aws_api_gateway_integration.meetups_id_put_lambda,
+    aws_api_gateway_integration.meetups_id_publish_lambda,
+    aws_api_gateway_integration.upload_lambda,
   ]
 
   rest_api_id = aws_api_gateway_rest_api.api.id
@@ -413,9 +929,19 @@ output "dynamodb_table_name" {
   value       = aws_dynamodb_table.users.name
 }
 
+output "dynamodb_meetups_table_name" {
+  description = "DynamoDB Meetups Table Name"
+  value       = aws_dynamodb_table.meetups.name
+}
+
 output "s3_bucket_name" {
   description = "S3 Bucket Name for Profile Photos"
   value       = aws_s3_bucket.profile_photos.id
+}
+
+output "s3_meetup_posters_bucket_name" {
+  description = "S3 Bucket Name for Meetup Posters"
+  value       = aws_s3_bucket.meetup_posters.id
 }
 
 output "api_gateway_url" {
@@ -431,4 +957,9 @@ output "lambda_user_profile_creation_arn" {
 output "lambda_meetup_verification_arn" {
   description = "Meetup Verification Lambda ARN"
   value       = aws_lambda_function.meetup_verification.arn
+}
+
+output "lambda_meetups_crud_arn" {
+  description = "Meetups CRUD Lambda ARN"
+  value       = aws_lambda_function.meetups_crud.arn
 }

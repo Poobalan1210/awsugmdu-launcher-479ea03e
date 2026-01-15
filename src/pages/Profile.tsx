@@ -16,9 +16,17 @@ import {
 } from 'lucide-react';
 import { currentUser, mockSprints, mockBadges, getUserById, mockUsers, mockMeetups, mockColleges, mockUserRoles, communityRoles, CommunityRole } from '@/data/mockData';
 import { format, parseISO } from 'date-fns';
+import { getMeetups } from '@/lib/meetups';
+import { useQuery } from '@tanstack/react-query';
 
 export default function Profile() {
   const { userId } = useParams();
+  
+  // Fetch meetups from backend
+  const { data: allMeetups = [] } = useQuery({
+    queryKey: ['meetups'],
+    queryFn: getMeetups,
+  });
   
   // If userId is provided, get that user, otherwise show current user
   const user = userId ? getUserById(userId) : currentUser;
@@ -121,14 +129,15 @@ export default function Profile() {
       });
     });
 
-    // Meetup attendance
-    mockMeetups.forEach(meetup => {
-      if (meetup.registeredUsers.includes(user.id)) {
+    // Meetup attendance - use backend data if available, otherwise fallback to mock
+    const meetupsToCheck = allMeetups.length > 0 ? allMeetups : mockMeetups;
+    meetupsToCheck.forEach(meetup => {
+      if (meetup.registeredUsers?.includes(user.id)) {
         activities.push({
           id: `meetup-attend-${meetup.id}`,
           type: 'meetup_attended',
-          title: `Attended ${meetup.title}`,
-          description: meetup.description.substring(0, 80) + '...',
+          title: `Registered for ${meetup.title}`,
+          description: (meetup.description || '').substring(0, 80) + '...',
           date: meetup.date,
           link: `/meetups?id=${meetup.id}`,
           icon: <Calendar className="h-4 w-4" />
@@ -136,8 +145,8 @@ export default function Profile() {
       }
     });
 
-    // Meetup speaking engagements
-    mockMeetups.forEach(meetup => {
+    // Meetup speaking engagements - use backend data if available, otherwise fallback to mock
+    meetupsToCheck.forEach(meetup => {
       meetup.speakers.forEach(speaker => {
         if (speaker.userId === user.id) {
           activities.push({

@@ -61,3 +61,17 @@ export async function publishMeetup(id: string, publish: boolean): Promise<Meetu
   });
   return response.meetup;
 }
+
+export interface RegisterMeetupResponse {
+  meetup: Meetup;
+  message: string;
+  alreadyRegistered?: boolean;
+}
+
+export async function registerForMeetup(id: string, userId: string): Promise<RegisterMeetupResponse> {
+  const response = await callApi<RegisterMeetupResponse>(`/meetups/${id}/register`, {
+    method: 'POST',
+    body: JSON.stringify({ userId }),
+  });
+  return response;
+}

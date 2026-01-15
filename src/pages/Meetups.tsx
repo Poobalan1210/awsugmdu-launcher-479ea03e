@@ -12,12 +12,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   Calendar, MapPin, Users, Video, Clock, 
   ArrowLeft, ExternalLink, PlayCircle,
-  Linkedin, Github
+  Linkedin, Github, CheckCircle
 } from 'lucide-react';
 import { mockMeetups, Meetup } from '@/data/mockData';
 import { format, parseISO, isPast } from 'date-fns';
-import { getMeetups } from '@/lib/meetups';
-import { useQuery } from '@tanstack/react-query';
+import { getMeetups, registerForMeetup } from '@/lib/meetups';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@/contexts/AuthContext';
+import { toast } from 'sonner';
 
 // Configure marked for safe HTML rendering
 marked.setOptions({
@@ -130,12 +132,53 @@ function MeetupCard({ meetup, onSelect }: { meetup: Meetup; onSelect: () => void
 function MeetupDetail({ meetup, onBack }: { meetup: Meetup; onBack: () => void }) {
   const eventDate = parseISO(meetup.date);
   const isUpcoming = !isPast(eventDate);
+  const { user, isAuthenticated } = useAuth();
+  const queryClient = useQueryClient();
+  const [isRegistering, setIsRegistering] = useState(false);
 
   // Parse markdown or HTML content
   const parsedDescription = useMemo(() => {
     if (!meetup.richDescription) return null;
     return parseContent(meetup.richDescription);
   }, [meetup.richDescription]);
+
+  // Check if user is registered
+  const isRegistered = user && meetup.registeredUsers?.includes(user.id);
+
+  const handleRegister = async () => {
+    if (!isAuthenticated || !user) {
+      toast.error('Please log in to register for this meetup');
+      return;
+    }
+
+    if (!meetup.meetupUrl) {
+      toast.error('Meetup URL not available');
+      return;
+    }
+
+    setIsRegistering(true);
+    try {
+      const result = await registerForMeetup(meetup.id, user.id);
+      
+      if (result.alreadyRegistered) {
+        toast.info('You are already registered for this meetup');
+      } else {
+        toast.success('Successfully registered for the meetup!');
+        // Refresh meetups data
+        queryClient.invalidateQueries({ queryKey: ['meetups'] });
+      }
+      
+      // Redirect to meetup URL after a short delay
+      setTimeout(() => {
+        window.open(meetup.meetupUrl, '_blank');
+      }, 1000);
+    } catch (error) {
+      console.error('Registration error:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to register for meetup');
+    } finally {
+      setIsRegistering(false);
+    }
+  };
 
   return (
     <motion.div
@@ -193,11 +236,28 @@ function MeetupDetail({ meetup, onBack }: { meetup: Meetup; onBack: () => void }
                   <>
                     {isUpcoming ? (
                       meetup.meetupUrl && (
-                        <Button size="lg" asChild className="gap-2">
-                          <a href={meetup.meetupUrl} target="_blank" rel="noopener noreferrer">
-                            <ExternalLink className="h-4 w-4" />
-                            Register on Meetup
-                          </a>
+                        <Button 
+                          size="lg" 
+                          className="gap-2"
+                          onClick={handleRegister}
+                          disabled={isRegistering || isRegistered}
+                        >
+                          {isRegistering ? (
+                            <>
+                              <Clock className="h-4 w-4 animate-spin" />
+                              Registering...
+                            </>
+                          ) : isRegistered ? (
+                            <>
+                              <CheckCircle className="h-4 w-4" />
+                              Registered
+                            </>
+                          ) : (
+                            <>
+                              <ExternalLink className="h-4 w-4" />
+                              Register on Meetup
+                            </>
+                          )}
                         </Button>
                       )
                     ) : (
@@ -217,11 +277,28 @@ function MeetupDetail({ meetup, onBack }: { meetup: Meetup; onBack: () => void }
                     {isUpcoming ? (
                       <>
                         {meetup.meetupUrl && (
-                          <Button size="lg" asChild className="gap-2">
-                            <a href={meetup.meetupUrl} target="_blank" rel="noopener noreferrer">
-                              <ExternalLink className="h-4 w-4" />
-                              Register on Meetup
-                            </a>
+                          <Button 
+                            size="lg" 
+                            className="gap-2"
+                            onClick={handleRegister}
+                            disabled={isRegistering || isRegistered}
+                          >
+                            {isRegistering ? (
+                              <>
+                                <Clock className="h-4 w-4 animate-spin" />
+                                Registering...
+                              </>
+                            ) : isRegistered ? (
+                              <>
+                                <CheckCircle className="h-4 w-4" />
+                                Registered
+                              </>
+                            ) : (
+                              <>
+                                <ExternalLink className="h-4 w-4" />
+                                Register on Meetup
+                              </>
+                            )}
                           </Button>
                         )}
                         {meetup.meetingLink && (

@@ -52,14 +52,18 @@ function parsePath(event) {
 exports.handler = async (event) => {
   console.log('Event:', JSON.stringify(event, null, 2));
   
-  // Handle CORS preflight
+  // Handle CORS preflight - must be first
   if (event.httpMethod === 'OPTIONS') {
-    return createResponse(200, {});
+    return {
+      statusCode: 200,
+      headers: getCorsHeaders(),
+      body: ''
+    };
   }
   
   try {
     const method = event.httpMethod;
-    const path = event.path || '';
+    const path = event.path || event.requestContext?.path || '';
     
     // Parse path - handle both /dev/meetups and /meetups formats
     const pathParts = path.split('/').filter(p => p);
@@ -88,6 +92,9 @@ exports.handler = async (event) => {
       } else if (method === 'PATCH' && id && action === 'publish') {
         // PATCH /meetups/{id}/publish - Publish/unpublish meetup
         return await publishMeetup(id, event);
+      } else if (method === 'POST' && id && action === 'register') {
+        // POST /meetups/{id}/register - Register user for meetup
+        return await registerForMeetup(id, event);
       }
     }
     
@@ -352,4 +359,68 @@ async function publishMeetup(id, event) {
   }));
   
   return createResponse(200, { meetup: updated.Item });
+}
+
+// Register user for meetup
+async function registerForMeetup(id, event) {
+  const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
+  const { userId } = body;
+  
+  if (!userId) {
+    return createResponse(400, { error: 'Missing required field: userId' });
+  }
+  
+  // Check if meetup exists
+  const existing = await docClient.send(new GetCommand({
+    TableName: MEETUPS_TABLE,
+    Key: { id }
+  }));
+  
+  if (!existing.Item) {
+    return createResponse(404, { error: 'Meetup not found' });
+  }
+  
+  const meetup = existing.Item;
+  
+  // Check if user is already registered
+  const registeredUsers = meetup.registeredUsers || [];
+  if (registeredUsers.includes(userId)) {
+    return createResponse(200, { 
+      meetup: meetup,
+      message: 'User already registered',
+      alreadyRegistered: true
+    });
+  }
+  
+  // Check if meetup is at capacity
+  if (meetup.maxAttendees && registeredUsers.length >= meetup.maxAttendees) {
+    return createResponse(400, { error: 'Meetup is at full capacity' });
+  }
+  
+  // Add user to registeredUsers array and increment attendees
+  const updatedRegisteredUsers = [...registeredUsers, userId];
+  const newAttendeesCount = updatedRegisteredUsers.length;
+  
+  await docClient.send(new UpdateCommand({
+    TableName: MEETUPS_TABLE,
+    Key: { id },
+    UpdateExpression: 'SET registeredUsers = :registeredUsers, attendees = :attendees, updatedAt = :updatedAt',
+    ExpressionAttributeValues: {
+      ':registeredUsers': updatedRegisteredUsers,
+      ':attendees': newAttendeesCount,
+      ':updatedAt': new Date().toISOString()
+    }
+  }));
+  
+  // Fetch updated meetup
+  const updated = await docClient.send(new GetCommand({
+    TableName: MEETUPS_TABLE,
+    Key: { id }
+  }));
+  
+  return createResponse(200, { 
+    meetup: updated.Item,
+    message: 'Successfully registered for meetup',
+    alreadyRegistered: false
+  });
 }

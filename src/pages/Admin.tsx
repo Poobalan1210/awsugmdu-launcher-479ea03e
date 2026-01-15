@@ -20,7 +20,7 @@ import {
   Upload, X, UserPlus, Check, ChevronDown, GraduationCap,
   Trophy, ListTodo, ClipboardCheck, Target, Shield, UserCog
 } from 'lucide-react';
-import { mockSprints, mockMeetups, currentUser, Submission, generateSpeakerInviteLink, Sprint, Session, SessionPerson, mockUsers, User as UserType, predefinedTasks, mockColleges, CollegeTask, College, getTaskById, getUserById, communityRoles, mockUserRoles, CommunityRole, UserRoleAssignment } from '@/data/mockData';
+import { mockSprints, mockMeetups, currentUser, Submission, generateSpeakerInviteLink, Sprint, Session, SessionPerson, mockUsers, User as UserType, predefinedTasks, mockColleges, CollegeTask, College, getTaskById, getUserById, communityRoles, mockUserRoles, CommunityRole, UserRoleAssignment, PointActivity, mockPointActivities } from '@/data/mockData';
 import { Progress } from '@/components/ui/progress';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
@@ -1776,12 +1776,18 @@ function CollegeChampsTab() {
   );
 }
 
-// Members Tab Component with integrated role management
+// Members Tab Component with integrated role management and points awarding
 function MembersTab() {
   const [userRoles, setUserRoles] = useState<UserRoleAssignment[]>(mockUserRoles);
+  const [pointActivities, setPointActivities] = useState<PointActivity[]>(mockPointActivities);
+  const [userPoints, setUserPoints] = useState<Record<string, number>>(
+    () => mockUsers.reduce((acc, u) => ({ ...acc, [u.id]: u.points }), {})
+  );
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedUser, setSelectedUser] = useState<UserType | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isAwardDialogOpen, setIsAwardDialogOpen] = useState(false);
+  const [awardForm, setAwardForm] = useState({ points: '', reason: '' });
 
   const filteredUsers = mockUsers.filter(user => 
     user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -1792,7 +1798,19 @@ function MembersTab() {
     return userRoles.filter(ur => ur.userId === userId).map(ur => ur.role);
   };
 
+  const getUserActivities = (userId: string): PointActivity[] => {
+    return pointActivities.filter(pa => pa.userId === userId).sort((a, b) => 
+      new Date(b.awardedAt).getTime() - new Date(a.awardedAt).getTime()
+    );
+  };
+
   const handleToggleRole = (userId: string, role: CommunityRole) => {
+    // Don't allow removing the member role
+    if (role === 'member') {
+      toast.error("Member role cannot be removed");
+      return;
+    }
+    
     const existingRoleAssignment = userRoles.find(ur => ur.userId === userId && ur.role === role);
     
     if (existingRoleAssignment) {
@@ -1811,6 +1829,40 @@ function MembersTab() {
       setUserRoles(prev => [...prev, newAssignment]);
       toast.success(`Assigned ${role} role`);
     }
+  };
+
+  const handleAwardPoints = () => {
+    if (!selectedUser || !awardForm.points || !awardForm.reason) {
+      toast.error("Please fill in all fields");
+      return;
+    }
+
+    const pointsNum = parseInt(awardForm.points);
+    if (isNaN(pointsNum) || pointsNum <= 0) {
+      toast.error("Please enter a valid positive number");
+      return;
+    }
+
+    // Create new activity
+    const newActivity: PointActivity = {
+      id: `pa-${Date.now()}`,
+      userId: selectedUser.id,
+      points: pointsNum,
+      reason: awardForm.reason,
+      type: 'adhoc',
+      awardedBy: currentUser.id,
+      awardedAt: new Date().toISOString().split('T')[0]
+    };
+
+    setPointActivities(prev => [...prev, newActivity]);
+    setUserPoints(prev => ({
+      ...prev,
+      [selectedUser.id]: (prev[selectedUser.id] || 0) + pointsNum
+    }));
+
+    toast.success(`Awarded ${pointsNum} points to ${selectedUser.name}`);
+    setAwardForm({ points: '', reason: '' });
+    setIsAwardDialogOpen(false);
   };
 
   const getRoleInfo = (role: CommunityRole) => {
@@ -1853,6 +1905,7 @@ function MembersTab() {
               <TableBody>
                 {filteredUsers.map(user => {
                   const roles = getUserRoles(user.id);
+                  const currentPoints = userPoints[user.id] || user.points;
                   return (
                     <TableRow key={user.id} className="cursor-pointer hover:bg-muted/50">
                       <TableCell>
@@ -1899,7 +1952,7 @@ function MembersTab() {
                       <TableCell>
                         <div className="flex items-center gap-1">
                           <Trophy className="h-4 w-4 text-amber-500" />
-                          <span className="font-medium">{user.points}</span>
+                          <span className="font-medium">{currentPoints}</span>
                         </div>
                       </TableCell>
                       <TableCell className="text-right">
@@ -1921,7 +1974,7 @@ function MembersTab() {
                               View
                             </Button>
                           </DialogTrigger>
-                          <DialogContent className="max-w-lg">
+                          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
                             <DialogHeader>
                               <DialogTitle>Member Profile</DialogTitle>
                               <DialogDescription>
@@ -1945,7 +1998,7 @@ function MembersTab() {
                                 <div className="text-right">
                                   <div className="flex items-center gap-1 justify-end">
                                     <Trophy className="h-5 w-5 text-amber-500" />
-                                    <span className="text-xl font-bold">{user.points}</span>
+                                    <span className="text-xl font-bold">{userPoints[user.id] || user.points}</span>
                                   </div>
                                   <p className="text-xs text-muted-foreground">points</p>
                                 </div>
@@ -1960,6 +2013,7 @@ function MembersTab() {
                                 <div className="space-y-2">
                                   {communityRoles.map(role => {
                                     const hasRole = roles.includes(role.value);
+                                    const isMemberRole = role.value === 'member';
                                     return (
                                       <div 
                                         key={role.value}
@@ -1976,11 +2030,12 @@ function MembersTab() {
                                           variant={hasRole ? "default" : "outline"}
                                           size="sm"
                                           onClick={() => handleToggleRole(user.id, role.value)}
+                                          disabled={isMemberRole && hasRole}
                                         >
                                           {hasRole ? (
                                             <>
                                               <Check className="h-4 w-4 mr-1" />
-                                              Assigned
+                                              {isMemberRole ? 'Default' : 'Assigned'}
                                             </>
                                           ) : (
                                             'Assign'
@@ -1992,16 +2047,85 @@ function MembersTab() {
                                 </div>
                               </div>
 
+                              {/* Points Activity Section */}
+                              <div>
+                                <h4 className="font-medium mb-3 flex items-center gap-2">
+                                  <Award className="h-4 w-4 text-amber-500" />
+                                  Points Activity
+                                </h4>
+                                <div className="space-y-2 max-h-40 overflow-y-auto">
+                                  {getUserActivities(user.id).length > 0 ? (
+                                    getUserActivities(user.id).map(activity => (
+                                      <div key={activity.id} className="flex items-center justify-between p-2 bg-muted/30 rounded text-sm">
+                                        <div className="flex-1">
+                                          <p className="font-medium">{activity.reason}</p>
+                                          <p className="text-xs text-muted-foreground">
+                                            {format(parseISO(activity.awardedAt), 'MMM d, yyyy')}
+                                            {activity.type === 'adhoc' && ' • Ad-hoc award'}
+                                          </p>
+                                        </div>
+                                        <Badge variant="outline" className="text-green-600 border-green-600">
+                                          +{activity.points}
+                                        </Badge>
+                                      </div>
+                                    ))
+                                  ) : (
+                                    <p className="text-sm text-muted-foreground text-center py-4">No activity recorded yet</p>
+                                  )}
+                                </div>
+                              </div>
+
                               {/* Additional Actions */}
                               <div className="flex gap-2 pt-2 border-t">
                                 <Button variant="outline" size="sm" className="gap-1 flex-1">
                                   <Mail className="h-4 w-4" />
                                   Send Email
                                 </Button>
-                                <Button variant="outline" size="sm" className="gap-1 flex-1">
-                                  <Award className="h-4 w-4" />
-                                  Award Points
-                                </Button>
+                                <Dialog open={isAwardDialogOpen} onOpenChange={setIsAwardDialogOpen}>
+                                  <DialogTrigger asChild>
+                                    <Button size="sm" className="gap-1 flex-1">
+                                      <Award className="h-4 w-4" />
+                                      Award Points
+                                    </Button>
+                                  </DialogTrigger>
+                                  <DialogContent>
+                                    <DialogHeader>
+                                      <DialogTitle>Award Points to {user.name}</DialogTitle>
+                                      <DialogDescription>
+                                        Add ad-hoc points with a reason. This will be recorded in their activity.
+                                      </DialogDescription>
+                                    </DialogHeader>
+                                    <div className="space-y-4 py-4">
+                                      <div className="space-y-2">
+                                        <Label>Reason / Activity Name *</Label>
+                                        <Input
+                                          placeholder="e.g., Community contribution, Event help..."
+                                          value={awardForm.reason}
+                                          onChange={(e) => setAwardForm(prev => ({ ...prev, reason: e.target.value }))}
+                                        />
+                                      </div>
+                                      <div className="space-y-2">
+                                        <Label>Number of Points *</Label>
+                                        <Input
+                                          type="number"
+                                          placeholder="e.g., 50"
+                                          min="1"
+                                          value={awardForm.points}
+                                          onChange={(e) => setAwardForm(prev => ({ ...prev, points: e.target.value }))}
+                                        />
+                                      </div>
+                                      <div className="flex gap-2 pt-2">
+                                        <Button variant="outline" onClick={() => setIsAwardDialogOpen(false)} className="flex-1">
+                                          Cancel
+                                        </Button>
+                                        <Button onClick={handleAwardPoints} className="flex-1 gap-1">
+                                          <Award className="h-4 w-4" />
+                                          Award Points
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  </DialogContent>
+                                </Dialog>
                               </div>
                             </div>
                           </DialogContent>

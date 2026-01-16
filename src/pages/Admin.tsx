@@ -19,9 +19,9 @@ import {
   Rocket, ExternalLink, MessageSquare, Award, Link2,
   Copy, Mail, Edit, Trash2, Eye, FileText, User, Video,
   Upload, X, UserPlus, Check, ChevronDown, GraduationCap,
-  Trophy, ListTodo, ClipboardCheck, Target, Shield, UserCog
+  Trophy, ListTodo, ClipboardCheck, Target, Shield, UserCog, Medal
 } from 'lucide-react';
-import { mockSprints, mockMeetups, currentUser, Submission, generateSpeakerInviteLink, Sprint, Session, SessionPerson, mockUsers, User as UserType, predefinedTasks, mockColleges, CollegeTask, College, getTaskById, getUserById, communityRoles, mockUserRoles, CommunityRole, UserRoleAssignment, PointActivity, mockPointActivities, Meetup } from '@/data/mockData';
+import { mockSprints, mockMeetups, currentUser, Submission, generateSpeakerInviteLink, Sprint, Session, SessionPerson, mockUsers, User as UserType, predefinedTasks, mockColleges, CollegeTask, College, getTaskById, getUserById, communityRoles, mockUserRoles, CommunityRole, UserRoleAssignment, PointActivity, mockPointActivities, Meetup, mockBadges, Badge as BadgeType, BadgeAward, mockBadgeAwards } from '@/data/mockData';
 import { createMeetup, updateMeetup, publishMeetup, getMeetups, CreateMeetupData, UpdateMeetupData } from '@/lib/meetups';
 import { uploadFileToS3 } from '@/lib/s3Upload';
 import { Progress } from '@/components/ui/progress';
@@ -2750,6 +2750,385 @@ function MembersTab() {
   );
 }
 
+// Badge Management Tab Component
+function BadgesTab() {
+  const [badges, setBadges] = useState<BadgeType[]>(mockBadges);
+  const [badgeAwards, setBadgeAwards] = useState<BadgeAward[]>(mockBadgeAwards);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedBadge, setSelectedBadge] = useState<BadgeType | null>(null);
+  const [isAwardDialogOpen, setIsAwardDialogOpen] = useState(false);
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState('');
+  const [awardReason, setAwardReason] = useState('');
+  const [newBadge, setNewBadge] = useState({
+    name: '',
+    description: '',
+    icon: '🏆',
+    category: 'special' as BadgeType['category']
+  });
+
+  const filteredBadges = badges.filter(badge =>
+    badge.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    badge.description.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const getCategoryColor = (category: BadgeType['category']) => {
+    switch (category) {
+      case 'sprint': return 'bg-blue-500/10 text-blue-600 border-blue-500/30';
+      case 'certification': return 'bg-amber-500/10 text-amber-600 border-amber-500/30';
+      case 'contribution': return 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30';
+      case 'special': return 'bg-purple-500/10 text-purple-600 border-purple-500/30';
+      default: return '';
+    }
+  };
+
+  const getUsersWithBadge = (badgeId: string) => {
+    return mockUsers.filter(user => user.badges.some(b => b.id === badgeId));
+  };
+
+  const getUsersWithoutBadge = (badgeId: string) => {
+    return mockUsers.filter(user => !user.badges.some(b => b.id === badgeId));
+  };
+
+  const handleAwardBadge = () => {
+    if (!selectedBadge || !selectedUserId) {
+      toast.error('Please select a user');
+      return;
+    }
+
+    const user = getUserById(selectedUserId);
+    if (!user) {
+      toast.error('User not found');
+      return;
+    }
+
+    // Check if user already has this badge
+    if (user.badges.some(b => b.id === selectedBadge.id)) {
+      toast.error(`${user.name} already has this badge`);
+      return;
+    }
+
+    // Add badge to user
+    const newAward: BadgeAward = {
+      id: `ba-${Date.now()}`,
+      badgeId: selectedBadge.id,
+      userId: selectedUserId,
+      awardedAt: new Date().toISOString().split('T')[0],
+      awardedBy: currentUser.id,
+      reason: awardReason || 'Adhoc badge award',
+      isAdhoc: true
+    };
+
+    setBadgeAwards(prev => [...prev, newAward]);
+    
+    // Update user badges in mock data
+    const userIndex = mockUsers.findIndex(u => u.id === selectedUserId);
+    if (userIndex !== -1) {
+      mockUsers[userIndex].badges.push({
+        ...selectedBadge,
+        earnedDate: new Date().toISOString().split('T')[0]
+      });
+    }
+
+    toast.success(`Awarded "${selectedBadge.name}" badge to ${user.name}`);
+    setSelectedUserId('');
+    setAwardReason('');
+    setIsAwardDialogOpen(false);
+  };
+
+  const handleCreateBadge = () => {
+    if (!newBadge.name || !newBadge.description) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
+    const badge: BadgeType = {
+      id: `b-${Date.now()}`,
+      name: newBadge.name,
+      description: newBadge.description,
+      icon: newBadge.icon,
+      category: newBadge.category,
+      earnedDate: new Date().toISOString().split('T')[0]
+    };
+
+    setBadges(prev => [...prev, badge]);
+    toast.success(`Created badge "${badge.name}"`);
+    setNewBadge({ name: '', description: '', icon: '🏆', category: 'special' });
+    setIsCreateDialogOpen(false);
+  };
+
+  const emojiOptions = ['🏆', '🚀', '⭐', '🎯', '🔥', '💎', '🌟', '🎖️', '🥇', '🎓', '✨', '💡', '🤝', '✍️', '🔒', '☁️', '📜', '🎤'];
+
+  return (
+    <div className="space-y-6">
+      {/* Header with Create Button */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-semibold flex items-center gap-2">
+            <Medal className="h-5 w-5 text-primary" />
+            Badge Management
+          </h2>
+          <p className="text-sm text-muted-foreground">Create badges and award them to community members</p>
+        </div>
+        <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+          <DialogTrigger asChild>
+            <Button className="gap-2">
+              <Plus className="h-4 w-4" />
+              Create Badge
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Create New Badge</DialogTitle>
+              <DialogDescription>
+                Create a custom badge to award to community members
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>Badge Name *</Label>
+                <Input
+                  placeholder="e.g., Community Champion"
+                  value={newBadge.name}
+                  onChange={(e) => setNewBadge(prev => ({ ...prev, name: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Description *</Label>
+                <Textarea
+                  placeholder="e.g., Awarded to exceptional community contributors"
+                  value={newBadge.description}
+                  onChange={(e) => setNewBadge(prev => ({ ...prev, description: e.target.value }))}
+                  rows={2}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Icon</Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className="w-full text-2xl h-12">
+                        {newBadge.icon}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-64">
+                      <div className="grid grid-cols-6 gap-2">
+                        {emojiOptions.map(emoji => (
+                          <Button
+                            key={emoji}
+                            variant="ghost"
+                            className="h-10 w-10 text-xl p-0"
+                            onClick={() => setNewBadge(prev => ({ ...prev, icon: emoji }))}
+                          >
+                            {emoji}
+                          </Button>
+                        ))}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <div className="space-y-2">
+                  <Label>Category</Label>
+                  <Select
+                    value={newBadge.category}
+                    onValueChange={(value: BadgeType['category']) =>
+                      setNewBadge(prev => ({ ...prev, category: value }))
+                    }
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="sprint">Sprint</SelectItem>
+                      <SelectItem value="certification">Certification</SelectItem>
+                      <SelectItem value="contribution">Contribution</SelectItem>
+                      <SelectItem value="special">Special</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <Button onClick={handleCreateBadge} className="w-full gap-1">
+                <Plus className="h-4 w-4" />
+                Create Badge
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {/* Search */}
+      <Input
+        placeholder="Search badges..."
+        value={searchQuery}
+        onChange={(e) => setSearchQuery(e.target.value)}
+        className="max-w-md"
+      />
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card className="glass-card">
+          <CardContent className="p-4 text-center">
+            <div className="text-3xl font-bold text-primary">{badges.length}</div>
+            <p className="text-sm text-muted-foreground">Total Badges</p>
+          </CardContent>
+        </Card>
+        <Card className="glass-card">
+          <CardContent className="p-4 text-center">
+            <div className="text-3xl font-bold text-blue-500">
+              {badges.filter(b => b.category === 'sprint').length}
+            </div>
+            <p className="text-sm text-muted-foreground">Sprint</p>
+          </CardContent>
+        </Card>
+        <Card className="glass-card">
+          <CardContent className="p-4 text-center">
+            <div className="text-3xl font-bold text-amber-500">
+              {badges.filter(b => b.category === 'certification').length}
+            </div>
+            <p className="text-sm text-muted-foreground">Certification</p>
+          </CardContent>
+        </Card>
+        <Card className="glass-card">
+          <CardContent className="p-4 text-center">
+            <div className="text-3xl font-bold text-purple-500">
+              {badges.filter(b => b.category === 'special').length}
+            </div>
+            <p className="text-sm text-muted-foreground">Special</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Badges Grid */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {filteredBadges.map(badge => {
+          const usersWithBadge = getUsersWithBadge(badge.id);
+          return (
+            <Card key={badge.id} className="glass-card hover-lift">
+              <CardContent className="p-4">
+                <div className="flex items-start gap-4">
+                  <div className="text-4xl">{badge.icon}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="font-semibold truncate">{badge.name}</h3>
+                      <Badge className={getCategoryColor(badge.category)}>
+                        {badge.category}
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground mb-3">{badge.description}</p>
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="flex -space-x-2">
+                        {usersWithBadge.slice(0, 4).map(user => (
+                          <Avatar key={user.id} className="h-6 w-6 border-2 border-background">
+                            <AvatarImage src={user.avatar} />
+                            <AvatarFallback className="text-xs">{user.name.charAt(0)}</AvatarFallback>
+                          </Avatar>
+                        ))}
+                        {usersWithBadge.length > 4 && (
+                          <div className="h-6 w-6 rounded-full bg-muted flex items-center justify-center text-xs border-2 border-background">
+                            +{usersWithBadge.length - 4}
+                          </div>
+                        )}
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        {usersWithBadge.length} awarded
+                      </span>
+                    </div>
+                    <Dialog 
+                      open={isAwardDialogOpen && selectedBadge?.id === badge.id} 
+                      onOpenChange={(open) => {
+                        setIsAwardDialogOpen(open);
+                        if (!open) setSelectedBadge(null);
+                      }}
+                    >
+                      <DialogTrigger asChild>
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="w-full gap-1"
+                          onClick={() => {
+                            setSelectedBadge(badge);
+                            setIsAwardDialogOpen(true);
+                          }}
+                        >
+                          <Award className="h-4 w-4" />
+                          Award Badge
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle className="flex items-center gap-2">
+                            <span className="text-2xl">{badge.icon}</span>
+                            Award "{badge.name}"
+                          </DialogTitle>
+                          <DialogDescription>
+                            Select a member to award this badge to
+                          </DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4 py-4">
+                          <div className="space-y-2">
+                            <Label>Select Member *</Label>
+                            <Select value={selectedUserId} onValueChange={setSelectedUserId}>
+                              <SelectTrigger><SelectValue placeholder="Choose a member..." /></SelectTrigger>
+                              <SelectContent>
+                                {getUsersWithoutBadge(badge.id).map(user => (
+                                  <SelectItem key={user.id} value={user.id}>
+                                    <div className="flex items-center gap-2">
+                                      <Avatar className="h-6 w-6">
+                                        <AvatarImage src={user.avatar} />
+                                        <AvatarFallback>{user.name.charAt(0)}</AvatarFallback>
+                                      </Avatar>
+                                      {user.name}
+                                    </div>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Reason (Optional)</Label>
+                            <Input
+                              placeholder="e.g., Outstanding contribution to..."
+                              value={awardReason}
+                              onChange={(e) => setAwardReason(e.target.value)}
+                            />
+                          </div>
+                          <div className="flex gap-2 pt-2">
+                            <Button 
+                              variant="outline" 
+                              onClick={() => setIsAwardDialogOpen(false)} 
+                              className="flex-1"
+                            >
+                              Cancel
+                            </Button>
+                            <Button onClick={handleAwardBadge} className="flex-1 gap-1">
+                              <Award className="h-4 w-4" />
+                              Award Badge
+                            </Button>
+                          </div>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      {filteredBadges.length === 0 && (
+        <Card className="glass-card">
+          <CardContent className="p-12 text-center">
+            <Medal className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+            <h3 className="text-lg font-semibold mb-2">No Badges Found</h3>
+            <p className="text-muted-foreground">
+              {searchQuery ? 'No badges match your search.' : 'Create your first badge to get started!'}
+            </p>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 export default function Admin() {
   const [activeTab, setActiveTab] = useState('submissions');
   const isAdmin = currentUser.role === 'admin';
@@ -2855,6 +3234,10 @@ export default function Admin() {
                   <TabsTrigger value="members" className="gap-2">
                     <Users className="h-4 w-4" />
                     Members
+                  </TabsTrigger>
+                  <TabsTrigger value="badges" className="gap-2">
+                    <Medal className="h-4 w-4" />
+                    Badges
                   </TabsTrigger>
                   <TabsTrigger value="college-champs" className="gap-2">
                     <GraduationCap className="h-4 w-4" />
@@ -2977,6 +3360,10 @@ export default function Admin() {
 
                 <TabsContent value="members">
                   <MembersTab />
+                </TabsContent>
+
+                <TabsContent value="badges">
+                  <BadgesTab />
                 </TabsContent>
 
                 <TabsContent value="college-champs">

@@ -21,7 +21,7 @@ import {
   Upload, X, UserPlus, Check, ChevronDown, GraduationCap,
   Trophy, ListTodo, ClipboardCheck, Target, Shield, UserCog, Medal
 } from 'lucide-react';
-import { mockSprints, mockMeetups, currentUser, Submission, generateSpeakerInviteLink, Sprint, Session, SessionPerson, mockUsers, User as UserType, predefinedTasks, mockColleges, CollegeTask, College, getTaskById, getUserById, communityRoles, mockUserRoles, CommunityRole, UserRoleAssignment, PointActivity, mockPointActivities, Meetup, mockBadges, Badge as BadgeType, BadgeAward, mockBadgeAwards } from '@/data/mockData';
+import { mockSprints, mockMeetups, currentUser, Submission, generateSpeakerInviteLink, Sprint, Session, SessionPerson, mockUsers, User as UserType, predefinedTasks, mockColleges, CollegeTask, College, getTaskById, getUserById, communityRoles, mockUserRoles, CommunityRole, UserRoleAssignment, PointActivity, mockPointActivities, Meetup, mockBadges, Badge as BadgeType, BadgeAward, mockBadgeAwards, BadgeCriteriaType, criteriaTypeLabels, BadgeCriteria } from '@/data/mockData';
 import { createMeetup, updateMeetup, publishMeetup, getMeetups, CreateMeetupData, UpdateMeetupData } from '@/lib/meetups';
 import { uploadFileToS3 } from '@/lib/s3Upload';
 import { Progress } from '@/components/ui/progress';
@@ -2764,7 +2764,8 @@ function BadgesTab() {
     name: '',
     description: '',
     icon: '🏆',
-    category: 'special' as BadgeType['category']
+    criteriaType: 'manual' as BadgeCriteriaType,
+    threshold: 1
   });
 
   const filteredBadges = badges.filter(badge =>
@@ -2772,13 +2773,16 @@ function BadgesTab() {
     badge.description.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const getCategoryColor = (category: BadgeType['category']) => {
-    switch (category) {
-      case 'sprint': return 'bg-blue-500/10 text-blue-600 border-blue-500/30';
-      case 'certification': return 'bg-amber-500/10 text-amber-600 border-amber-500/30';
-      case 'contribution': return 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30';
-      case 'special': return 'bg-purple-500/10 text-purple-600 border-purple-500/30';
-      default: return '';
+  const getCriteriaColor = (type: BadgeCriteriaType) => {
+    switch (type) {
+      case 'manual': return 'bg-purple-500/10 text-purple-600 border-purple-500/30';
+      case 'sprints_completed': return 'bg-blue-500/10 text-blue-600 border-blue-500/30';
+      case 'meetups_attended': return 'bg-green-500/10 text-green-600 border-green-500/30';
+      case 'submissions_approved': return 'bg-amber-500/10 text-amber-600 border-amber-500/30';
+      case 'points_earned': return 'bg-rose-500/10 text-rose-600 border-rose-500/30';
+      case 'sessions_delivered': return 'bg-cyan-500/10 text-cyan-600 border-cyan-500/30';
+      case 'certifications_earned': return 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30';
+      default: return 'bg-gray-500/10 text-gray-600 border-gray-500/30';
     }
   };
 
@@ -2842,18 +2846,26 @@ function BadgesTab() {
       return;
     }
 
+    const criteria: BadgeCriteria = {
+      type: newBadge.criteriaType,
+      threshold: newBadge.criteriaType !== 'manual' ? newBadge.threshold : undefined,
+      description: newBadge.criteriaType === 'manual' 
+        ? 'Manually awarded by admins' 
+        : `${criteriaTypeLabels[newBadge.criteriaType]}: ${newBadge.threshold}`
+    };
+
     const badge: BadgeType = {
       id: `b-${Date.now()}`,
       name: newBadge.name,
       description: newBadge.description,
       icon: newBadge.icon,
-      category: newBadge.category,
+      criteria,
       earnedDate: new Date().toISOString().split('T')[0]
     };
 
     setBadges(prev => [...prev, badge]);
     toast.success(`Created badge "${badge.name}"`);
-    setNewBadge({ name: '', description: '', icon: '🏆', category: 'special' });
+    setNewBadge({ name: '', description: '', icon: '🏆', criteriaType: 'manual', threshold: 1 });
     setIsCreateDialogOpen(false);
   };
 
@@ -2928,23 +2940,37 @@ function BadgesTab() {
                   </Popover>
                 </div>
                 <div className="space-y-2">
-                  <Label>Category</Label>
+                  <Label>Award Criteria *</Label>
                   <Select
-                    value={newBadge.category}
-                    onValueChange={(value: BadgeType['category']) =>
-                      setNewBadge(prev => ({ ...prev, category: value }))
+                    value={newBadge.criteriaType}
+                    onValueChange={(value: BadgeCriteriaType) =>
+                      setNewBadge(prev => ({ ...prev, criteriaType: value }))
                     }
                   >
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="sprint">Sprint</SelectItem>
-                      <SelectItem value="certification">Certification</SelectItem>
-                      <SelectItem value="contribution">Contribution</SelectItem>
-                      <SelectItem value="special">Special</SelectItem>
+                      <SelectItem value="manual">Manual Award Only</SelectItem>
+                      <SelectItem value="sprints_completed">Sprints Completed</SelectItem>
+                      <SelectItem value="meetups_attended">Meetups Attended</SelectItem>
+                      <SelectItem value="submissions_approved">Submissions Approved</SelectItem>
+                      <SelectItem value="points_earned">Points Earned</SelectItem>
+                      <SelectItem value="sessions_delivered">Sessions Delivered</SelectItem>
+                      <SelectItem value="certifications_earned">Certifications Earned</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
               </div>
+              {newBadge.criteriaType !== 'manual' && (
+                <div className="space-y-2">
+                  <Label>Threshold (e.g., complete {newBadge.threshold} {newBadge.criteriaType.replace('_', ' ')})</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={newBadge.threshold}
+                    onChange={(e) => setNewBadge(prev => ({ ...prev, threshold: parseInt(e.target.value) || 1 }))}
+                  />
+                </div>
+              )}
               <Button onClick={handleCreateBadge} className="w-full gap-1">
                 <Plus className="h-4 w-4" />
                 Create Badge
@@ -2972,26 +2998,26 @@ function BadgesTab() {
         </Card>
         <Card className="glass-card">
           <CardContent className="p-4 text-center">
-            <div className="text-3xl font-bold text-blue-500">
-              {badges.filter(b => b.category === 'sprint').length}
-            </div>
-            <p className="text-sm text-muted-foreground">Sprint</p>
-          </CardContent>
-        </Card>
-        <Card className="glass-card">
-          <CardContent className="p-4 text-center">
-            <div className="text-3xl font-bold text-amber-500">
-              {badges.filter(b => b.category === 'certification').length}
-            </div>
-            <p className="text-sm text-muted-foreground">Certification</p>
-          </CardContent>
-        </Card>
-        <Card className="glass-card">
-          <CardContent className="p-4 text-center">
             <div className="text-3xl font-bold text-purple-500">
-              {badges.filter(b => b.category === 'special').length}
+              {badges.filter(b => b.criteria.type === 'manual').length}
             </div>
-            <p className="text-sm text-muted-foreground">Special</p>
+            <p className="text-sm text-muted-foreground">Manual</p>
+          </CardContent>
+        </Card>
+        <Card className="glass-card">
+          <CardContent className="p-4 text-center">
+            <div className="text-3xl font-bold text-blue-500">
+              {badges.filter(b => b.criteria.type !== 'manual').length}
+            </div>
+            <p className="text-sm text-muted-foreground">Auto-Award</p>
+          </CardContent>
+        </Card>
+        <Card className="glass-card">
+          <CardContent className="p-4 text-center">
+            <div className="text-3xl font-bold text-green-500">
+              {badgeAwards.length}
+            </div>
+            <p className="text-sm text-muted-foreground">Total Awarded</p>
           </CardContent>
         </Card>
       </div>
@@ -3008,10 +3034,13 @@ function BadgesTab() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <h3 className="font-semibold truncate">{badge.name}</h3>
-                      <Badge className={getCategoryColor(badge.category)}>
-                        {badge.category}
+                      <Badge className={getCriteriaColor(badge.criteria.type)}>
+                        {badge.criteria.type === 'manual' ? 'Manual' : 'Auto'}
                       </Badge>
                     </div>
+                    <p className="text-xs text-muted-foreground mb-1 italic">
+                      {badge.criteria.description}
+                    </p>
                     <p className="text-sm text-muted-foreground mb-3">{badge.description}</p>
                     <div className="flex items-center gap-2 mb-3">
                       <div className="flex -space-x-2">

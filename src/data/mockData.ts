@@ -100,13 +100,29 @@ export interface User {
   twitter?: string;
 }
 
+// Badge criteria types for auto-awarding
+export type BadgeCriteriaType = 
+  | 'manual' // Only awarded manually by admins
+  | 'sprints_completed' // Complete X sprints
+  | 'meetups_attended' // Attend X meetups
+  | 'submissions_approved' // Get X submissions approved
+  | 'points_earned' // Earn X total points
+  | 'sessions_delivered' // Deliver X speaker sessions
+  | 'certifications_earned'; // Earn X certifications
+
+export interface BadgeCriteria {
+  type: BadgeCriteriaType;
+  threshold?: number; // e.g., complete 5 sprints, attend 3 meetups
+  description: string; // Human-readable criteria description
+}
+
 export interface Badge {
   id: string;
   name: string;
   description: string;
   icon: string;
   earnedDate: string;
-  category: 'sprint' | 'certification' | 'contribution' | 'special';
+  criteria: BadgeCriteria;
 }
 
 export interface Sprint {
@@ -459,6 +475,17 @@ export const mockUsers: User[] = [
 ];
 
 // Mock Badges
+// Criteria type labels for display
+export const criteriaTypeLabels: Record<BadgeCriteriaType, string> = {
+  manual: 'Manual Award',
+  sprints_completed: 'Sprints Completed',
+  meetups_attended: 'Meetups Attended',
+  submissions_approved: 'Submissions Approved',
+  points_earned: 'Points Earned',
+  sessions_delivered: 'Sessions Delivered',
+  certifications_earned: 'Certifications Earned'
+};
+
 export const mockBadges: Badge[] = [
   {
     id: 'b1',
@@ -466,7 +493,7 @@ export const mockBadges: Badge[] = [
     description: 'Completed 5 skill sprints',
     icon: '🏆',
     earnedDate: '2024-06-15',
-    category: 'sprint'
+    criteria: { type: 'sprints_completed', threshold: 5, description: 'Complete 5 skill sprints' }
   },
   {
     id: 'b2',
@@ -474,7 +501,7 @@ export const mockBadges: Badge[] = [
     description: 'Made your first sprint submission',
     icon: '🚀',
     earnedDate: '2024-03-20',
-    category: 'sprint'
+    criteria: { type: 'submissions_approved', threshold: 1, description: 'Get your first submission approved' }
   },
   {
     id: 'b3',
@@ -482,7 +509,7 @@ export const mockBadges: Badge[] = [
     description: 'Earned an AWS certification',
     icon: '📜',
     earnedDate: '2024-04-10',
-    category: 'certification'
+    criteria: { type: 'certifications_earned', threshold: 1, description: 'Earn at least 1 AWS certification' }
   },
   {
     id: 'b4',
@@ -490,7 +517,7 @@ export const mockBadges: Badge[] = [
     description: 'Helped 10 community members',
     icon: '🤝',
     earnedDate: '2024-05-25',
-    category: 'contribution'
+    criteria: { type: 'manual', description: 'Awarded for outstanding community support' }
   },
   {
     id: 'b5',
@@ -498,7 +525,7 @@ export const mockBadges: Badge[] = [
     description: 'Published 3 technical blogs',
     icon: '✍️',
     earnedDate: '2024-06-01',
-    category: 'contribution'
+    criteria: { type: 'submissions_approved', threshold: 3, description: 'Get 3 blog submissions approved' }
   },
   {
     id: 'b6',
@@ -506,7 +533,7 @@ export const mockBadges: Badge[] = [
     description: 'Joined in the first month',
     icon: '⭐',
     earnedDate: '2024-01-15',
-    category: 'special'
+    criteria: { type: 'manual', description: 'Awarded to early community members' }
   },
   {
     id: 'b7',
@@ -514,7 +541,7 @@ export const mockBadges: Badge[] = [
     description: 'Delivered 3 sessions',
     icon: '🎤',
     earnedDate: '2024-07-01',
-    category: 'contribution'
+    criteria: { type: 'sessions_delivered', threshold: 3, description: 'Deliver 3 speaker sessions' }
   },
   {
     id: 'b8',
@@ -522,7 +549,7 @@ export const mockBadges: Badge[] = [
     description: 'Completed Security Sprint',
     icon: '🔒',
     earnedDate: '2024-12-31',
-    category: 'sprint'
+    criteria: { type: 'sprints_completed', threshold: 1, description: 'Complete the Security Sprint' }
   }
 ];
 

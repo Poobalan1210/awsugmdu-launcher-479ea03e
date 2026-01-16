@@ -27,7 +27,7 @@ export interface MeetupResponse {
   meetup: Meetup;
 }
 
-export async function getMeetups(status?: 'draft' | 'upcoming' | 'completed'): Promise<Meetup[]> {
+export async function getMeetups(status?: 'draft' | 'upcoming' | 'completed' | 'ongoing'): Promise<Meetup[]> {
   const queryParams = status ? `?status=${status}` : '';
   const response = await callApi<MeetupsResponse>(`/meetups${queryParams}`);
   return response.meetups || [];

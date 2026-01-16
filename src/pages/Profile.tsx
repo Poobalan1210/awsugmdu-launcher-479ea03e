@@ -25,7 +25,7 @@ export default function Profile() {
   // Fetch meetups from backend
   const { data: allMeetups = [] } = useQuery({
     queryKey: ['meetups'],
-    queryFn: getMeetups,
+    queryFn: () => getMeetups(),
   });
   
   // If userId is provided, get that user, otherwise show current user

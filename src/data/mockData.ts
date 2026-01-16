@@ -24,6 +24,20 @@ export interface PointActivity {
   awardedAt: string;
 }
 
+// Badge award tracking
+export interface BadgeAward {
+  id: string;
+  badgeId: string;
+  userId: string;
+  awardedAt: string;
+  awardedBy?: string;
+  reason?: string;
+  isAdhoc: boolean; // true if manually awarded, false if auto-earned
+}
+
+// Mock badge awards - tracks all badge assignments
+export const mockBadgeAwards: BadgeAward[] = [];
+
 // Role metadata for display
 export const communityRoles: { value: CommunityRole; label: string; description: string; color: string; icon: string }[] = [
   { value: 'member', label: 'Member', description: 'Community member with basic access', color: 'bg-gray-500', icon: '👤' },
@@ -182,7 +196,7 @@ export interface Meetup {
   location?: string;
   meetingLink?: string;
   meetupUrl?: string; // External meetup.com registration link
-  status: 'upcoming' | 'ongoing' | 'completed';
+  status: 'upcoming' | 'ongoing' | 'completed' | 'draft';
   attendees: number;
   maxAttendees?: number;
   registeredUsers: string[];

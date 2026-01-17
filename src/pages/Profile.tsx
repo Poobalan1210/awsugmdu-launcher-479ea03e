@@ -72,6 +72,28 @@ export default function Profile() {
   const userCommunityRoles = mockUserRoles
     .filter(ur => ur.userId === user.id)
     .map(ur => ur.role);
+  
+  // For real authenticated users, check if they're an organiser by email
+  if (authUser && user.id === authUser.id && authUser.role === 'organiser') {
+    // Add organiser role if not already in the list
+    if (!userCommunityRoles.includes('organiser')) {
+      userCommunityRoles.push('organiser');
+    }
+  }
+  
+  // Always ensure member role is present (but it won't be displayed)
+  if (!userCommunityRoles.includes('member')) {
+    userCommunityRoles.push('member');
+  }
+  
+  // Debug logging
+  console.log('Profile Debug:', {
+    userId: user.id,
+    userEmail: user.email,
+    authUserRole: authUser?.role,
+    userCommunityRoles,
+    isOwnProfile
+  });
 
   const getRoleInfo = (role: CommunityRole) => {
     return communityRoles.find(r => r.value === role);
@@ -242,41 +264,44 @@ export default function Profile() {
                 </motion.div>
                 
                 <div className="flex-1 text-center md:text-left">
-                  <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 mb-2">
-                    <h1 className="text-2xl md:text-3xl font-bold">{user.name}</h1>
-                  </div>
+                  <h1 className="text-2xl md:text-3xl font-bold mb-2">{user.name}</h1>
                   
-                  {/* Community Roles */}
+                  {/* Community Roles - Display prominently near name */}
                   {userCommunityRoles.length > 0 && (
                     <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 mb-3">
-                      {userCommunityRoles.map(role => {
-                        const roleInfo = getRoleInfo(role);
-                        if (!roleInfo) return null;
-                        return (
-                          <Badge 
-                            key={role}
-                            className={`${
-                              role === 'admin' ? 'bg-red-500/10 text-red-600 border-red-500/30 hover:bg-red-500/20' :
-                              role === 'organiser' ? 'bg-purple-500/10 text-purple-600 border-purple-500/30 hover:bg-purple-500/20' :
-                              role === 'speaker' ? 'bg-rose-500/10 text-rose-600 border-rose-500/30 hover:bg-rose-500/20' :
-                              role === 'champ' ? 'bg-amber-500/10 text-amber-600 border-amber-500/30 hover:bg-amber-500/20' :
-                              role === 'volunteer' ? 'bg-blue-500/10 text-blue-600 border-blue-500/30 hover:bg-blue-500/20' :
-                              role === 'cloud_club_captain' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/20' :
-                              ''
-                            }`}
-                          >
-                            <span className="mr-1">{roleInfo.icon}</span>
-                            {roleInfo.label}
-                          </Badge>
-                        );
-                      })}
+                      {userCommunityRoles
+                        .filter(role => role !== 'member') // Don't show member badge
+                        .map(role => {
+                          const roleInfo = getRoleInfo(role);
+                          if (!roleInfo) return null;
+                          return (
+                            <Badge 
+                              key={role}
+                              variant="outline"
+                              className={`${
+                                role === 'organiser' ? 'bg-purple-500/10 text-purple-600 border-purple-500/30 hover:bg-purple-500/20' :
+                                role === 'speaker' ? 'bg-rose-500/10 text-rose-600 border-rose-500/30 hover:bg-rose-500/20' :
+                                role === 'champ' ? 'bg-amber-500/10 text-amber-600 border-amber-500/30 hover:bg-amber-500/20' :
+                                role === 'volunteer' ? 'bg-blue-500/10 text-blue-600 border-blue-500/30 hover:bg-blue-500/20' :
+                                role === 'cloud_club_captain' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/20' :
+                                ''
+                              } text-sm font-medium`}
+                            >
+                              <span className="mr-1">{roleInfo.icon}</span>
+                              {roleInfo.label}
+                            </Badge>
+                          );
+                        })}
                     </div>
                   )}
                   
                   {/* Champ Captain badge from college lead */}
                   {isChampCaptain && !userCommunityRoles.includes('champ') && (
                     <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 mb-3">
-                      <Badge className="bg-amber-500/10 text-amber-600 border-amber-500/30 hover:bg-amber-500/20">
+                      <Badge 
+                        variant="outline"
+                        className="bg-amber-500/10 text-amber-600 border-amber-500/30 hover:bg-amber-500/20 text-sm font-medium"
+                      >
                         <Award className="h-3 w-3 mr-1" />
                         Champ Captain
                       </Badge>

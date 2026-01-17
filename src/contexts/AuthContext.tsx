@@ -13,6 +13,7 @@ import {
 import { uploadData } from 'aws-amplify/storage';
 import { User } from '@/data/mockData';
 import { createUserProfile, getUserProfile } from '@/lib/userProfile';
+import { isOrganiserEmail } from '@/lib/adminUtils';
 
 interface AuthContextType {
   user: User | null;
@@ -38,6 +39,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Fetch full profile from DynamoDB via API
       const profile = await getUserProfile(userId);
       
+      // Determine role: organiser emails get organiser role, otherwise use DB role or default to member
+      const role = isOrganiserEmail(email) ? 'organiser' : (profile.role || 'member');
+      
       // Transform DynamoDB profile to User interface
       return {
         id: profile.userId,
@@ -48,7 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         rank: profile.rank || 0,
         badges: profile.badges || [],
         joinedDate: profile.joinedDate || new Date().toISOString(),
-        role: profile.role || 'participant',
+        role,
         bio: profile.bio,
         designation: profile.designation,
         company: profile.companyName,
@@ -63,6 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // This can happen if user just signed up but profile creation failed
       if (error.message?.includes('not found') || error.message?.includes('404')) {
         console.log('Profile not found, returning basic user object');
+        const role = isOrganiserEmail(email) ? 'organiser' : 'member';
         return {
           id: userId,
           email: email,
@@ -72,7 +77,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           rank: 0,
           badges: [],
           joinedDate: new Date().toISOString(),
-          role: 'participant',
+          role,
         } as User;
       }
       

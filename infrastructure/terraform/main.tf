@@ -63,6 +63,12 @@ variable "allowed_cors_origins" {
   ]
 }
 
+variable "admin_emails" {
+  description = "Comma-separated list of admin email addresses"
+  type        = string
+  default     = "poobalan1210@gmail.com"
+}
+
 # Data sources
 data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
@@ -510,6 +516,7 @@ resource "aws_lambda_function" "users_crud" {
   environment {
     variables = {
       USERS_TABLE_NAME = aws_dynamodb_table.users.name
+      ADMIN_EMAILS     = var.admin_emails
     }
   }
 

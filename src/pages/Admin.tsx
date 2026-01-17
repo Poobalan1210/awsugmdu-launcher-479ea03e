@@ -3181,7 +3181,7 @@ export default function Admin() {
   const [activeTab, setActiveTab] = useState('submissions');
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [loadingSprints, setLoadingSprints] = useState(false);
-  const isAdmin = currentUser.role === 'admin';
+  const isAdmin = currentUser.role === 'organiser';
   const isSpeaker = currentUser.role === 'speaker';
 
   const pendingSubmissions = allSubmissions.filter(s => s.status === 'pending');

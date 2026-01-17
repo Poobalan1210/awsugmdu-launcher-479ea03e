@@ -1,6 +1,6 @@
 // Mock data for the AWS User Group website
 
-export type UserRole = 'admin' | 'speaker' | 'participant';
+export type UserRole = 'organiser' | 'speaker' | 'member';
 
 // Extended roles for community management
 export type CommunityRole = 'member' | 'volunteer' | 'organiser' | 'champ' | 'cloud_club_captain' | 'speaker' | 'admin';
@@ -42,11 +42,11 @@ export const mockBadgeAwards: BadgeAward[] = [];
 export const communityRoles: { value: CommunityRole; label: string; description: string; color: string; icon: string }[] = [
   { value: 'member', label: 'Member', description: 'Community member with basic access', color: 'bg-gray-500', icon: '👤' },
   { value: 'volunteer', label: 'Volunteer', description: 'Helps with event organization and community activities', color: 'bg-blue-500', icon: '🙋' },
-  { value: 'organiser', label: 'Organiser', description: 'Organizes and manages community events', color: 'bg-purple-500', icon: '📋' },
-  { value: 'champ', label: 'Champ', description: 'Community champion and active contributor', color: 'bg-amber-500', icon: '🏆' },
+  { value: 'champ', label: 'Champ Lead', description: 'College champion leading student initiatives', color: 'bg-amber-500', icon: '🏆' },
   { value: 'cloud_club_captain', label: 'Cloud Club Captain', description: 'Leads college cloud clubs and student initiatives', color: 'bg-emerald-500', icon: '☁️' },
   { value: 'speaker', label: 'Speaker', description: 'Delivers sessions and talks at events', color: 'bg-rose-500', icon: '🎤' },
-  { value: 'admin', label: 'Admin', description: 'Full administrative access to the platform', color: 'bg-red-600', icon: '👑' },
+  { value: 'organiser', label: 'Organiser', description: 'Organizes and manages community events with admin access', color: 'bg-purple-600', icon: '👑' },
+  { value: 'admin', label: 'Admin', description: 'Full administrative access to the platform (legacy)', color: 'bg-red-600', icon: '⚙️' },
 ];
 
 // Mock user role assignments - all users get 'member' role by default
@@ -64,7 +64,6 @@ export const mockUserRoles: UserRoleAssignment[] = [
   { id: 'ur-m10', userId: '9', role: 'member', assignedAt: '2024-07-22', assignedBy: 'system' },
   { id: 'ur-m11', userId: '10', role: 'member', assignedAt: '2024-08-10', assignedBy: 'system' },
   // Additional roles
-  { id: 'ur1', userId: 'admin1', role: 'admin', assignedAt: '2023-01-01', assignedBy: 'system' },
   { id: 'ur2', userId: 'admin1', role: 'organiser', assignedAt: '2023-01-01', assignedBy: 'system' },
   { id: 'ur3', userId: '1', role: 'speaker', assignedAt: '2024-01-15', assignedBy: 'admin1' },
   { id: 'ur4', userId: '1', role: 'organiser', assignedAt: '2024-02-01', assignedBy: 'admin1' },
@@ -343,7 +342,7 @@ export const mockUsers: User[] = [
     badges: [],
     joinedDate: '2023-01-01',
     bio: 'AWS User Group Administrator. Passionate about building developer communities and fostering cloud adoption.',
-    role: 'admin',
+    role: 'organiser',
     designation: 'Community Lead',
     company: 'AWS User Group',
     linkedIn: 'https://linkedin.com/in/admin',
@@ -393,7 +392,7 @@ export const mockUsers: User[] = [
     badges: [],
     joinedDate: '2024-01-10',
     bio: 'Solutions Architect exploring the frontiers of Generative AI on AWS. 3x AWS Certified. Regular speaker at tech meetups.',
-    role: 'participant',
+    role: 'member',
     designation: 'Cloud Engineer',
     company: 'DataFlow Systems',
     linkedIn: 'https://linkedin.com/in/ananya-patel',
@@ -409,7 +408,7 @@ export const mockUsers: User[] = [
     badges: [],
     joinedDate: '2024-03-05',
     bio: 'Security specialist focusing on AWS IAM, KMS, and compliance. Helping organizations build secure cloud architectures.',
-    role: 'participant',
+    role: 'member',
     designation: 'Security Consultant',
     company: 'SecureCloud Ltd',
     linkedIn: 'https://linkedin.com/in/vikram-singh'
@@ -424,7 +423,7 @@ export const mockUsers: User[] = [
     badges: [],
     joinedDate: '2024-02-28',
     bio: 'Full-stack developer transitioning to cloud. Active learner and blogger sharing my AWS journey.',
-    role: 'participant',
+    role: 'member',
     designation: 'Software Engineer',
     company: 'StartupXYZ',
     linkedIn: 'https://linkedin.com/in/sneha-reddy',
@@ -440,7 +439,7 @@ export const mockUsers: User[] = [
     rank: 6,
     badges: [],
     joinedDate: '2024-04-12',
-    role: 'participant',
+    role: 'member',
     bio: 'Backend developer learning AWS. Interested in microservices and container orchestration.',
     designation: 'Backend Developer',
     company: 'TechStartup'
@@ -454,7 +453,7 @@ export const mockUsers: User[] = [
     rank: 7,
     badges: [],
     joinedDate: '2024-03-22',
-    role: 'participant',
+    role: 'member',
     bio: 'Data Engineer working with AWS data services. Love exploring new ways to process big data.',
     designation: 'Data Engineer',
     company: 'Analytics Co'
@@ -468,7 +467,7 @@ export const mockUsers: User[] = [
     rank: 8,
     badges: [],
     joinedDate: '2024-05-01',
-    role: 'participant',
+    role: 'member',
     bio: 'Cloud enthusiast and student. Preparing for AWS Solutions Architect certification.',
     designation: 'Student',
     company: 'University of Technology'
@@ -1611,12 +1610,12 @@ export const getTaskById = (taskId: string): CollegeTask | undefined => {
 };
 
 // Current logged in user (for demo - can be switched between roles)
-export const adminUser: User = mockUsers[0]; // Admin
+export const organiserUser: User = mockUsers[0]; // Organiser (admin)
 export const speakerUser: User = mockUsers[1]; // Speaker (Priya)
-export const participantUser: User = mockUsers[3]; // Participant (Ananya)
+export const memberUser: User = mockUsers[3]; // Member (Ananya)
 
 // Default current user - change this to test different roles
-export const currentUser: User = adminUser;
+export const currentUser: User = organiserUser;
 
 // Helper function to get user by ID
 export const getUserById = (id: string): User | undefined => {

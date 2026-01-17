@@ -144,12 +144,13 @@ async function createUser(requestBody) {
       };
     }
     
+    // Default role is 'member' for all users
     const userProfile = {
       userId,
       email,
       name,
       ...profileData,
-      role: profileData.role || 'participant',
+      role: profileData.role || 'member',
       points: profileData.points || 0,
       rank: profileData.rank || 0,
       badges: profileData.badges || [],

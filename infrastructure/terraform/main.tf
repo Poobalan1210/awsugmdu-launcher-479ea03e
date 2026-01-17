@@ -389,6 +389,13 @@ data "archive_file" "sprints_crud" {
   excludes    = ["node_modules", "*.zip"]
 }
 
+data "archive_file" "users_crud" {
+  type        = "zip"
+  source_dir  = "${path.module}/lambda/users-crud"
+  output_path = "${path.module}/lambda/users-crud.zip"
+  excludes    = ["node_modules", "*.zip"]
+}
+
 # Lambda: User Profile Creation
 resource "aws_lambda_function" "user_profile_creation" {
   filename         = data.archive_file.user_profile_creation.output_path
@@ -490,6 +497,27 @@ resource "aws_lambda_function" "sprints_crud" {
   }
 }
 
+# Lambda: Users CRUD
+resource "aws_lambda_function" "users_crud" {
+  filename         = data.archive_file.users_crud.output_path
+  function_name    = "${var.project_name}-users-crud"
+  role            = aws_iam_role.lambda_execution.arn
+  handler         = "index.handler"
+  source_code_hash = data.archive_file.users_crud.output_base64sha256
+  runtime         = "nodejs20.x"
+  timeout         = 30
+
+  environment {
+    variables = {
+      USERS_TABLE_NAME = aws_dynamodb_table.users.name
+    }
+  }
+
+  tags = {
+    Name = "${var.project_name}-users-crud"
+  }
+}
+
 
 # API Gateway
 resource "aws_api_gateway_rest_api" "api" {
@@ -505,6 +533,12 @@ resource "aws_api_gateway_resource" "users" {
   rest_api_id = aws_api_gateway_rest_api.api.id
   parent_id   = aws_api_gateway_rest_api.api.root_resource_id
   path_part   = "users"
+}
+
+resource "aws_api_gateway_resource" "users_id" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  parent_id   = aws_api_gateway_resource.users.id
+  path_part   = "{userId}"
 }
 
 resource "aws_api_gateway_resource" "meetup" {
@@ -614,6 +648,41 @@ resource "aws_api_gateway_method" "users_post" {
   rest_api_id   = aws_api_gateway_rest_api.api.id
   resource_id   = aws_api_gateway_resource.users.id
   http_method   = "POST"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "users_get" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.users.id
+  http_method   = "GET"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "users_options" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.users.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "users_id_get" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.users_id.id
+  http_method   = "GET"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "users_id_put" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.users_id.id
+  http_method   = "PUT"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "users_id_options" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.users_id.id
+  http_method   = "OPTIONS"
   authorization = "NONE"
 }
 
@@ -872,7 +941,113 @@ resource "aws_api_gateway_integration" "users_lambda" {
 
   integration_http_method = "POST"
   type                    = "AWS_PROXY"
-  uri                     = aws_lambda_function.user_profile_creation.invoke_arn
+  uri                     = aws_lambda_function.users_crud.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "users_get_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.users.id
+  http_method = aws_api_gateway_method.users_get.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.users_crud.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "users_options_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.users.id
+  http_method = aws_api_gateway_method.users_options.http_method
+
+  type = "MOCK"
+  
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "users_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.users.id
+  http_method = aws_api_gateway_method.users_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin" = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "users_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.users.id
+  http_method = aws_api_gateway_method.users_options.http_method
+  status_code = aws_api_gateway_method_response.users_options_200.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+  }
+}
+
+resource "aws_api_gateway_integration" "users_id_get_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.users_id.id
+  http_method = aws_api_gateway_method.users_id_get.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.users_crud.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "users_id_put_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.users_id.id
+  http_method = aws_api_gateway_method.users_id_put.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.users_crud.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "users_id_options_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.users_id.id
+  http_method = aws_api_gateway_method.users_id_options.http_method
+
+  type = "MOCK"
+  
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "users_id_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.users_id.id
+  http_method = aws_api_gateway_method.users_id_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin" = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "users_id_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.users_id.id
+  http_method = aws_api_gateway_method.users_id_options.http_method
+  status_code = aws_api_gateway_method_response.users_id_options_200.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+  }
 }
 
 resource "aws_api_gateway_integration" "meetup_verify_lambda" {
@@ -1371,6 +1546,14 @@ resource "aws_api_gateway_integration" "sprints_id_forum_postid_reply_options_la
 resource "aws_lambda_permission" "api_users" {
   statement_id  = "AllowExecutionFromAPIGateway"
   action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.users_crud.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.api.execution_arn}/*/*"
+}
+
+resource "aws_lambda_permission" "api_user_profile_creation" {
+  statement_id  = "AllowExecutionFromAPIGateway"
+  action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.user_profile_creation.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_api_gateway_rest_api.api.execution_arn}/*/*"
@@ -1421,6 +1604,9 @@ resource "aws_api_gateway_deployment" "api" {
 
   depends_on = [
     aws_api_gateway_integration.users_lambda,
+    aws_api_gateway_integration.users_get_lambda,
+    aws_api_gateway_integration.users_id_get_lambda,
+    aws_api_gateway_integration.users_id_put_lambda,
     aws_api_gateway_integration.meetup_verify_lambda,
     aws_api_gateway_integration.meetups_get_lambda,
     aws_api_gateway_integration.meetups_post_lambda,
@@ -1584,4 +1770,9 @@ output "dynamodb_sprints_table_name" {
 output "lambda_sprints_crud_arn" {
   description = "Sprints CRUD Lambda ARN"
   value       = aws_lambda_function.sprints_crud.arn
+}
+
+output "lambda_users_crud_arn" {
+  description = "Users CRUD Lambda ARN"
+  value       = aws_lambda_function.users_crud.arn
 }

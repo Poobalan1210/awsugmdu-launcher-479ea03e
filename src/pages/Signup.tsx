@@ -68,7 +68,7 @@ export default function Signup() {
   const [meetupError, setMeetupError] = useState<string | null>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { signUp, confirmSignUp, resendConfirmationCode, uploadProfilePhoto, signIn } = useAuth();
+  const { signUp, confirmSignUp, resendConfirmationCode, signIn, signOut } = useAuth();
   const [userId, setUserId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -257,21 +257,52 @@ export default function Signup() {
 
     setIsLoading(true);
     try {
-      // Sign in first to get authentication token for API calls
-      await signIn(formData.email, formData.password);
+      // Upload profile photo to S3 first (before sign in)
+      let avatarUrl = '';
+      if (formData.profilePhoto && formData.profilePhoto.startsWith('data:')) {
+        try {
+          toast({
+            title: "Uploading photo...",
+            description: "Please wait while we upload your profile photo.",
+          });
 
-      // Wait a moment for auth session to be ready
-      await new Promise(resolve => setTimeout(resolve, 500));
+          // Convert base64 to File object
+          const response = await fetch(formData.profilePhoto);
+          const blob = await response.blob();
+          const file = new File([blob], `profile-${userId}.jpg`, { type: 'image/jpeg' });
+          
+          // Upload to S3 using presigned URL
+          const { uploadFileToS3 } = await import('@/lib/s3Upload');
+          avatarUrl = await uploadFileToS3(file, 'profile-photos');
+          
+          toast({
+            title: "Photo uploaded!",
+            description: "Your profile photo has been uploaded successfully.",
+          });
+        } catch (photoError: any) {
+          console.error('Photo upload failed:', photoError);
+          toast({
+            title: "Photo upload failed",
+            description: photoError.message || "You can upload your photo later from your profile page.",
+            variant: "default",
+          });
+          // Continue without photo - user can upload later
+        }
+      }
 
-      // Now create user profile in DynamoDB (with auth token)
-      // Photo is stored as base64 (works without S3 credentials)
-      // Can be uploaded to S3 later from profile page if needed
+      // Create user profile in DynamoDB BEFORE signing in
       try {
+        // Sign in temporarily to get auth token for API call
+        await signIn(formData.email, formData.password);
+        
+        // Wait for auth session
+        await new Promise(resolve => setTimeout(resolve, 500));
+
         await createUserProfile({
           userId,
           email: formData.email,
           name: formData.name,
-          avatar: formData.profilePhoto, // Base64 data URL
+          avatar: avatarUrl, // S3 public URL or empty string
           userType: formData.userType as 'student' | 'professional',
           meetupEmail: formData.meetupEmail,
           collegeName: formData.collegeName || undefined,
@@ -286,15 +317,29 @@ export default function Signup() {
           github: formData.github || undefined,
           twitter: formData.twitter || undefined,
         });
+        
+        toast({
+          title: "Profile created!",
+          description: "Your profile has been created successfully.",
+        });
+
+        // Wait a moment for DynamoDB to be consistent
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        // Sign out and sign in again to refresh the profile
+        await signOut();
+        await new Promise(resolve => setTimeout(resolve, 500));
+        await signIn(formData.email, formData.password);
+        
       } catch (profileError: any) {
-        // If profile creation fails, log but don't block signup
-        // User is already signed in, profile can be created/updated later
         console.error('Profile creation failed:', profileError);
         toast({
-          title: "Profile creation warning",
-          description: "You're signed in, but profile creation failed. You can complete your profile later.",
-          variant: "default",
+          title: "Profile creation failed",
+          description: profileError.message || "Failed to create profile. Please try again.",
+          variant: "destructive",
         });
+        setIsLoading(false);
+        return;
       }
 
       toast({

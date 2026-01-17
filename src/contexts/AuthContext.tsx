@@ -12,7 +12,7 @@ import {
 } from 'aws-amplify/auth';
 import { uploadData } from 'aws-amplify/storage';
 import { User } from '@/data/mockData';
-import { createUserProfile } from '@/lib/userProfile';
+import { createUserProfile, getUserProfile } from '@/lib/userProfile';
 
 interface AuthContextType {
   user: User | null;
@@ -35,29 +35,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Fetch user profile from DynamoDB
   const fetchUserProfile = async (userId: string, email: string): Promise<User | null> => {
     try {
-      const currentUser = await getCurrentUser();
-      const session = await fetchAuthSession();
+      // Fetch full profile from DynamoDB via API
+      const profile = await getUserProfile(userId);
       
-      // Get user attributes from Cognito
-      const attributes = currentUser.signInDetails?.loginId 
-        ? { email, name: currentUser.signInDetails.loginId }
-        : { email, name: email.split('@')[0] };
-      
-      // TODO: Fetch full profile from DynamoDB via API
-      // For now, return a basic user object
+      // Transform DynamoDB profile to User interface
       return {
-        id: userId,
-        email: email,
-        name: attributes.name || email.split('@')[0],
-        avatar: '',
-        points: 0,
-        rank: 0,
-        badges: [],
-        joinedDate: new Date().toISOString(),
-        role: 'participant',
+        id: profile.userId,
+        email: profile.email,
+        name: profile.name,
+        avatar: profile.avatar || '',
+        points: profile.points || 0,
+        rank: profile.rank || 0,
+        badges: profile.badges || [],
+        joinedDate: profile.joinedDate || new Date().toISOString(),
+        role: profile.role || 'participant',
+        bio: profile.bio,
+        designation: profile.designation,
+        company: profile.companyName,
+        linkedIn: profile.linkedIn,
+        github: profile.github,
+        twitter: profile.twitter,
       } as User;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to fetch user profile:', error);
+      
+      // If profile doesn't exist in DB (404), return a basic user object
+      // This can happen if user just signed up but profile creation failed
+      if (error.message?.includes('not found') || error.message?.includes('404')) {
+        console.log('Profile not found, returning basic user object');
+        return {
+          id: userId,
+          email: email,
+          name: email.split('@')[0],
+          avatar: '',
+          points: 0,
+          rank: 0,
+          badges: [],
+          joinedDate: new Date().toISOString(),
+          role: 'participant',
+        } as User;
+      }
+      
+      // For other errors, return null
       return null;
     }
   };

@@ -14,13 +14,15 @@ import {
   Linkedin, Github, Twitter, ExternalLink, Building, User,
   Mic, BookOpen, CheckCircle, Clock, Award, Shield
 } from 'lucide-react';
-import { currentUser, mockSprints, mockBadges, getUserById, mockUsers, mockMeetups, mockColleges, mockUserRoles, communityRoles, CommunityRole } from '@/data/mockData';
+import { mockSprints, mockBadges, getUserById, mockUsers, mockMeetups, mockColleges, mockUserRoles, communityRoles, CommunityRole } from '@/data/mockData';
 import { format, parseISO } from 'date-fns';
 import { getMeetups } from '@/lib/meetups';
 import { useQuery } from '@tanstack/react-query';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function Profile() {
   const { userId } = useParams();
+  const { user: authUser } = useAuth();
   
   // Fetch meetups from backend
   const { data: allMeetups = [] } = useQuery({
@@ -28,9 +30,9 @@ export default function Profile() {
     queryFn: () => getMeetups(),
   });
   
-  // If userId is provided, get that user, otherwise show current user
-  const user = userId ? getUserById(userId) : currentUser;
-  const isOwnProfile = !userId || userId === currentUser.id;
+  // If userId is provided, get that user, otherwise show current authenticated user
+  const user = userId ? getUserById(userId) : authUser;
+  const isOwnProfile = !userId || (authUser && userId === authUser.id);
   
   if (!user) {
     return (

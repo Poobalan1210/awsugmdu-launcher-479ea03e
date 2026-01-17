@@ -29,12 +29,14 @@ export async function createUserProfile(data: CreateUserProfileData): Promise<{ 
 }
 
 export async function getUserProfile(userId: string): Promise<User> {
-  // For now, this would need a GET endpoint
-  // You can implement this later or fetch from DynamoDB directly
-  throw new Error('getUserProfile not yet implemented - needs GET /users/:userId endpoint');
+  return callApi(`/users/${userId}`, {
+    method: 'GET',
+  });
 }
 
-export async function updateUserProfile(userId: string, data: Partial<CreateUserProfileData>): Promise<User> {
-  // For now, this would need a PUT/PATCH endpoint
-  throw new Error('updateUserProfile not yet implemented - needs PUT /users/:userId endpoint');
+export async function updateUserProfile(userId: string, data: Partial<CreateUserProfileData>): Promise<{ success: boolean; user: User }> {
+  return callApi(`/users/${userId}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
 }

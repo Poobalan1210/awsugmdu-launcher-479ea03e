@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
@@ -21,8 +21,10 @@ import {
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
 import { mockSprints, mockForumPosts, Sprint, Session, currentUser, mockUsers, getUserById } from '@/data/mockData';
-import { format, parseISO } from 'date-fns';
+import { getSprints, getSprint, registerForSprint, registerForSession } from '@/lib/sprints';
+import { format, parseISO, isPast } from 'date-fns';
 import { marked } from 'marked';
+import { useAuth } from '@/contexts/AuthContext';
 
 // Helper to parse markdown or HTML content
 function parseContent(content: string): string {
@@ -31,6 +33,21 @@ function parseContent(content: string): string {
     return content;
   }
   return marked.parse(content) as string;
+}
+
+// Helper to format time with AM/PM
+function formatTime(time: string): string {
+  if (!time) return '';
+  // Extract time part (e.g., "10:00" from "10:00 IST")
+  const timeMatch = time.match(/(\d{1,2}):(\d{2})/);
+  if (!timeMatch) return time;
+  
+  const hours = parseInt(timeMatch[1], 10);
+  const minutes = timeMatch[2];
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  const displayHours = hours % 12 || 12;
+  
+  return `${displayHours}:${minutes} ${ampm}`;
 }
 
 function SprintCard({ sprint, onSelect }: { sprint: Sprint; onSelect: () => void }) {
@@ -44,7 +61,6 @@ function SprintCard({ sprint, onSelect }: { sprint: Sprint; onSelect: () => void
       <Card className="glass-card hover-lift cursor-pointer h-full" onClick={onSelect}>
         <CardContent className="p-6">
           <div className="flex items-start justify-between mb-4">
-            <Badge variant="outline" className="mb-2">{sprint.theme}</Badge>
             <span className="text-sm text-muted-foreground">
               {format(parseISO(sprint.startDate), 'MMM yyyy')}
             </span>
@@ -77,11 +93,27 @@ function SprintCard({ sprint, onSelect }: { sprint: Sprint; onSelect: () => void
   );
 }
 
-function SessionCard({ session, isExpanded, onToggle }: { 
-  session: Session; 
+function SessionCard({ session: initialSession, sprint, isExpanded, onToggle, onSprintUpdate }: { 
+  session: Session;
+  sprint: Sprint;
   isExpanded: boolean;
   onToggle: () => void;
+  onSprintUpdate?: (updatedSprint: Sprint) => void;
 }) {
+  const { user, isAuthenticated } = useAuth();
+  const [isRegistering, setIsRegistering] = useState(false);
+  // Get the latest session from sprint to ensure we have updated registeredUsers
+  const session = sprint.sessions?.find(s => s.id === initialSession.id) || initialSession;
+  const sessionDate = session.date ? parseISO(session.date) : new Date();
+  const isUpcoming = session.date ? !isPast(sessionDate) : true;
+  // Check registration status from the updated session
+  const isRegistered = user && session.registeredUsers && Array.isArray(session.registeredUsers) && session.registeredUsers.includes(user.id);
+  
+  // Update when sprint changes
+  useEffect(() => {
+    // This will trigger re-render when sprint updates
+  }, [sprint, session.registeredUsers]);
+
   const parsedDescription = useMemo(() => {
     if (session.richDescription) {
       return parseContent(session.richDescription);
@@ -89,37 +121,73 @@ function SessionCard({ session, isExpanded, onToggle }: {
     return null;
   }, [session.richDescription]);
 
+  const handleRegister = async () => {
+    if (!isAuthenticated || !user) {
+      toast.error('Please log in to register for this session');
+      return;
+    }
+
+    if (!session.meetupUrl) {
+      toast.error('Meetup URL not available');
+      return;
+    }
+
+    setIsRegistering(true);
+    try {
+      const result = await registerForSession(sprint.id, session.id, user.id);
+      
+      // Update sprint data with the response
+      if (result.sprint && onSprintUpdate) {
+        onSprintUpdate(result.sprint);
+      }
+      
+      if (result.alreadyRegistered) {
+        toast.info('You are already registered for this session');
+      } else {
+        toast.success('Successfully registered for the session!');
+      }
+      
+      // Redirect to meetup URL after a short delay
+      setTimeout(() => {
+        if (session.meetupUrl) {
+          window.open(session.meetupUrl, '_blank', 'noopener,noreferrer');
+        }
+      }, 1000);
+    } catch (error) {
+      console.error('Registration error:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to register for session');
+    } finally {
+      setIsRegistering(false);
+    }
+  };
+
   return (
     <Collapsible open={isExpanded} onOpenChange={onToggle}>
       <Card className="glass-card overflow-hidden">
         <CollapsibleTrigger asChild>
           <CardContent className="p-4 cursor-pointer hover:bg-muted/30 transition-colors">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <Avatar className="h-12 w-12 border-2 border-primary/30">
-                  <AvatarImage 
-                    src={session.speakers && session.speakers.length > 0 ? session.speakers[0].photo : session.speakerPhoto} 
-                    alt={session.speakers && session.speakers.length > 0 ? session.speakers[0].name : session.speaker} 
-                  />
-                  <AvatarFallback>
-                    {session.speakers && session.speakers.length > 0 
-                      ? session.speakers[0].name.charAt(0) 
-                      : session.speaker.charAt(0)}
-                  </AvatarFallback>
-                </Avatar>
-                <div>
-                  <h3 className="font-semibold text-lg">{session.title}</h3>
-                  <p className="text-sm text-muted-foreground">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-4 flex-1 min-w-0">
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-semibold text-lg truncate">{session.title}</h3>
+                  <p className="text-sm text-muted-foreground truncate">
                     {session.speakers && session.speakers.length > 0 
                       ? session.speakers.map(s => s.name).join(', ')
                       : session.speaker}
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-4 flex-shrink-0">
                 <div className="text-right hidden sm:block">
-                  <p className="text-sm font-medium">{format(parseISO(session.date), 'MMM d, yyyy')}</p>
-                  <p className="text-xs text-muted-foreground">{session.time}</p>
+                  {session.date && (
+                    <p className="text-sm font-medium">{format(parseISO(session.date), 'MMM d, yyyy')}</p>
+                  )}
+                  {!session.date && (
+                    <p className="text-sm font-medium text-muted-foreground">Date TBD</p>
+                  )}
+                  {session.time && (
+                    <p className="text-xs text-muted-foreground">{formatTime(session.time)}</p>
+                  )}
                 </div>
                 <motion.div
                   animate={{ rotate: isExpanded ? 180 : 0 }}
@@ -139,127 +207,194 @@ function SessionCard({ session, isExpanded, onToggle }: {
             transition={{ duration: 0.2 }}
           >
             <div className="border-t border-border">
-              {/* Session Poster */}
-              {session.posterImage && (
-                <div className="relative h-48 overflow-hidden">
-                  <img 
-                    src={session.posterImage} 
-                    alt={session.title}
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-background/90 to-transparent" />
-                  <div className="absolute bottom-4 left-4 right-4">
-                    <Badge variant="secondary" className="mb-2">
-                      <Clock className="h-3 w-3 mr-1" />
-                      {session.duration || '90 minutes'}
-                    </Badge>
-                  </div>
+              {/* Action Buttons - At the top */}
+              <div className="p-6 pb-4 border-b">
+                <div className="flex flex-wrap gap-3">
+                  {isUpcoming ? (
+                    <>
+                      {session.meetupUrl && (
+                        <Button 
+                          size="lg" 
+                          className="gap-2"
+                          onClick={handleRegister}
+                          disabled={isRegistering || isRegistered}
+                        >
+                          {isRegistering ? (
+                            <>
+                              <Clock className="h-4 w-4 animate-spin" />
+                              Registering...
+                            </>
+                          ) : isRegistered ? (
+                            <>
+                              <CheckCircle className="h-4 w-4" />
+                              Registered
+                            </>
+                          ) : (
+                            <>
+                              <ExternalLink className="h-4 w-4" />
+                              Register on Meetup
+                            </>
+                          )}
+                        </Button>
+                      )}
+                      {session.meetingLink && (
+                        <Button variant="outline" size="lg" asChild className="gap-2">
+                          <a href={session.meetingLink} target="_blank" rel="noopener noreferrer">
+                            <Video className="h-4 w-4" />
+                            Join Session
+                          </a>
+                        </Button>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      {session.meetupUrl && (
+                        <Button size="lg" asChild className="gap-2">
+                          <a href={session.meetupUrl} target="_blank" rel="noopener noreferrer">
+                            <ExternalLink className="h-4 w-4" />
+                            View on Meetup
+                          </a>
+                        </Button>
+                      )}
+                      {session.meetingLink && (
+                        <Button size="lg" asChild className="gap-2">
+                          <a href={session.meetingLink} target="_blank" rel="noopener noreferrer">
+                            <Video className="h-4 w-4" />
+                            Join Session
+                          </a>
+                        </Button>
+                      )}
+                    </>
+                  )}
+                  {session.youtubeUrl && (
+                    <Button variant="outline" size="lg" asChild className="gap-2">
+                      <a href={session.youtubeUrl} target="_blank" rel="noopener noreferrer">
+                        <Youtube className="h-4 w-4" />
+                        Watch on YouTube
+                      </a>
+                    </Button>
+                  )}
+                  {session.recordingUrl && (
+                    <Button variant="outline" size="lg" asChild className="gap-2">
+                      <a href={session.recordingUrl} target="_blank" rel="noopener noreferrer">
+                        <PlayCircle className="h-4 w-4" />
+                        Watch Recording
+                      </a>
+                    </Button>
+                  )}
+                  {session.slidesUrl && (
+                    <Button variant="outline" size="lg" asChild className="gap-2">
+                      <a href={session.slidesUrl} target="_blank" rel="noopener noreferrer">
+                        <FileText className="h-4 w-4" />
+                        View Slides
+                      </a>
+                    </Button>
+                  )}
                 </div>
-              )}
-              
-              <div className="p-6 space-y-6">
-                {/* Session People */}
+              </div>
+
+              {/* Two Column Layout */}
+              <div className="p-6 grid grid-cols-1 lg:grid-cols-5 gap-6">
+                {/* Left Column - Content */}
+                <div className="lg:col-span-3 space-y-6">
+                  {/* Session People */}
                 <div>
                   <h4 className="font-semibold mb-4">Session Team</h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Hosts */}
-                    {session.hosts && session.hosts.length > 0 && (
-                      <>
-                        {session.hosts.map((host) => (
-                          <div key={host.userId} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
-                            <Avatar className="h-12 w-12">
-                              <AvatarImage src={host.photo} />
-                              <AvatarFallback>{host.name.charAt(0)}</AvatarFallback>
-                            </Avatar>
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2">
-                                {host.userId ? (
-                                  <Link 
-                                    to={`/profile/${host.userId}`}
-                                    className="font-medium hover:text-primary transition-colors"
-                                  >
-                                    {host.name}
-                                  </Link>
-                                ) : (
-                                  <span className="font-medium">{host.name}</span>
-                                )}
-                                <Badge variant="outline" className="text-xs">Host</Badge>
-                              </div>
-                              {host.designation && (
-                                <p className="text-xs text-muted-foreground">{host.designation}</p>
+                    {/* Collect all team members with their roles */}
+                    {(() => {
+                      const teamMembers: Array<{
+                        id: string;
+                        name: string;
+                        photo?: string;
+                        designation?: string;
+                        company?: string;
+                        userId?: string;
+                        role: 'Host' | 'Speaker' | 'Volunteer';
+                        badgeVariant: 'outline' | 'default' | 'secondary';
+                      }> = [];
+                      
+                      let index = 1;
+                      
+                      // Add hosts
+                      if (session.hosts && session.hosts.length > 0) {
+                        session.hosts.forEach((host) => {
+                          teamMembers.push({
+                            id: host.userId || `host-${index++}`,
+                            name: host.name,
+                            photo: host.photo,
+                            designation: host.designation,
+                            userId: host.userId,
+                            role: 'Host',
+                            badgeVariant: 'outline'
+                          });
+                        });
+                      }
+                      
+                      // Add speakers
+                      if (session.speakers && session.speakers.length > 0) {
+                        session.speakers.forEach((speaker) => {
+                          teamMembers.push({
+                            id: speaker.userId || `speaker-${index++}`,
+                            name: speaker.name,
+                            photo: speaker.photo,
+                            designation: speaker.designation,
+                            company: speaker.company,
+                            userId: speaker.userId,
+                            role: 'Speaker',
+                            badgeVariant: 'default'
+                          });
+                        });
+                      }
+                      
+                      // Add volunteers
+                      if (session.volunteers && session.volunteers.length > 0) {
+                        session.volunteers.forEach((volunteer) => {
+                          teamMembers.push({
+                            id: volunteer.userId || `volunteer-${index++}`,
+                            name: volunteer.name,
+                            photo: volunteer.photo,
+                            designation: volunteer.designation,
+                            userId: volunteer.userId,
+                            role: 'Volunteer',
+                            badgeVariant: 'secondary'
+                          });
+                        });
+                      }
+                      
+                      return teamMembers.map((member, idx) => (
+                        <div key={member.id} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+                          <span className="text-sm font-medium text-muted-foreground min-w-[24px]">
+                            {idx + 1}.
+                          </span>
+                          <Avatar className={`h-12 w-12 ${member.role === 'Speaker' ? 'border-2 border-primary/30' : ''}`}>
+                            <AvatarImage src={member.photo} alt={member.name} />
+                            <AvatarFallback>{member.name.charAt(0)}</AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              {member.userId ? (
+                                <Link 
+                                  to={`/profile/${member.userId}`}
+                                  className="font-medium hover:text-primary transition-colors"
+                                >
+                                  {member.name}
+                                </Link>
+                              ) : (
+                                <span className="font-medium">{member.name}</span>
                               )}
+                              <Badge variant={member.badgeVariant} className="text-xs">{member.role}</Badge>
                             </div>
+                            {member.designation && (
+                              <p className="text-xs text-muted-foreground">
+                                {member.designation}
+                                {member.company && ` at ${member.company}`}
+                              </p>
+                            )}
                           </div>
-                        ))}
-                      </>
-                    )}
-
-                    {/* Speakers */}
-                    {session.speakers && session.speakers.length > 0 && (
-                      <>
-                        {session.speakers.map((speaker) => (
-                          <div key={speaker.userId} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
-                            <Avatar className="h-12 w-12 border-2 border-primary/30">
-                              <AvatarImage src={speaker.photo} alt={speaker.name} />
-                              <AvatarFallback>{speaker.name.charAt(0)}</AvatarFallback>
-                            </Avatar>
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2">
-                                {speaker.userId ? (
-                                  <Link 
-                                    to={`/profile/${speaker.userId}`}
-                                    className="font-medium hover:text-primary transition-colors"
-                                  >
-                                    {speaker.name}
-                                  </Link>
-                                ) : (
-                                  <span className="font-medium">{speaker.name}</span>
-                                )}
-                                <Badge variant="default" className="text-xs">Speaker</Badge>
-                              </div>
-                              {speaker.designation && (
-                                <p className="text-xs text-muted-foreground">
-                                  {speaker.designation}
-                                  {speaker.company && ` at ${speaker.company}`}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </>
-                    )}
-
-                    {/* Volunteers */}
-                    {session.volunteers && session.volunteers.length > 0 && (
-                      <>
-                        {session.volunteers.map((volunteer) => (
-                          <div key={volunteer.userId} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
-                            <Avatar className="h-12 w-12">
-                              <AvatarImage src={volunteer.photo} />
-                              <AvatarFallback>{volunteer.name.charAt(0)}</AvatarFallback>
-                            </Avatar>
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2">
-                                {volunteer.userId ? (
-                                  <Link 
-                                    to={`/profile/${volunteer.userId}`}
-                                    className="font-medium hover:text-primary transition-colors"
-                                  >
-                                    {volunteer.name}
-                                  </Link>
-                                ) : (
-                                  <span className="font-medium">{volunteer.name}</span>
-                                )}
-                                <Badge variant="secondary" className="text-xs">Volunteer</Badge>
-                              </div>
-                              {volunteer.designation && (
-                                <p className="text-xs text-muted-foreground">{volunteer.designation}</p>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </>
-                    )}
+                        </div>
+                      ));
+                    })()}
 
                   </div>
                 </div>
@@ -292,56 +427,25 @@ function SessionCard({ session, isExpanded, onToggle }: {
                   </div>
                 )}
 
-                {/* Action Buttons */}
-                <div className="flex flex-wrap gap-3 pt-4 border-t">
-                  {session.meetupUrl && (
-                    <Button 
-                      onClick={() => {
-                        // Add session to user activity
-                        toast.success(`Registered for "${session.title}"! Redirecting to Meetup...`);
-                        // Redirect to meetup after a brief delay
-                        setTimeout(() => {
-                          window.open(session.meetupUrl, '_blank', 'noopener,noreferrer');
-                        }, 500);
-                      }}
-                    >
-                      <ExternalLink className="h-4 w-4 mr-2" />
-                      Register on Meetup
-                    </Button>
-                  )}
-                  {session.meetingLink && (
-                    <Button asChild variant={session.meetupUrl ? "outline" : "default"}>
-                      <a href={session.meetingLink} target="_blank" rel="noopener noreferrer">
-                        <Video className="h-4 w-4 mr-2" />
-                        Join Session
-                      </a>
-                    </Button>
-                  )}
-                  {session.youtubeUrl && (
-                    <Button variant="outline" asChild>
-                      <a href={session.youtubeUrl} target="_blank" rel="noopener noreferrer">
-                        <Youtube className="h-4 w-4 mr-2" />
-                        Watch on YouTube
-                      </a>
-                    </Button>
-                  )}
-                  {session.recordingUrl && (
-                    <Button variant="outline" asChild>
-                      <a href={session.recordingUrl} target="_blank" rel="noopener noreferrer">
-                        <PlayCircle className="h-4 w-4 mr-2" />
-                        Watch Recording
-                      </a>
-                    </Button>
-                  )}
-                  {session.slidesUrl && (
-                    <Button variant="outline" asChild>
-                      <a href={session.slidesUrl} target="_blank" rel="noopener noreferrer">
-                        <FileText className="h-4 w-4 mr-2" />
-                        View Slides
-                      </a>
-                    </Button>
-                  )}
                 </div>
+
+                {/* Right Column - Poster */}
+                {session.posterImage && (
+                  <div className="lg:col-span-2">
+                    <div className="sticky top-6">
+                      <div className="bg-muted/30 p-4 rounded-lg">
+                        <img 
+                          src={session.posterImage} 
+                          alt={session.title}
+                          className="w-full h-auto rounded-lg shadow-lg object-cover"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </motion.div>
@@ -352,21 +456,23 @@ function SessionCard({ session, isExpanded, onToggle }: {
 }
 
 
-function JoinSprintDialog({ sprint, open, onOpenChange }: { 
+function JoinSprintDialog({ sprint, open, onOpenChange, onSuccess }: { 
   sprint: Sprint; 
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onSuccess?: () => void;
 }) {
+  const { user, isAuthenticated } = useAuth();
   const [formData, setFormData] = useState({
-    name: currentUser.name,
-    email: currentUser.email,
-    designation: currentUser.designation || '',
-    company: currentUser.company || '',
+    name: user?.name || '',
+    email: user?.email || '',
+    designation: user?.designation || '',
+    company: user?.company || '',
     experience: '',
     expectations: ''
   });
 
-  const isRegistered = sprint.registeredUsers.includes(currentUser.id);
+  const isRegistered = user && sprint.registeredUsers?.includes(user.id);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -432,7 +538,7 @@ function JoinSprintDialog({ sprint, open, onOpenChange }: {
               </div>
             </div>
             <div className="space-y-2">
-              <Label>Experience with {sprint.theme}</Label>
+              <Label>Experience Level</Label>
               <select 
                 className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
                 value={formData.experience}
@@ -464,11 +570,38 @@ function JoinSprintDialog({ sprint, open, onOpenChange }: {
   );
 }
 
-function SprintDetail({ sprint, onBack }: { sprint: Sprint; onBack: () => void }) {
-  const forumPosts = mockForumPosts.filter((p) => p.sprintId === sprint.id);
+function SprintDetail({ sprint: initialSprint, onBack }: { sprint: Sprint; onBack: () => void }) {
+  const { user, isAuthenticated } = useAuth();
+  const forumPosts = mockForumPosts.filter((p) => p.sprintId === initialSprint.id);
   const [expandedSession, setExpandedSession] = useState<string | null>(null);
   const [joinDialogOpen, setJoinDialogOpen] = useState(false);
-  const isRegistered = sprint.registeredUsers.includes(currentUser.id);
+  const [sprint, setSprint] = useState<Sprint>(initialSprint);
+  const isRegistered = user && sprint.registeredUsers && Array.isArray(sprint.registeredUsers) && sprint.registeredUsers.includes(user.id);
+
+  // Refresh sprint data
+  const refreshSprint = async () => {
+    try {
+      const updatedSprint = await getSprint(sprint.id);
+      setSprint(updatedSprint);
+    } catch (error) {
+      console.error('Error refreshing sprint:', error);
+    }
+  };
+
+  // Update sprint when it changes externally
+  useEffect(() => {
+    setSprint(initialSprint);
+  }, [initialSprint]);
+
+  // Handle sprint update from child components
+  const handleSprintUpdate = (updatedSprint: Sprint) => {
+    setSprint(updatedSprint);
+    // Immediately update to reflect changes in UI
+    // Also refresh from server to ensure consistency
+    setTimeout(() => {
+      refreshSprint();
+    }, 500);
+  };
 
   return (
     <motion.div 
@@ -482,10 +615,6 @@ function SprintDetail({ sprint, onBack }: { sprint: Sprint; onBack: () => void }
       </div>
 
       <div className="glass-card p-6 md:p-8 rounded-lg">
-        <div className="flex flex-wrap items-center gap-4 mb-4">
-          <Badge variant="outline" className="text-base">{sprint.theme}</Badge>
-        </div>
-        
         <h1 className="text-3xl font-bold mb-4">{sprint.title}</h1>
         <p className="text-muted-foreground mb-6">{sprint.description}</p>
         
@@ -520,6 +649,7 @@ function SprintDetail({ sprint, onBack }: { sprint: Sprint; onBack: () => void }
         sprint={sprint} 
         open={joinDialogOpen} 
         onOpenChange={setJoinDialogOpen}
+        onSuccess={refreshSprint}
       />
 
       <Tabs defaultValue="sessions" className="space-y-6">
@@ -537,10 +667,12 @@ function SprintDetail({ sprint, onBack }: { sprint: Sprint; onBack: () => void }
               <SessionCard 
                 key={session.id} 
                 session={session}
+                sprint={sprint}
                 isExpanded={expandedSession === session.id}
                 onToggle={() => setExpandedSession(
                   expandedSession === session.id ? null : session.id
                 )}
+                onSprintUpdate={handleSprintUpdate}
               />
             ))}
             {sprint.sessions.length === 0 && (
@@ -556,61 +688,114 @@ function SprintDetail({ sprint, onBack }: { sprint: Sprint; onBack: () => void }
 
         {/* Participants Tab */}
         <TabsContent value="participants">
-          <Card className="glass-card">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Users className="h-5 w-5 text-primary" />
-                Registered Participants ({sprint.registeredUsers.length})
-              </CardTitle>
-              <CardDescription>
-                Community members participating in this sprint
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {sprint.registeredUsers.map((userId) => {
-                  const user = getUserById(userId);
-                  if (!user) return null;
-                  return (
-                    <motion.div
-                      key={userId}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
-                    >
-                      <Avatar className="h-12 w-12 border-2 border-primary/20">
-                        <AvatarImage src={user.avatar} alt={user.name} />
-                        <AvatarFallback>{user.name.charAt(0)}</AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 min-w-0">
-                        <Link 
-                          to={`/profile/${user.id}`}
-                          className="font-medium hover:text-primary transition-colors truncate block"
-                        >
-                          {user.name}
-                        </Link>
-                        <p className="text-sm text-muted-foreground truncate">
-                          {user.designation || 'Participant'}
-                        </p>
-                        {user.company && (
-                          <p className="text-xs text-muted-foreground truncate">{user.company}</p>
+          <div className="space-y-6">
+            {sprint.sessions && sprint.sessions.length > 0 ? (
+              sprint.sessions.map((sessionItem) => {
+                const sessionParticipants = sessionItem.registeredUsers || [];
+                return (
+                  <Card key={sessionItem.id} className="glass-card">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Users className="h-5 w-5 text-primary" />
+                        {sessionItem.title}
+                      </CardTitle>
+                      <CardDescription>
+                        {sessionParticipants.length} participant{sessionParticipants.length !== 1 ? 's' : ''} registered
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                        {sessionParticipants.length > 0 ? (
+                          sessionParticipants.map((userId) => {
+                            let displayUser = getUserById(userId);
+                            
+                            // If user not found in mockUsers, check if it's the current authenticated user
+                            if (!displayUser && user && userId === user.id) {
+                              displayUser = user;
+                            }
+                            
+                            // Fallback display for users not in mockUsers or current user
+                            if (!displayUser) {
+                              // Extract a display name from userId (could be email or UUID)
+                              const displayName = userId.includes('@') 
+                                ? userId.split('@')[0] 
+                                : `User ${userId.substring(0, 8)}`;
+                              
+                              return (
+                                <motion.div
+                                  key={userId}
+                                  initial={{ opacity: 0, y: 10 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
+                                >
+                                  <Avatar className="h-12 w-12 border-2 border-primary/20">
+                                    <AvatarFallback>{displayName.charAt(0).toUpperCase()}</AvatarFallback>
+                                  </Avatar>
+                                  <div className="flex-1 min-w-0">
+                                    <span className="font-medium truncate block">
+                                      {displayName}
+                                    </span>
+                                    <p className="text-sm text-muted-foreground truncate">
+                                      Participant
+                                    </p>
+                                  </div>
+                                  <Badge variant="secondary" className="shrink-0">
+                                    0 pts
+                                  </Badge>
+                                </motion.div>
+                              );
+                            }
+                            
+                            return (
+                              <motion.div
+                                key={userId}
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
+                              >
+                                <Avatar className="h-12 w-12 border-2 border-primary/20">
+                                  <AvatarImage src={displayUser.avatar} alt={displayUser.name} />
+                                  <AvatarFallback>{displayUser.name.charAt(0)}</AvatarFallback>
+                                </Avatar>
+                                <div className="flex-1 min-w-0">
+                                  <Link 
+                                    to={`/profile/${displayUser.id}`}
+                                    className="font-medium hover:text-primary transition-colors truncate block"
+                                  >
+                                    {displayUser.name}
+                                  </Link>
+                                  <p className="text-sm text-muted-foreground truncate">
+                                    {displayUser.designation || 'Participant'}
+                                  </p>
+                                  {displayUser.company && (
+                                    <p className="text-xs text-muted-foreground truncate">{displayUser.company}</p>
+                                  )}
+                                </div>
+                                <Badge variant="secondary" className="shrink-0">
+                                  {displayUser.points} pts
+                                </Badge>
+                              </motion.div>
+                            );
+                          })
+                        ) : (
+                          <div className="col-span-full text-center py-4">
+                            <p className="text-sm text-muted-foreground">No participants registered for this session yet.</p>
+                          </div>
                         )}
                       </div>
-                      <Badge variant="secondary" className="shrink-0">
-                        {user.points} pts
-                      </Badge>
-                    </motion.div>
-                  );
-                })}
-              </div>
-              {sprint.registeredUsers.length === 0 && (
-                <div className="text-center py-8">
+                    </CardContent>
+                  </Card>
+                );
+              })
+            ) : (
+              <Card className="glass-card">
+                <CardContent className="p-8 text-center">
                   <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                  <p className="text-muted-foreground">No participants registered yet. Be the first!</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                  <p className="text-muted-foreground">No sessions available yet.</p>
+                </CardContent>
+              </Card>
+            )}
+          </div>
         </TabsContent>
 
         {/* Forum Tab */}
@@ -630,8 +815,8 @@ function SprintDetail({ sprint, onBack }: { sprint: Sprint; onBack: () => void }
               <div className="mb-6 p-4 rounded-lg bg-muted/50">
                 <div className="flex gap-4">
                   <Avatar className="h-10 w-10">
-                    <AvatarImage src={currentUser.avatar} />
-                    <AvatarFallback>{currentUser.name.charAt(0)}</AvatarFallback>
+                    <AvatarImage src={user?.avatar} />
+                    <AvatarFallback>{user?.name?.charAt(0) || 'U'}</AvatarFallback>
                   </Avatar>
                   <div className="flex-1 space-y-3">
                     <Input placeholder="Post title..." />
@@ -820,30 +1005,55 @@ function SprintDetail({ sprint, onBack }: { sprint: Sprint; onBack: () => void }
 
 export default function SkillSprint() {
   const [selectedSprint, setSelectedSprint] = useState<Sprint | null>(null);
+  const [sprints, setSprints] = useState<Sprint[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const activeSprints = mockSprints.filter((s) => s.status === 'active');
-  const upcomingSprints = mockSprints.filter((s) => s.status === 'upcoming');
-  const completedSprints = mockSprints.filter((s) => s.status === 'completed');
+  // Fetch sprints from API
+  useEffect(() => {
+    const fetchSprints = async () => {
+      try {
+        const fetchedSprints = await getSprints();
+        setSprints(fetchedSprints);
+      } catch (error) {
+        console.error('Error fetching sprints:', error);
+        // Fallback to mock data if API fails
+        setSprints(mockSprints);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchSprints();
+  }, []);
+
+  const activeSprints = sprints.filter((s) => s.status === 'active');
+  const upcomingSprints = sprints.filter((s) => s.status === 'upcoming');
+  const completedSprints = sprints.filter((s) => s.status === 'completed');
 
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
       
       <main className="flex-1 container mx-auto px-4 py-8">
-        <AnimatePresence mode="wait">
-          {selectedSprint ? (
-            <SprintDetail 
-              key="detail"
-              sprint={selectedSprint} 
-              onBack={() => setSelectedSprint(null)} 
-            />
-          ) : (
-            <motion.div
-              key="list"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-            >
+        {loading ? (
+          <div className="text-center py-12">
+            <Clock className="h-8 w-8 animate-spin mx-auto mb-4 text-muted-foreground" />
+            <p className="text-muted-foreground">Loading sprints...</p>
+          </div>
+        ) : (
+          <AnimatePresence mode="wait">
+            {selectedSprint ? (
+              <SprintDetail 
+                key="detail"
+                sprint={selectedSprint} 
+                onBack={() => setSelectedSprint(null)} 
+              />
+            ) : (
+              <motion.div
+                key="list"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              >
               {/* Hero */}
               <motion.div 
                 className="text-center mb-12"
@@ -933,6 +1143,7 @@ export default function SkillSprint() {
             </motion.div>
           )}
         </AnimatePresence>
+        )}
       </main>
 
       <Footer />

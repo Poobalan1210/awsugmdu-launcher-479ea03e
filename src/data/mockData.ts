@@ -175,6 +175,7 @@ export interface Session {
   youtubeUrl?: string; // YouTube video link for past sessions
   slidesUrl?: string;
   posterImage?: string;
+  registeredUsers?: string[]; // Users registered for this specific session
 }
 
 export interface Submission {

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import * as React from 'react';
 import { motion } from 'framer-motion';
 import { Header } from '@/components/layout/Header';
@@ -13,6 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { 
   Plus, Calendar, Users, CheckCircle, XCircle, Clock,
@@ -23,6 +24,7 @@ import {
 } from 'lucide-react';
 import { mockSprints, mockMeetups, currentUser, Submission, generateSpeakerInviteLink, Sprint, Session, SessionPerson, mockUsers, User as UserType, predefinedTasks, mockColleges, CollegeTask, College, getTaskById, getUserById, communityRoles, mockUserRoles, CommunityRole, UserRoleAssignment, PointActivity, mockPointActivities, Meetup, mockBadges, Badge as BadgeType, BadgeAward, mockBadgeAwards, BadgeCriteriaType, criteriaTypeLabels, BadgeCriteria } from '@/data/mockData';
 import { createMeetup, updateMeetup, publishMeetup, getMeetups, CreateMeetupData, UpdateMeetupData } from '@/lib/meetups';
+import { createSprint, addSession, getSprints, deleteSprint, deleteSession, CreateSprintData, CreateSessionData } from '@/lib/sprints';
 import { uploadFileToS3 } from '@/lib/s3Upload';
 import { Progress } from '@/components/ui/progress';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -230,72 +232,58 @@ function SpeakerInviteDialog({ eventType, eventId, eventTitle }: {
   );
 }
 
-function CreateSprintDialog() {
+function CreateSprintDialog({ onSuccess }: { onSuccess?: () => void }) {
   const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     title: '',
-    theme: '',
     description: '',
-    startDate: '',
-    endDate: '',
-    githubRepo: '',
-    posterImage: '',
-    difficulty: 'intermediate' as 'beginner' | 'intermediate' | 'advanced',
-    maxParticipants: '',
-    prerequisites: '',
-    learningOutcomes: ''
+    month: '',
+    year: '',
+    githubRepo: ''
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setLoading(true);
     
-    const newSprint: Sprint = {
-      id: `s-${Date.now()}`,
-      title: formData.title,
-      theme: formData.theme,
-      description: formData.description,
-      startDate: formData.startDate,
-      endDate: formData.endDate,
-      status: 'upcoming',
-      participants: 0,
-      sessions: [],
-      submissions: [],
-      githubRepo: formData.githubRepo || undefined,
-      registeredUsers: []
-    };
+    try {
+      // Calculate start date (first day of month) and end date (last day of month)
+      const year = parseInt(formData.year);
+      const month = parseInt(formData.month);
+      const startDate = new Date(year, month - 1, 1).toISOString().split('T')[0];
+      const lastDay = new Date(year, month, 0).getDate();
+      const endDate = new Date(year, month - 1, lastDay).toISOString().split('T')[0];
+      
+      const sprintData: CreateSprintData = {
+        title: formData.title,
+        theme: '', // Default empty theme
+        description: formData.description,
+        startDate: startDate,
+        endDate: endDate,
+        githubRepo: formData.githubRepo || undefined
+      };
 
-    console.log('Creating sprint:', newSprint);
-    toast.success('Sprint created successfully!');
-    setOpen(false);
-    
-    // Reset form
-    setFormData({
-      title: '',
-      theme: '',
-      description: '',
-      startDate: '',
-      endDate: '',
-      githubRepo: '',
-      posterImage: '',
-      difficulty: 'intermediate',
-      maxParticipants: '',
-      prerequisites: '',
-      learningOutcomes: ''
-    });
+      await createSprint(sprintData);
+      toast.success('Sprint created successfully!');
+      setOpen(false);
+      onSuccess?.();
+      
+      // Reset form
+      setFormData({
+        title: '',
+        description: '',
+        month: '',
+        year: '',
+        githubRepo: ''
+      });
+    } catch (error) {
+      console.error('Error creating sprint:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to create sprint');
+    } finally {
+      setLoading(false);
+    }
   };
-
-  const themes = [
-    'Serverless',
-    'Containers & Kubernetes',
-    'Machine Learning',
-    'Generative AI',
-    'Data Engineering',
-    'DevOps & CI/CD',
-    'Security & Compliance',
-    'Networking',
-    'Storage & Databases',
-    'Cost Optimization'
-  ];
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -306,66 +294,68 @@ function CreateSprintDialog() {
         <DialogHeader>
           <DialogTitle>Create New Skill Sprint</DialogTitle>
           <DialogDescription>
-            Set up a new skill sprint for the community. Add details, poster, and learning objectives.
+            Set up a new skill sprint for the community. Add basic details and resources.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Basic Info */}
           <div className="space-y-4">
             <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Basic Information</h3>
+            <div className="space-y-2">
+              <Label>Sprint Title *</Label>
+              <Input 
+                placeholder="e.g., Serverless January"
+                value={formData.title}
+                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                required
+              />
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Sprint Title *</Label>
-                <Input 
-                  placeholder="e.g., Serverless January"
-                  value={formData.title}
-                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                <Label>Month *</Label>
+                <Select 
+                  value={formData.month} 
+                  onValueChange={(value) => setFormData({ ...formData, month: value })}
                   required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Theme *</Label>
-                <Select value={formData.theme} onValueChange={(value) => setFormData({ ...formData, theme: value })}>
+                >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select a theme" />
+                    <SelectValue placeholder="Select month" />
                   </SelectTrigger>
                   <SelectContent>
-                    {themes.map(theme => (
-                      <SelectItem key={theme} value={theme}>{theme}</SelectItem>
-                    ))}
+                    <SelectItem value="1">January</SelectItem>
+                    <SelectItem value="2">February</SelectItem>
+                    <SelectItem value="3">March</SelectItem>
+                    <SelectItem value="4">April</SelectItem>
+                    <SelectItem value="5">May</SelectItem>
+                    <SelectItem value="6">June</SelectItem>
+                    <SelectItem value="7">July</SelectItem>
+                    <SelectItem value="8">August</SelectItem>
+                    <SelectItem value="9">September</SelectItem>
+                    <SelectItem value="10">October</SelectItem>
+                    <SelectItem value="11">November</SelectItem>
+                    <SelectItem value="12">December</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-            </div>
-            <div className="grid grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label>Start Date *</Label>
-                <Input 
-                  type="date"
-                  value={formData.startDate}
-                  onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+                <Label>Year *</Label>
+                <Select 
+                  value={formData.year} 
+                  onValueChange={(value) => setFormData({ ...formData, year: value })}
                   required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>End Date *</Label>
-                <Input 
-                  type="date"
-                  value={formData.endDate}
-                  onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Difficulty Level</Label>
-                <Select value={formData.difficulty} onValueChange={(value: 'beginner' | 'intermediate' | 'advanced') => setFormData({ ...formData, difficulty: value })}>
+                >
                   <SelectTrigger>
-                    <SelectValue />
+                    <SelectValue placeholder="Select year" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="beginner">🟢 Beginner</SelectItem>
-                    <SelectItem value="intermediate">🟡 Intermediate</SelectItem>
-                    <SelectItem value="advanced">🔴 Advanced</SelectItem>
+                    {Array.from({ length: 5 }, (_, i) => {
+                      const year = new Date().getFullYear() + i;
+                      return (
+                        <SelectItem key={year} value={year.toString()}>
+                          {year}
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
               </div>
@@ -382,89 +372,33 @@ function CreateSprintDialog() {
             </div>
           </div>
 
-          {/* Poster & Resources */}
+          {/* Resources */}
           <div className="space-y-4 border-t pt-4">
-            <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Poster & Resources</h3>
+            <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Resources</h3>
             <div className="space-y-2">
-              <Label>Sprint Poster Image</Label>
-              <div className="flex gap-2">
-                <Input
-                  value={formData.posterImage}
-                  onChange={(e) => setFormData({ ...formData, posterImage: e.target.value })}
-                  placeholder="https://example.com/poster.jpg"
-                  className="flex-1"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  onClick={() => toast.info('File upload will be available with backend')}
-                >
-                  <Upload className="h-4 w-4" />
-                </Button>
-              </div>
-              {formData.posterImage && (
-                <div className="mt-2">
-                  <img
-                    src={formData.posterImage}
-                    alt="Sprint poster preview"
-                    className="w-full h-40 object-cover rounded-lg border"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).style.display = 'none';
-                    }}
-                  />
-                </div>
-              )}
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>GitHub Repo URL</Label>
-                <Input 
-                  placeholder="https://github.com/..."
-                  value={formData.githubRepo}
-                  onChange={(e) => setFormData({ ...formData, githubRepo: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Max Participants</Label>
-                <Input 
-                  type="number"
-                  placeholder="Leave empty for unlimited"
-                  value={formData.maxParticipants}
-                  onChange={(e) => setFormData({ ...formData, maxParticipants: e.target.value })}
-                  min="10"
-                />
-              </div>
+              <Label>GitHub Repo URL</Label>
+              <Input 
+                placeholder="https://github.com/..."
+                value={formData.githubRepo}
+                onChange={(e) => setFormData({ ...formData, githubRepo: e.target.value })}
+              />
             </div>
           </div>
 
-          {/* Learning Details */}
-          <div className="space-y-4 border-t pt-4">
-            <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Learning Details</h3>
-            <div className="space-y-2">
-              <Label>Prerequisites</Label>
-              <Textarea 
-                rows={2}
-                value={formData.prerequisites}
-                onChange={(e) => setFormData({ ...formData, prerequisites: e.target.value })}
-                placeholder="List any prerequisites (e.g., AWS account, basic cloud knowledge)..."
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Learning Outcomes</Label>
-              <Textarea 
-                rows={3}
-                value={formData.learningOutcomes}
-                onChange={(e) => setFormData({ ...formData, learningOutcomes: e.target.value })}
-                placeholder="What will participants be able to do after completing this sprint?&#10;- Build serverless APIs&#10;- Deploy Lambda functions&#10;- Configure API Gateway"
-              />
-            </div>
-          </div>
 
           <div className="flex gap-2 pt-4 border-t">
-            <Button type="submit" className="flex-1">
-              <Plus className="h-4 w-4 mr-2" />
-              Create Sprint
+            <Button type="submit" className="flex-1" disabled={loading}>
+              {loading ? (
+                <>
+                  <Clock className="h-4 w-4 mr-2 animate-spin" />
+                  Creating...
+                </>
+              ) : (
+                <>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Sprint
+                </>
+              )}
             </Button>
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
               Cancel
@@ -823,8 +757,11 @@ function SessionPeopleManager({
   );
 }
 
-function AddSessionDialog({ sprint }: { sprint: Sprint }) {
+function AddSessionDialog({ sprint, onSuccess }: { sprint: Sprint; onSuccess?: () => void }) {
   const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState({
     title: '',
     date: '',
@@ -832,6 +769,7 @@ function AddSessionDialog({ sprint }: { sprint: Sprint }) {
     duration: '90',
     description: '',
     meetingLink: '',
+    meetupUrl: '',
     posterImage: ''
   });
   const [peopleData, setPeopleData] = useState<{
@@ -844,7 +782,7 @@ function AddSessionDialog({ sprint }: { sprint: Sprint }) {
     volunteers: []
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!peopleData.speakers || peopleData.speakers.length === 0) {
@@ -852,46 +790,61 @@ function AddSessionDialog({ sprint }: { sprint: Sprint }) {
       return;
     }
 
-    // Use the first speaker for backward compatibility with existing Session interface
-    const primarySpeaker = peopleData.speakers[0];
+    if (!formData.posterImage) {
+      toast.error('Please add a poster image for this session');
+      return;
+    }
 
-    // Create session object
-    const newSession: Session = {
-      id: `ses-${Date.now()}`,
-      title: formData.title,
-      speaker: primarySpeaker.name,
-      speakerId: primarySpeaker.userId,
-      speakerPhoto: primarySpeaker.photo,
-      speakerDesignation: primarySpeaker.designation,
-      speakerCompany: primarySpeaker.company,
-      speakerLinkedIn: primarySpeaker.linkedIn,
-      hosts: peopleData.hosts,
-      speakers: peopleData.speakers,
-      volunteers: peopleData.volunteers,
-      date: formData.date,
-      time: formData.time,
-      duration: `${formData.duration} minutes`,
-      description: formData.description,
-      meetingLink: formData.meetingLink || undefined,
-      posterImage: formData.posterImage || undefined
-    };
-
-    // In a real app, this would be an API call
-    console.log('Adding session to sprint:', sprint.id, newSession);
-    toast.success('Session added successfully!');
+    setLoading(true);
     
-    // Reset form
-    setFormData({
-      title: '',
-      date: '',
-      time: '',
-      duration: '90',
-      description: '',
-      meetingLink: '',
-      posterImage: ''
-    });
-    setPeopleData({ hosts: [], speakers: [], volunteers: [] });
-    setOpen(false);
+    try {
+      // Use the first speaker for backward compatibility with existing Session interface
+      const primarySpeaker = peopleData.speakers[0];
+
+      // Create session data
+      const sessionData: CreateSessionData = {
+        title: formData.title,
+        speaker: primarySpeaker.name,
+        speakerId: primarySpeaker.userId,
+        speakerPhoto: primarySpeaker.photo,
+        speakerDesignation: primarySpeaker.designation,
+        speakerCompany: primarySpeaker.company,
+        speakerLinkedIn: primarySpeaker.linkedIn,
+        hosts: peopleData.hosts,
+        speakers: peopleData.speakers,
+        volunteers: peopleData.volunteers,
+        date: formData.date,
+        time: formData.time,
+        duration: `${formData.duration} minutes`,
+        description: formData.description,
+        meetingLink: formData.meetingLink || undefined,
+        meetupUrl: formData.meetupUrl || undefined,
+        posterImage: formData.posterImage || undefined
+      };
+
+      await addSession(sprint.id, sessionData);
+      toast.success('Session added successfully!');
+      
+      // Reset form
+      setFormData({
+        title: '',
+        date: '',
+        time: '',
+        duration: '90',
+        description: '',
+        meetingLink: '',
+        meetupUrl: '',
+        posterImage: ''
+      });
+      setPeopleData({ hosts: [], speakers: [], volunteers: [] });
+      setOpen(false);
+      onSuccess?.();
+    } catch (error) {
+      console.error('Error adding session:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to add session');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -964,6 +917,18 @@ function AddSessionDialog({ sprint }: { sprint: Sprint }) {
               </div>
             </div>
             <div className="space-y-2">
+              <Label>Meetup Registration Link</Label>
+              <Input
+                type="url"
+                value={formData.meetupUrl}
+                onChange={(e) => setFormData({ ...formData, meetupUrl: e.target.value })}
+                placeholder="https://www.meetup.com/..."
+              />
+              <p className="text-xs text-muted-foreground">
+                Link to the Meetup.com event registration page for this session
+              </p>
+            </div>
+            <div className="space-y-2">
               <Label>Session Description *</Label>
               <Textarea
                 rows={4}
@@ -974,23 +939,64 @@ function AddSessionDialog({ sprint }: { sprint: Sprint }) {
               />
             </div>
             <div className="space-y-2">
-              <Label>Poster Image URL</Label>
+              <Label>Session Poster Image *</Label>
               <div className="flex gap-2">
                 <Input
                   value={formData.posterImage}
                   onChange={(e) => setFormData({ ...formData, posterImage: e.target.value })}
-                  placeholder="https://example.com/poster.jpg"
+                  placeholder="https://example.com/poster.jpg or upload file"
+                  className="flex-1"
+                  required
+                />
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    
+                    // Validate file size (max 5MB)
+                    if (file.size > 5 * 1024 * 1024) {
+                      toast.error('File size must be less than 5MB');
+                      return;
+                    }
+                    
+                    // Validate file type
+                    if (!file.type.startsWith('image/')) {
+                      toast.error('Please select an image file');
+                      return;
+                    }
+                    
+                    setUploadingImage(true);
+                    try {
+                      const imageUrl = await uploadFileToS3(file, 'meetup-posters');
+                      setFormData({ ...formData, posterImage: imageUrl });
+                      toast.success('Poster image uploaded successfully!');
+                    } catch (error) {
+                      console.error('Upload error:', error);
+                      toast.error(error instanceof Error ? error.message : 'Failed to upload image');
+                    } finally {
+                      setUploadingImage(false);
+                      if (fileInputRef.current) {
+                        fileInputRef.current.value = '';
+                      }
+                    }
+                  }}
                 />
                 <Button
                   type="button"
                   variant="outline"
                   size="icon"
-                  onClick={() => {
-                    // In a real app, this would open a file upload dialog
-                    toast.info('File upload feature will be implemented with backend');
-                  }}
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadingImage}
                 >
-                  <Upload className="h-4 w-4" />
+                  {uploadingImage ? (
+                    <Clock className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Upload className="h-4 w-4" />
+                  )}
                 </Button>
               </div>
               {formData.posterImage && (
@@ -998,13 +1004,17 @@ function AddSessionDialog({ sprint }: { sprint: Sprint }) {
                   <img
                     src={formData.posterImage}
                     alt="Poster preview"
-                    className="w-full h-32 object-cover rounded-lg border"
+                    className="w-full h-40 object-cover rounded-lg border"
                     onError={(e) => {
                       (e.target as HTMLImageElement).style.display = 'none';
+                      toast.error('Failed to load poster image. Please check the URL or upload again.');
                     }}
                   />
                 </div>
               )}
+              <p className="text-xs text-muted-foreground">
+                Upload an image file or paste an image URL. Supported formats: JPEG, PNG, GIF, WebP (max 5MB)
+              </p>
             </div>
           </div>
 
@@ -1018,9 +1028,18 @@ function AddSessionDialog({ sprint }: { sprint: Sprint }) {
           </div>
 
           <div className="flex gap-2 pt-4 border-t">
-            <Button type="submit" className="flex-1">
-              <Plus className="h-4 w-4 mr-2" />
-              Create Session
+            <Button type="submit" className="flex-1" disabled={loading || uploadingImage}>
+              {loading ? (
+                <>
+                  <Clock className="h-4 w-4 mr-2 animate-spin" />
+                  Creating...
+                </>
+              ) : (
+                <>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Session
+                </>
+              )}
             </Button>
             <Button
               type="button"
@@ -3160,11 +3179,67 @@ function BadgesTab() {
 
 export default function Admin() {
   const [activeTab, setActiveTab] = useState('submissions');
+  const [sprints, setSprints] = useState<Sprint[]>([]);
+  const [loadingSprints, setLoadingSprints] = useState(false);
   const isAdmin = currentUser.role === 'admin';
   const isSpeaker = currentUser.role === 'speaker';
 
   const pendingSubmissions = allSubmissions.filter(s => s.status === 'pending');
   const reviewedSubmissions = allSubmissions.filter(s => s.status !== 'pending');
+
+  // Fetch sprints from API
+  const fetchSprints = async () => {
+    setLoadingSprints(true);
+    try {
+      const fetchedSprints = await getSprints();
+      setSprints(fetchedSprints);
+    } catch (error) {
+      console.error('Error fetching sprints:', error);
+      // Fallback to mock data if API fails
+      setSprints(mockSprints);
+    } finally {
+      setLoadingSprints(false);
+    }
+  };
+
+  // Delete sprint
+  const handleDeleteSprint = async (sprintId: string, sprintTitle: string) => {
+    if (!confirm(`Are you sure you want to delete "${sprintTitle}"? This will also delete all sessions in this sprint. This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      await deleteSprint(sprintId);
+      toast.success('Sprint deleted successfully');
+      fetchSprints();
+    } catch (error) {
+      console.error('Error deleting sprint:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to delete sprint');
+    }
+  };
+
+  // Delete session
+  const handleDeleteSession = async (sprintId: string, sessionId: string, sessionTitle: string) => {
+    if (!confirm(`Are you sure you want to delete "${sessionTitle}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      await deleteSession(sprintId, sessionId);
+      toast.success('Session deleted successfully');
+      fetchSprints();
+    } catch (error) {
+      console.error('Error deleting session:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to delete session');
+    }
+  };
+
+  // Load sprints when component mounts or when sprints tab is active
+  useEffect(() => {
+    if (isAdmin && activeTab === 'sprints') {
+      fetchSprints();
+    }
+  }, [isAdmin, activeTab]);
 
   const handleSubmissionAction = (submissionId: string, action: 'approve' | 'reject', points?: number, feedback?: string) => {
     toast.success(`Submission ${action}d${points ? ` with ${points} points` : ''}`);
@@ -3227,7 +3302,7 @@ export default function Admin() {
             </Card>
             <Card className="glass-card">
               <CardContent className="p-4 text-center">
-                <div className="text-3xl font-bold text-amber-500">{mockSprints.length}</div>
+                <div className="text-3xl font-bold text-amber-500">{sprints.length || mockSprints.length}</div>
                 <p className="text-sm text-muted-foreground">Total Sprints</p>
               </CardContent>
             </Card>
@@ -3329,10 +3404,24 @@ export default function Admin() {
                 <TabsContent value="sprints">
                   <div className="flex justify-between items-center mb-6">
                     <h2 className="text-xl font-semibold">Manage Sprints</h2>
-                    <CreateSprintDialog />
+                    <CreateSprintDialog onSuccess={fetchSprints} />
                   </div>
-                  <div className="space-y-4">
-                    {mockSprints.map(sprint => (
+                  {loadingSprints ? (
+                    <div className="text-center py-8">
+                      <Clock className="h-8 w-8 animate-spin mx-auto mb-4 text-muted-foreground" />
+                      <p className="text-muted-foreground">Loading sprints...</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {sprints.length === 0 ? (
+                        <Card className="glass-card">
+                          <CardContent className="p-8 text-center">
+                            <Rocket className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                            <p className="text-muted-foreground">No sprints found. Create your first sprint!</p>
+                          </CardContent>
+                        </Card>
+                      ) : (
+                        sprints.map(sprint => (
                       <Card key={sprint.id} className="glass-card">
                         <CardContent className="p-4">
                           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -3343,7 +3432,6 @@ export default function Admin() {
                                   {sprint.status}
                                 </Badge>
                               </div>
-                              <p className="text-sm text-muted-foreground mb-2">{sprint.theme}</p>
                               <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
                                 <span className="flex items-center gap-1">
                                   <Users className="h-4 w-4" />
@@ -3360,7 +3448,7 @@ export default function Admin() {
                               </div>
                             </div>
                             <div className="flex flex-wrap gap-2">
-                              <AddSessionDialog sprint={sprint} />
+                              <AddSessionDialog sprint={sprint} onSuccess={fetchSprints} />
                               <SpeakerInviteDialog 
                                 eventType="sprint" 
                                 eventId={sprint.id} 
@@ -3374,12 +3462,23 @@ export default function Admin() {
                                 <Edit className="h-4 w-4" />
                                 Edit
                               </Button>
+                              <Button 
+                                variant="destructive" 
+                                size="sm" 
+                                className="gap-1"
+                                onClick={() => handleDeleteSprint(sprint.id, sprint.title)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                                Delete
+                              </Button>
                             </div>
                           </div>
                         </CardContent>
                       </Card>
-                    ))}
+                      ))
+                    )}
                   </div>
+                  )}
                 </TabsContent>
 
                 <TabsContent value="meetups">

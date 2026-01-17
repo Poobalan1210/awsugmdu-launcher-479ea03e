@@ -132,6 +132,44 @@ resource "aws_dynamodb_table" "meetups" {
   }
 }
 
+# DynamoDB Table for Sprints
+resource "aws_dynamodb_table" "sprints" {
+  name           = "${var.project_name}-sprints"
+  billing_mode   = "PAY_PER_REQUEST"
+  hash_key       = "id"
+
+  attribute {
+    name = "id"
+    type = "S"
+  }
+
+  attribute {
+    name = "status"
+    type = "S"
+  }
+
+  attribute {
+    name = "startDate"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name     = "status-index"
+    hash_key = "status"
+    projection_type = "ALL"
+  }
+
+  global_secondary_index {
+    name     = "startDate-index"
+    hash_key = "startDate"
+    projection_type = "ALL"
+  }
+
+  tags = {
+    Name = "${var.project_name}-sprints-table"
+  }
+}
+
 # S3 Bucket for Profile Photos
 resource "aws_s3_bucket" "profile_photos" {
   bucket = "${var.project_name}-profile-photos-${data.aws_caller_identity.current.account_id}"
@@ -266,7 +304,9 @@ resource "aws_iam_role_policy" "lambda_dynamodb" {
           aws_dynamodb_table.users.arn,
           "${aws_dynamodb_table.users.arn}/index/*",
           aws_dynamodb_table.meetups.arn,
-          "${aws_dynamodb_table.meetups.arn}/index/*"
+          "${aws_dynamodb_table.meetups.arn}/index/*",
+          aws_dynamodb_table.sprints.arn,
+          "${aws_dynamodb_table.sprints.arn}/index/*"
         ]
       }
     ]
@@ -339,6 +379,13 @@ data "archive_file" "s3_upload" {
   type        = "zip"
   source_dir  = "${path.module}/lambda/s3-upload"
   output_path = "${path.module}/lambda/s3-upload.zip"
+  excludes    = ["node_modules", "*.zip"]
+}
+
+data "archive_file" "sprints_crud" {
+  type        = "zip"
+  source_dir  = "${path.module}/lambda/sprints-crud"
+  output_path = "${path.module}/lambda/sprints-crud.zip"
   excludes    = ["node_modules", "*.zip"]
 }
 
@@ -422,6 +469,27 @@ resource "aws_lambda_function" "s3_upload" {
   }
 }
 
+# Lambda: Sprints CRUD
+resource "aws_lambda_function" "sprints_crud" {
+  filename         = data.archive_file.sprints_crud.output_path
+  function_name    = "${var.project_name}-sprints-crud"
+  role            = aws_iam_role.lambda_execution.arn
+  handler         = "index.handler"
+  source_code_hash = data.archive_file.sprints_crud.output_base64sha256
+  runtime         = "nodejs20.x"
+  timeout         = 30
+
+  environment {
+    variables = {
+      SPRINTS_TABLE_NAME = aws_dynamodb_table.sprints.name
+    }
+  }
+
+  tags = {
+    Name = "${var.project_name}-sprints-crud"
+  }
+}
+
 
 # API Gateway
 resource "aws_api_gateway_rest_api" "api" {
@@ -479,6 +547,66 @@ resource "aws_api_gateway_resource" "upload" {
   rest_api_id = aws_api_gateway_rest_api.api.id
   parent_id   = aws_api_gateway_rest_api.api.root_resource_id
   path_part   = "upload"
+}
+
+resource "aws_api_gateway_resource" "sprints" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  parent_id   = aws_api_gateway_rest_api.api.root_resource_id
+  path_part   = "sprints"
+}
+
+resource "aws_api_gateway_resource" "sprints_id" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  parent_id   = aws_api_gateway_resource.sprints.id
+  path_part   = "{id}"
+}
+
+resource "aws_api_gateway_resource" "sprints_id_sessions" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  parent_id   = aws_api_gateway_resource.sprints_id.id
+  path_part   = "sessions"
+}
+
+resource "aws_api_gateway_resource" "sprints_id_sessions_sessionid" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  parent_id   = aws_api_gateway_resource.sprints_id_sessions.id
+  path_part   = "{sessionId}"
+}
+
+resource "aws_api_gateway_resource" "sprints_id_sessions_sessionid_register" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  parent_id   = aws_api_gateway_resource.sprints_id_sessions_sessionid.id
+  path_part   = "register"
+}
+
+resource "aws_api_gateway_resource" "sprints_id_register" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  parent_id   = aws_api_gateway_resource.sprints_id.id
+  path_part   = "register"
+}
+
+resource "aws_api_gateway_resource" "sprints_id_submit" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  parent_id   = aws_api_gateway_resource.sprints_id.id
+  path_part   = "submit"
+}
+
+resource "aws_api_gateway_resource" "sprints_id_forum" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  parent_id   = aws_api_gateway_resource.sprints_id.id
+  path_part   = "forum"
+}
+
+resource "aws_api_gateway_resource" "sprints_id_forum_postid" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  parent_id   = aws_api_gateway_resource.sprints_id_forum.id
+  path_part   = "{postId}"
+}
+
+resource "aws_api_gateway_resource" "sprints_id_forum_postid_reply" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  parent_id   = aws_api_gateway_resource.sprints_id_forum_postid.id
+  path_part   = "reply"
 }
 
 # API Gateway Methods
@@ -577,6 +705,161 @@ resource "aws_api_gateway_method" "upload_post" {
 resource "aws_api_gateway_method" "upload_options" {
   rest_api_id   = aws_api_gateway_rest_api.api.id
   resource_id   = aws_api_gateway_resource.upload.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# Sprints CRUD Methods
+resource "aws_api_gateway_method" "sprints_get" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.sprints.id
+  http_method   = "GET"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "sprints_post" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.sprints.id
+  http_method   = "POST"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "sprints_options" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.sprints.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "sprints_id_get" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.sprints_id.id
+  http_method   = "GET"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "sprints_id_put" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.sprints_id.id
+  http_method   = "PUT"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "sprints_id_delete" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.sprints_id.id
+  http_method   = "DELETE"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "sprints_id_options" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.sprints_id.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "sprints_id_sessions_post" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.sprints_id_sessions.id
+  http_method   = "POST"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "sprints_id_sessions_options" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.sprints_id_sessions.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "sprints_id_sessions_sessionid_put" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.sprints_id_sessions_sessionid.id
+  http_method   = "PUT"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "sprints_id_sessions_sessionid_delete" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.sprints_id_sessions_sessionid.id
+  http_method   = "DELETE"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "sprints_id_sessions_sessionid_options" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.sprints_id_sessions_sessionid.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "sprints_id_sessions_sessionid_register_post" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.sprints_id_sessions_sessionid_register.id
+  http_method   = "POST"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "sprints_id_sessions_sessionid_register_options" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.sprints_id_sessions_sessionid_register.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "sprints_id_register_post" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.sprints_id_register.id
+  http_method   = "POST"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "sprints_id_register_options" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.sprints_id_register.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "sprints_id_submit_post" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.sprints_id_submit.id
+  http_method   = "POST"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "sprints_id_submit_options" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.sprints_id_submit.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "sprints_id_forum_post" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.sprints_id_forum.id
+  http_method   = "POST"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "sprints_id_forum_options" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.sprints_id_forum.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "sprints_id_forum_postid_reply_post" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.sprints_id_forum_postid_reply.id
+  http_method   = "POST"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "sprints_id_forum_postid_reply_options" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.sprints_id_forum_postid_reply.id
   http_method   = "OPTIONS"
   authorization = "NONE"
 }
@@ -863,6 +1146,227 @@ resource "aws_api_gateway_integration_response" "upload_options" {
   }
 }
 
+# Sprints CRUD Integrations
+resource "aws_api_gateway_integration" "sprints_get_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.sprints.id
+  http_method = aws_api_gateway_method.sprints_get.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.sprints_crud.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "sprints_post_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.sprints.id
+  http_method = aws_api_gateway_method.sprints_post.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.sprints_crud.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "sprints_options_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.sprints.id
+  http_method = aws_api_gateway_method.sprints_options.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.sprints_crud.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "sprints_id_get_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.sprints_id.id
+  http_method = aws_api_gateway_method.sprints_id_get.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.sprints_crud.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "sprints_id_put_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.sprints_id.id
+  http_method = aws_api_gateway_method.sprints_id_put.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.sprints_crud.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "sprints_id_delete_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.sprints_id.id
+  http_method = aws_api_gateway_method.sprints_id_delete.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.sprints_crud.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "sprints_id_options_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.sprints_id.id
+  http_method = aws_api_gateway_method.sprints_id_options.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.sprints_crud.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "sprints_id_sessions_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.sprints_id_sessions.id
+  http_method = aws_api_gateway_method.sprints_id_sessions_post.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.sprints_crud.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "sprints_id_sessions_options_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.sprints_id_sessions.id
+  http_method = aws_api_gateway_method.sprints_id_sessions_options.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.sprints_crud.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "sprints_id_sessions_sessionid_put_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.sprints_id_sessions_sessionid.id
+  http_method = aws_api_gateway_method.sprints_id_sessions_sessionid_put.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.sprints_crud.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "sprints_id_sessions_sessionid_delete_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.sprints_id_sessions_sessionid.id
+  http_method = aws_api_gateway_method.sprints_id_sessions_sessionid_delete.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.sprints_crud.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "sprints_id_sessions_sessionid_options_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.sprints_id_sessions_sessionid.id
+  http_method = aws_api_gateway_method.sprints_id_sessions_sessionid_options.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.sprints_crud.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "sprints_id_sessions_sessionid_register_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.sprints_id_sessions_sessionid_register.id
+  http_method = aws_api_gateway_method.sprints_id_sessions_sessionid_register_post.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.sprints_crud.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "sprints_id_sessions_sessionid_register_options_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.sprints_id_sessions_sessionid_register.id
+  http_method = aws_api_gateway_method.sprints_id_sessions_sessionid_register_options.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.sprints_crud.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "sprints_id_register_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.sprints_id_register.id
+  http_method = aws_api_gateway_method.sprints_id_register_post.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.sprints_crud.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "sprints_id_register_options_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.sprints_id_register.id
+  http_method = aws_api_gateway_method.sprints_id_register_options.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.sprints_crud.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "sprints_id_submit_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.sprints_id_submit.id
+  http_method = aws_api_gateway_method.sprints_id_submit_post.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.sprints_crud.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "sprints_id_submit_options_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.sprints_id_submit.id
+  http_method = aws_api_gateway_method.sprints_id_submit_options.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.sprints_crud.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "sprints_id_forum_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.sprints_id_forum.id
+  http_method = aws_api_gateway_method.sprints_id_forum_post.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.sprints_crud.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "sprints_id_forum_options_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.sprints_id_forum.id
+  http_method = aws_api_gateway_method.sprints_id_forum_options.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.sprints_crud.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "sprints_id_forum_postid_reply_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.sprints_id_forum_postid_reply.id
+  http_method = aws_api_gateway_method.sprints_id_forum_postid_reply_post.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.sprints_crud.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "sprints_id_forum_postid_reply_options_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.sprints_id_forum_postid_reply.id
+  http_method = aws_api_gateway_method.sprints_id_forum_postid_reply_options.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.sprints_crud.invoke_arn
+}
+
 # Lambda Permissions for API Gateway
 resource "aws_lambda_permission" "api_users" {
   statement_id  = "AllowExecutionFromAPIGateway"
@@ -896,8 +1400,25 @@ resource "aws_lambda_permission" "api_s3_upload" {
   source_arn    = "${aws_api_gateway_rest_api.api.execution_arn}/*/*"
 }
 
+resource "aws_lambda_permission" "api_sprints_crud" {
+  statement_id  = "AllowExecutionFromAPIGateway"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.sprints_crud.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.api.execution_arn}/*/*"
+}
+
 # API Gateway Deployment
 resource "aws_api_gateway_deployment" "api" {
+  # Force new deployment when Lambda code changes
+  triggers = {
+    redeployment = sha1(jsonencode([
+      aws_api_gateway_integration.sprints_id_sessions_sessionid_register_lambda.id,
+      aws_api_gateway_integration.sprints_id_sessions_sessionid_register_options_lambda.id,
+      aws_lambda_function.sprints_crud.source_code_hash,
+    ]))
+  }
+
   depends_on = [
     aws_api_gateway_integration.users_lambda,
     aws_api_gateway_integration.meetup_verify_lambda,
@@ -908,6 +1429,28 @@ resource "aws_api_gateway_deployment" "api" {
     aws_api_gateway_integration.meetups_id_publish_lambda,
     aws_api_gateway_integration.meetups_id_register_lambda,
     aws_api_gateway_integration.upload_lambda,
+    aws_api_gateway_integration.sprints_get_lambda,
+    aws_api_gateway_integration.sprints_post_lambda,
+    aws_api_gateway_integration.sprints_options_lambda,
+    aws_api_gateway_integration.sprints_id_get_lambda,
+    aws_api_gateway_integration.sprints_id_put_lambda,
+    aws_api_gateway_integration.sprints_id_delete_lambda,
+    aws_api_gateway_integration.sprints_id_options_lambda,
+    aws_api_gateway_integration.sprints_id_sessions_lambda,
+    aws_api_gateway_integration.sprints_id_sessions_options_lambda,
+    aws_api_gateway_integration.sprints_id_sessions_sessionid_put_lambda,
+    aws_api_gateway_integration.sprints_id_sessions_sessionid_delete_lambda,
+    aws_api_gateway_integration.sprints_id_sessions_sessionid_options_lambda,
+    aws_api_gateway_integration.sprints_id_sessions_sessionid_register_lambda,
+    aws_api_gateway_integration.sprints_id_sessions_sessionid_register_options_lambda,
+    aws_api_gateway_integration.sprints_id_register_lambda,
+    aws_api_gateway_integration.sprints_id_register_options_lambda,
+    aws_api_gateway_integration.sprints_id_submit_lambda,
+    aws_api_gateway_integration.sprints_id_submit_options_lambda,
+    aws_api_gateway_integration.sprints_id_forum_lambda,
+    aws_api_gateway_integration.sprints_id_forum_options_lambda,
+    aws_api_gateway_integration.sprints_id_forum_postid_reply_lambda,
+    aws_api_gateway_integration.sprints_id_forum_postid_reply_options_lambda,
   ]
 
   rest_api_id = aws_api_gateway_rest_api.api.id
@@ -1031,4 +1574,14 @@ output "lambda_meetup_verification_arn" {
 output "lambda_meetups_crud_arn" {
   description = "Meetups CRUD Lambda ARN"
   value       = aws_lambda_function.meetups_crud.arn
+}
+
+output "dynamodb_sprints_table_name" {
+  description = "DynamoDB Sprints Table Name"
+  value       = aws_dynamodb_table.sprints.name
+}
+
+output "lambda_sprints_crud_arn" {
+  description = "Sprints CRUD Lambda ARN"
+  value       = aws_lambda_function.sprints_crud.arn
 }

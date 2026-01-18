@@ -121,10 +121,27 @@ exports.handler = async (event) => {
 async function listMeetups(event) {
   const queryParams = event.queryStringParameters || {};
   const status = queryParams.status; // 'draft', 'upcoming', 'completed'
+  const sprintId = queryParams.sprintId; // Filter by sprint
   
   let meetups;
   
-  if (status) {
+  if (sprintId) {
+    // Query by sprintId using GSI
+    const result = await docClient.send(new QueryCommand({
+      TableName: MEETUPS_TABLE,
+      IndexName: 'sprintId-index',
+      KeyConditionExpression: 'sprintId = :sprintId',
+      ExpressionAttributeValues: {
+        ':sprintId': sprintId
+      }
+    }));
+    meetups = result.Items || [];
+    
+    // Further filter by status if provided
+    if (status) {
+      meetups = meetups.filter(m => m.status === status);
+    }
+  } else if (status) {
     // Query by status using GSI
     const result = await docClient.send(new QueryCommand({
       TableName: MEETUPS_TABLE,
@@ -211,13 +228,21 @@ async function createMeetup(event) {
     maxAttendees,
     speakers,
     hosts,
-    volunteers
+    volunteers,
+    sprintId
   } = body;
   
   // Validation
   if (!title || !date || !time || !type) {
     return createResponse(400, { 
       error: 'Missing required fields: title, date, time, type' 
+    });
+  }
+  
+  // Validate sprint selection if type is skill-sprint
+  if (type === 'skill-sprint' && !sprintId) {
+    return createResponse(400, { 
+      error: 'Sprint ID is required when type is skill-sprint' 
     });
   }
   
@@ -248,6 +273,7 @@ async function createMeetup(event) {
     attendees: 0,
     maxAttendees: maxAttendees ? parseInt(maxAttendees) : undefined,
     registeredUsers: [],
+    ...(type === 'skill-sprint' && sprintId ? { sprintId } : {}),
     speakers: speakers || [],
     hosts: hosts || [],
     volunteers: volunteers || [],
@@ -285,7 +311,7 @@ async function updateMeetup(id, event) {
   const allowedFields = [
     'title', 'description', 'richDescription', 'date', 'time', 'duration', 'type',
     'location', 'meetingLink', 'meetupUrl', 'image', 'maxAttendees',
-    'speakers', 'hosts', 'volunteers'
+    'speakers', 'hosts', 'volunteers', 'sprintId'
   ];
   
   allowedFields.forEach(field => {
@@ -295,6 +321,16 @@ async function updateMeetup(id, event) {
       expressionAttributeValues[`:${field}`] = body[field];
     }
   });
+  
+  // Handle sprintId - add it if provided, remove it if explicitly set to null
+  if (body.sprintId === null) {
+    // Remove the sprintId attribute
+    updateExpressions.push('REMOVE sprintId');
+  } else if (body.sprintId !== undefined) {
+    // Add or update sprintId
+    updateExpressions.push('sprintId = :sprintId');
+    expressionAttributeValues[':sprintId'] = body.sprintId;
+  }
   
   // Always update updatedAt
   updateExpressions.push('updatedAt = :updatedAt');

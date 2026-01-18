@@ -20,8 +20,10 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
-import { mockSprints, mockForumPosts, Sprint, Session, currentUser, mockUsers, getUserById } from '@/data/mockData';
+import { mockForumPosts, Sprint, Session, currentUser, getUserByIdAsync, Meetup, User as UserType } from '@/data/mockData';
 import { getSprints, getSprint, registerForSprint, registerForSession } from '@/lib/sprints';
+import { getMeetupsBySprint, registerForMeetup } from '@/lib/meetups';
+import { getAllUsers } from '@/lib/userProfile';
 import { format, parseISO, isPast } from 'date-fns';
 import { marked } from 'marked';
 import { useAuth } from '@/contexts/AuthContext';
@@ -50,7 +52,29 @@ function formatTime(time: string): string {
   return `${displayHours}:${minutes} ${ampm}`;
 }
 
-function SprintCard({ sprint, onSelect }: { sprint: Sprint; onSelect: () => void }) {
+function SprintCard({ sprint, sessionCount, onSelect }: { sprint: Sprint; sessionCount?: number; onSelect: () => void }) {
+  const [participantCount, setParticipantCount] = useState(sprint.participants || 0);
+
+  // Fetch participant count only
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        // Fetch fresh sprint data to get latest registeredUsers count
+        const { getSprint } = await import('@/lib/sprints');
+        const freshSprint = await getSprint(sprint.id);
+        
+        // Get participant count from registeredUsers array
+        const registeredCount = freshSprint.registeredUsers?.length || 0;
+        setParticipantCount(registeredCount);
+      } catch (error) {
+        console.error('Error fetching sprint data:', error);
+        // Fallback to sprint.participants if API fails
+        setParticipantCount(sprint.participants || 0);
+      }
+    };
+    fetchData();
+  }, [sprint.id, sprint.participants]);
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -75,11 +99,11 @@ function SprintCard({ sprint, onSelect }: { sprint: Sprint; onSelect: () => void
           <div className="flex items-center gap-4 text-sm text-muted-foreground mb-4">
             <div className="flex items-center gap-1">
               <Users className="h-4 w-4" />
-              {sprint.participants}
+              {participantCount}
             </div>
             <div className="flex items-center gap-1">
               <Video className="h-4 w-4" />
-              {sprint.sessions.length} sessions
+              {sessionCount} sessions
             </div>
           </div>
           
@@ -455,6 +479,266 @@ function SessionCard({ session: initialSession, sprint, isExpanded, onToggle, on
   );
 }
 
+// Meetup Session Card - for sessions created as meetups
+function MeetupSessionCard({ meetup, isExpanded, onToggle }: { 
+  meetup: Meetup;
+  isExpanded: boolean;
+  onToggle: () => void;
+}) {
+  const { user, isAuthenticated } = useAuth();
+  const [isRegistering, setIsRegistering] = useState(false);
+  const sessionDate = parseISO(meetup.date);
+  const isUpcoming = !isPast(sessionDate);
+  const isRegistered = user && meetup.registeredUsers?.includes(user.id);
+
+  const parsedDescription = useMemo(() => {
+    if (meetup.richDescription) {
+      return parseContent(meetup.richDescription);
+    }
+    return null;
+  }, [meetup.richDescription]);
+
+  const handleRegister = async () => {
+    if (!isAuthenticated || !user) {
+      toast.error('Please log in to register for this session');
+      return;
+    }
+
+    if (!meetup.meetupUrl) {
+      toast.error('Meetup URL not available');
+      return;
+    }
+
+    setIsRegistering(true);
+    try {
+      const result = await registerForMeetup(meetup.id, user.id);
+      
+      if (result.alreadyRegistered) {
+        toast.info('You are already registered for this session');
+      } else {
+        toast.success('Successfully registered for the session!');
+      }
+      
+      setTimeout(() => {
+        if (meetup.meetupUrl) {
+          window.open(meetup.meetupUrl, '_blank', 'noopener,noreferrer');
+        }
+      }, 1000);
+    } catch (error) {
+      console.error('Registration error:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to register for session');
+    } finally {
+      setIsRegistering(false);
+    }
+  };
+
+  return (
+    <Collapsible open={isExpanded} onOpenChange={onToggle}>
+      <Card className="glass-card overflow-hidden border-l-4 border-l-primary/50">
+        <CollapsibleTrigger asChild>
+          <CardContent className="p-4 cursor-pointer hover:bg-muted/30 transition-colors">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-4 flex-1 min-w-0">
+                <Badge variant="outline" className="shrink-0">Meetup</Badge>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-semibold text-lg truncate">{meetup.title}</h3>
+                  <p className="text-sm text-muted-foreground truncate">
+                    {meetup.speakers && meetup.speakers.length > 0 
+                      ? meetup.speakers.map(s => s.name).join(', ')
+                      : 'Community Session'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-4 flex-shrink-0">
+                <div className="text-right hidden sm:block">
+                  <p className="text-sm font-medium">{format(sessionDate, 'MMM d, yyyy')}</p>
+                  {meetup.time && (
+                    <p className="text-xs text-muted-foreground">{formatTime(meetup.time)}</p>
+                  )}
+                </div>
+                <motion.div
+                  animate={{ rotate: isExpanded ? 180 : 0 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                </motion.div>
+              </div>
+            </div>
+          </CardContent>
+        </CollapsibleTrigger>
+        
+        <CollapsibleContent>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.2 }}
+          >
+            <div className="border-t border-border">
+              {/* Action Buttons */}
+              <div className="p-6 pb-4 border-b">
+                <div className="flex flex-wrap gap-3">
+                  {isUpcoming ? (
+                    <>
+                      {meetup.meetupUrl && (
+                        <Button 
+                          size="lg" 
+                          className="gap-2"
+                          onClick={handleRegister}
+                          disabled={isRegistering || isRegistered}
+                        >
+                          {isRegistering ? (
+                            <>
+                              <Clock className="h-4 w-4 animate-spin" />
+                              Registering...
+                            </>
+                          ) : isRegistered ? (
+                            <>
+                              <CheckCircle className="h-4 w-4" />
+                              Registered
+                            </>
+                          ) : (
+                            <>
+                              <ExternalLink className="h-4 w-4" />
+                              Register on Meetup
+                            </>
+                          )}
+                        </Button>
+                      )}
+                      {meetup.meetingLink && (
+                        <Button variant="outline" size="lg" asChild className="gap-2">
+                          <a href={meetup.meetingLink} target="_blank" rel="noopener noreferrer">
+                            <Video className="h-4 w-4" />
+                            Join Session
+                          </a>
+                        </Button>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      {meetup.meetupUrl && (
+                        <Button size="lg" asChild className="gap-2">
+                          <a href={meetup.meetupUrl} target="_blank" rel="noopener noreferrer">
+                            <ExternalLink className="h-4 w-4" />
+                            View on Meetup
+                          </a>
+                        </Button>
+                      )}
+                      {meetup.meetingLink && (
+                        <Button variant="outline" size="lg" asChild className="gap-2">
+                          <a href={meetup.meetingLink} target="_blank" rel="noopener noreferrer">
+                            <PlayCircle className="h-4 w-4" />
+                            Watch Recording
+                          </a>
+                        </Button>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Content */}
+              <div className="p-6 grid grid-cols-1 lg:grid-cols-5 gap-6">
+                <div className="lg:col-span-3 space-y-6">
+                  {/* Session Team */}
+                  {(meetup.speakers?.length > 0 || meetup.hosts?.length > 0 || meetup.volunteers?.length > 0) && (
+                    <div>
+                      <h4 className="font-semibold mb-4">Session Team</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {meetup.hosts?.map((host, idx) => (
+                          <div key={`host-${idx}`} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+                            <Avatar className="h-10 w-10">
+                              <AvatarImage src={host.photo} />
+                              <AvatarFallback>{host.name.charAt(0)}</AvatarFallback>
+                            </Avatar>
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium">{host.name}</span>
+                                <Badge variant="outline" className="text-xs">Host</Badge>
+                              </div>
+                              {host.designation && (
+                                <p className="text-xs text-muted-foreground">{host.designation}</p>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                        {meetup.speakers?.map((speaker, idx) => (
+                          <div key={`speaker-${idx}`} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+                            <Avatar className="h-10 w-10 border-2 border-primary/30">
+                              <AvatarImage src={speaker.photo} />
+                              <AvatarFallback>{speaker.name.charAt(0)}</AvatarFallback>
+                            </Avatar>
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium">{speaker.name}</span>
+                                <Badge variant="default" className="text-xs">Speaker</Badge>
+                              </div>
+                              {speaker.designation && (
+                                <p className="text-xs text-muted-foreground">{speaker.designation}</p>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                        {meetup.volunteers?.map((volunteer, idx) => (
+                          <div key={`volunteer-${idx}`} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+                            <Avatar className="h-10 w-10">
+                              <AvatarImage src={volunteer.photo} />
+                              <AvatarFallback>{volunteer.name.charAt(0)}</AvatarFallback>
+                            </Avatar>
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium">{volunteer.name}</span>
+                                <Badge variant="secondary" className="text-xs">Volunteer</Badge>
+                              </div>
+                              {volunteer.designation && (
+                                <p className="text-xs text-muted-foreground">{volunteer.designation}</p>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Description */}
+                  <div>
+                    <h4 className="font-semibold mb-2">About this Session</h4>
+                    {parsedDescription ? (
+                      <div 
+                        className="prose prose-sm max-w-none dark:prose-invert text-muted-foreground"
+                        dangerouslySetInnerHTML={{ __html: parsedDescription }}
+                      />
+                    ) : (
+                      <p className="text-muted-foreground">{meetup.description}</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Poster */}
+                {meetup.image && (
+                  <div className="lg:col-span-2">
+                    <div className="sticky top-6">
+                      <div className="bg-muted/30 p-4 rounded-lg">
+                        <img 
+                          src={meetup.image} 
+                          alt={meetup.title}
+                          className="w-full h-auto rounded-lg shadow-lg object-cover"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        </CollapsibleContent>
+      </Card>
+    </Collapsible>
+  );
+}
+
 
 function JoinSprintDialog({ sprint, open, onOpenChange, onSuccess }: { 
   sprint: Sprint; 
@@ -463,6 +747,7 @@ function JoinSprintDialog({ sprint, open, onOpenChange, onSuccess }: {
   onSuccess?: () => void;
 }) {
   const { user, isAuthenticated } = useAuth();
+  const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: user?.name || '',
     email: user?.email || '',
@@ -474,10 +759,37 @@ function JoinSprintDialog({ sprint, open, onOpenChange, onSuccess }: {
 
   const isRegistered = user && sprint.registeredUsers?.includes(user.id);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Joining sprint:', sprint.id, formData);
-    onOpenChange(false);
+    
+    if (!isAuthenticated || !user) {
+      toast.error('Please log in to join this sprint');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const result = await registerForSprint(sprint.id, user.id);
+      
+      if (result.alreadyRegistered) {
+        toast.info('You are already registered for this sprint');
+      } else {
+        toast.success('Successfully joined the sprint!');
+      }
+      
+      onOpenChange(false);
+      // Pass the updated sprint data back
+      if (onSuccess) {
+        onSuccess();
+      }
+      // Force page reload to refresh all data
+      window.location.reload();
+    } catch (error) {
+      console.error('Registration error:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to join sprint');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -559,9 +871,18 @@ function JoinSprintDialog({ sprint, open, onOpenChange, onSuccess }: {
                 rows={3}
               />
             </div>
-            <Button type="submit" className="w-full">
-              <Rocket className="h-4 w-4 mr-2" />
-              Join Sprint
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? (
+                <>
+                  <Clock className="h-4 w-4 mr-2 animate-spin" />
+                  Joining...
+                </>
+              ) : (
+                <>
+                  <Rocket className="h-4 w-4 mr-2" />
+                  Join Sprint
+                </>
+              )}
             </Button>
           </form>
         )}
@@ -576,6 +897,8 @@ function SprintDetail({ sprint: initialSprint, onBack }: { sprint: Sprint; onBac
   const [expandedSession, setExpandedSession] = useState<string | null>(null);
   const [joinDialogOpen, setJoinDialogOpen] = useState(false);
   const [sprint, setSprint] = useState<Sprint>(initialSprint);
+  const [meetupSessions, setMeetupSessions] = useState<Meetup[]>([]);
+  const [loadingMeetups, setLoadingMeetups] = useState(true);
   const isRegistered = user && sprint.registeredUsers && Array.isArray(sprint.registeredUsers) && sprint.registeredUsers.includes(user.id);
 
   // Refresh sprint data
@@ -588,19 +911,34 @@ function SprintDetail({ sprint: initialSprint, onBack }: { sprint: Sprint; onBac
     }
   };
 
+  // Fetch meetup sessions linked to this sprint
+  const fetchMeetupSessions = async () => {
+    setLoadingMeetups(true);
+    try {
+      const meetups = await getMeetupsBySprint(sprint.id);
+      setMeetupSessions(meetups);
+    } catch (error) {
+      console.error('Error fetching meetup sessions:', error);
+      setMeetupSessions([]);
+    } finally {
+      setLoadingMeetups(false);
+    }
+  };
+
   // Update sprint when it changes externally
   useEffect(() => {
     setSprint(initialSprint);
+    fetchMeetupSessions();
   }, [initialSprint]);
+
+  // Refresh sprint on mount to get latest data
+  useEffect(() => {
+    refreshSprint();
+  }, [sprint.id]);
 
   // Handle sprint update from child components
   const handleSprintUpdate = (updatedSprint: Sprint) => {
     setSprint(updatedSprint);
-    // Immediately update to reflect changes in UI
-    // Also refresh from server to ensure consistency
-    setTimeout(() => {
-      refreshSprint();
-    }, 500);
   };
 
   return (
@@ -653,164 +991,134 @@ function SprintDetail({ sprint: initialSprint, onBack }: { sprint: Sprint; onBac
       />
 
       <Tabs defaultValue="sessions" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4 max-w-lg">
+        <TabsList className="grid w-full grid-cols-3 max-w-lg">
           <TabsTrigger value="sessions">Sessions</TabsTrigger>
-          <TabsTrigger value="participants">Participants</TabsTrigger>
           <TabsTrigger value="forum">Discussion</TabsTrigger>
           <TabsTrigger value="submit">Submit</TabsTrigger>
         </TabsList>
 
         {/* Sessions Tab */}
         <TabsContent value="sessions">
-          <div className="space-y-4">
-            {sprint.sessions.map((session) => (
-              <SessionCard 
-                key={session.id} 
-                session={session}
-                sprint={sprint}
-                isExpanded={expandedSession === session.id}
-                onToggle={() => setExpandedSession(
-                  expandedSession === session.id ? null : session.id
-                )}
-                onSprintUpdate={handleSprintUpdate}
-              />
-            ))}
-            {sprint.sessions.length === 0 && (
-              <Card className="glass-card">
-                <CardContent className="p-8 text-center">
-                  <Video className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                  <p className="text-muted-foreground">Sessions will be announced soon!</p>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        </TabsContent>
-
-        {/* Participants Tab */}
-        <TabsContent value="participants">
-          <div className="space-y-6">
-            {sprint.sessions && sprint.sessions.length > 0 ? (
-              sprint.sessions.map((sessionItem) => {
-                const sessionParticipants = sessionItem.registeredUsers || [];
-                return (
-                  <Card key={sessionItem.id} className="glass-card">
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <Users className="h-5 w-5 text-primary" />
-                        {sessionItem.title}
-                      </CardTitle>
-                      <CardDescription>
-                        {sessionParticipants.length} participant{sessionParticipants.length !== 1 ? 's' : ''} registered
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                        {sessionParticipants.length > 0 ? (
-                          sessionParticipants.map((userId) => {
-                            let displayUser = getUserById(userId);
-                            
-                            // If user not found in mockUsers, check if it's the current authenticated user
-                            if (!displayUser && user && userId === user.id) {
-                              displayUser = user;
-                            }
-                            
-                            // Fallback display for users not in mockUsers or current user
-                            if (!displayUser) {
-                              // Extract a display name from userId (could be email or UUID)
-                              const displayName = userId.includes('@') 
-                                ? userId.split('@')[0] 
-                                : `User ${userId.substring(0, 8)}`;
-                              
-                              return (
-                                <motion.div
-                                  key={userId}
-                                  initial={{ opacity: 0, y: 10 }}
-                                  animate={{ opacity: 1, y: 0 }}
-                                  className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
-                                >
-                                  <Avatar className="h-12 w-12 border-2 border-primary/20">
-                                    <AvatarFallback>{displayName.charAt(0).toUpperCase()}</AvatarFallback>
-                                  </Avatar>
-                                  <div className="flex-1 min-w-0">
-                                    <span className="font-medium truncate block">
-                                      {displayName}
-                                    </span>
-                                    <p className="text-sm text-muted-foreground truncate">
-                                      Participant
-                                    </p>
-                                  </div>
-                                  <Badge variant="secondary" className="shrink-0">
-                                    0 pts
-                                  </Badge>
-                                </motion.div>
-                              );
-                            }
-                            
-                            return (
-                              <motion.div
-                                key={userId}
-                                initial={{ opacity: 0, y: 10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
-                              >
-                                <Avatar className="h-12 w-12 border-2 border-primary/20">
-                                  <AvatarImage src={displayUser.avatar} alt={displayUser.name} />
-                                  <AvatarFallback>{displayUser.name.charAt(0)}</AvatarFallback>
-                                </Avatar>
-                                <div className="flex-1 min-w-0">
-                                  <Link 
-                                    to={`/profile/${displayUser.id}`}
-                                    className="font-medium hover:text-primary transition-colors truncate block"
-                                  >
-                                    {displayUser.name}
-                                  </Link>
-                                  <p className="text-sm text-muted-foreground truncate">
-                                    {displayUser.designation || 'Participant'}
-                                  </p>
-                                  {displayUser.company && (
-                                    <p className="text-xs text-muted-foreground truncate">{displayUser.company}</p>
-                                  )}
+          {!isRegistered ? (
+            <Card className="glass-card">
+              <CardContent className="p-12 text-center">
+                <Rocket className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
+                <h3 className="text-xl font-semibold mb-2">Join Sprint to View Sessions</h3>
+                <p className="text-muted-foreground mb-6">
+                  Register to access sessions, discussions, and submit your work
+                </p>
+                <Button size="lg" onClick={() => setJoinDialogOpen(true)} className="gap-2">
+                  <Rocket className="h-4 w-4" />
+                  Join Sprint
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-4">
+              {/* Meetup-based Sessions */}
+              {loadingMeetups ? (
+                <Card className="glass-card">
+                  <CardContent className="p-8 text-center">
+                    <Clock className="h-8 w-8 animate-spin mx-auto mb-4 text-muted-foreground" />
+                    <p className="text-muted-foreground">Loading sessions...</p>
+                  </CardContent>
+                </Card>
+              ) : meetupSessions.length > 0 ? (
+                meetupSessions.map((meetup) => (
+                  <Link key={meetup.id} to={`/meetups?id=${meetup.id}`} className="block">
+                    <Card className="glass-card hover:shadow-lg transition-shadow cursor-pointer">
+                      <CardContent className="p-6">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-3">
+                              <h3 className="text-xl font-semibold">{meetup.title}</h3>
+                              <Badge variant="outline">
+                                <Rocket className="h-3 w-3 mr-1" />
+                                Sprint Session
+                              </Badge>
+                            </div>
+                            <p className="text-muted-foreground mb-4">{meetup.description}</p>
+                            <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                              <div className="flex items-center gap-2">
+                                <Calendar className="h-4 w-4" />
+                                {format(parseISO(meetup.date), 'EEEE, MMM d, yyyy')}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Clock className="h-4 w-4" />
+                                {formatTime(meetup.time)}
+                              </div>
+                              {meetup.speakers && meetup.speakers.length > 0 && (
+                                <div className="flex items-center gap-2">
+                                  <Users className="h-4 w-4" />
+                                  {meetup.speakers.map(s => s.name).join(', ')}
                                 </div>
-                                <Badge variant="secondary" className="shrink-0">
-                                  {displayUser.points} pts
-                                </Badge>
-                              </motion.div>
-                            );
-                          })
-                        ) : (
-                          <div className="col-span-full text-center py-4">
-                            <p className="text-sm text-muted-foreground">No participants registered for this session yet.</p>
+                              )}
+                            </div>
                           </div>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })
-            ) : (
-              <Card className="glass-card">
-                <CardContent className="p-8 text-center">
-                  <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                  <p className="text-muted-foreground">No sessions available yet.</p>
-                </CardContent>
-              </Card>
-            )}
-          </div>
+                          {meetup.image && (
+                            <div className="w-32 h-32 rounded-lg overflow-hidden flex-shrink-0">
+                              <img 
+                                src={meetup.image} 
+                                alt={meetup.title}
+                                className="w-full h-full object-cover"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).style.display = 'none';
+                                }}
+                              />
+                            </div>
+                          )}
+                        </div>
+                        <div className="mt-4 pt-4 border-t">
+                          <Button variant="outline" className="gap-2">
+                            View Details
+                            <ChevronRight className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </Link>
+                ))
+              ) : (
+                <Card className="glass-card">
+                  <CardContent className="p-8 text-center">
+                    <Video className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <p className="text-muted-foreground">No sessions scheduled yet!</p>
+                    <p className="text-sm text-muted-foreground mt-2">Sessions will be announced soon.</p>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          )}
         </TabsContent>
 
         {/* Forum Tab */}
         <TabsContent value="forum">
-          <Card className="glass-card">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <MessageSquare className="h-5 w-5 text-primary" />
-                Sprint Discussion Forum
-              </CardTitle>
-              <CardDescription>
-                Ask questions, share learnings, and help fellow participants
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
+          {!isRegistered ? (
+            <Card className="glass-card">
+              <CardContent className="p-12 text-center">
+                <MessageSquare className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
+                <h3 className="text-xl font-semibold mb-2">Join Sprint to Access Discussions</h3>
+                <p className="text-muted-foreground mb-6">
+                  Register for this sprint to participate in discussions and connect with other learners
+                </p>
+                <Button size="lg" onClick={() => setJoinDialogOpen(true)} className="gap-2">
+                  <Rocket className="h-4 w-4" />
+                  Join Sprint
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="glass-card">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <MessageSquare className="h-5 w-5 text-primary" />
+                  Sprint Discussion Forum
+                </CardTitle>
+                <CardDescription>
+                  Ask questions, share learnings, and help fellow participants
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
               {/* New Post Form */}
               <div className="mb-6 p-4 rounded-lg bg-muted/50">
                 <div className="flex gap-4">
@@ -913,21 +1221,37 @@ function SprintDetail({ sprint: initialSprint, onBack }: { sprint: Sprint; onBac
               </div>
             </CardContent>
           </Card>
+          )}
         </TabsContent>
 
         {/* Submit Tab */}
         <TabsContent value="submit">
-          <Card className="glass-card">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Send className="h-5 w-5 text-primary" />
-                Submit Your Work
-              </CardTitle>
-              <CardDescription>
-                Share your blog post or project repository to earn points
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
+          {!isRegistered ? (
+            <Card className="glass-card">
+              <CardContent className="p-12 text-center">
+                <Send className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
+                <h3 className="text-xl font-semibold mb-2">Join Sprint to Submit Work</h3>
+                <p className="text-muted-foreground mb-6">
+                  Register for this sprint to submit your projects and earn points
+                </p>
+                <Button size="lg" onClick={() => setJoinDialogOpen(true)} className="gap-2">
+                  <Rocket className="h-4 w-4" />
+                  Join Sprint
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="glass-card">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Send className="h-5 w-5 text-primary" />
+                  Submit Your Work
+                </CardTitle>
+                <CardDescription>
+                  Share your blog post or project repository to earn points
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
               <form className="space-y-6">
                 <div className="space-y-2">
                   <Label htmlFor="blog-url">Blog Post URL (Optional)</Label>
@@ -997,6 +1321,7 @@ function SprintDetail({ sprint: initialSprint, onBack }: { sprint: Sprint; onBac
               )}
             </CardContent>
           </Card>
+          )}
         </TabsContent>
       </Tabs>
     </motion.div>
@@ -1006,6 +1331,7 @@ function SprintDetail({ sprint: initialSprint, onBack }: { sprint: Sprint; onBac
 export default function SkillSprint() {
   const [selectedSprint, setSelectedSprint] = useState<Sprint | null>(null);
   const [sprints, setSprints] = useState<Sprint[]>([]);
+  const [sprintSessionCounts, setSprintSessionCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
 
   // Fetch sprints from API
@@ -1014,10 +1340,25 @@ export default function SkillSprint() {
       try {
         const fetchedSprints = await getSprints();
         setSprints(fetchedSprints);
+        
+        // Fetch session counts for all sprints at once
+        const sessionCounts: Record<string, number> = {};
+        await Promise.all(
+          fetchedSprints.map(async (sprint) => {
+            try {
+              const meetups = await getMeetupsBySprint(sprint.id);
+              sessionCounts[sprint.id] = meetups.length;
+            } catch (error) {
+              console.error(`Error fetching sessions for sprint ${sprint.id}:`, error);
+              sessionCounts[sprint.id] = 0;
+            }
+          })
+        );
+        setSprintSessionCounts(sessionCounts);
       } catch (error) {
         console.error('Error fetching sprints:', error);
-        // Fallback to mock data if API fails
-        setSprints(mockSprints);
+        toast.error('Failed to load sprints');
+        setSprints([]);
       } finally {
         setLoading(false);
       }
@@ -1088,7 +1429,8 @@ export default function SkillSprint() {
                         transition={{ delay: index * 0.1 }}
                       >
                         <SprintCard 
-                          sprint={sprint} 
+                          sprint={sprint}
+                          sessionCount={sprintSessionCounts[sprint.id] || 0}
                           onSelect={() => setSelectedSprint(sprint)}
                         />
                       </motion.div>
@@ -1110,7 +1452,8 @@ export default function SkillSprint() {
                         transition={{ delay: index * 0.1 }}
                       >
                         <SprintCard 
-                          sprint={sprint} 
+                          sprint={sprint}
+                          sessionCount={sprintSessionCounts[sprint.id] || 0}
                           onSelect={() => setSelectedSprint(sprint)}
                         />
                       </motion.div>
@@ -1132,7 +1475,8 @@ export default function SkillSprint() {
                         transition={{ delay: index * 0.1 }}
                       >
                         <SprintCard 
-                          sprint={sprint} 
+                          sprint={sprint}
+                          sessionCount={sprintSessionCounts[sprint.id] || 0}
                           onSelect={() => setSelectedSprint(sprint)}
                         />
                       </motion.div>

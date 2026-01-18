@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Header } from '@/components/layout/Header';
@@ -14,7 +14,7 @@ import {
   Linkedin, Github, Twitter, ExternalLink, Building, User,
   Mic, BookOpen, CheckCircle, Clock, Award, Shield
 } from 'lucide-react';
-import { mockSprints, mockBadges, getUserById, mockUsers, mockMeetups, mockColleges, mockUserRoles, communityRoles, CommunityRole } from '@/data/mockData';
+import { mockSprints, mockBadges, getUserByIdAsync, mockUsers, mockMeetups, mockColleges, mockUserRoles, communityRoles, CommunityRole, User as UserType } from '@/data/mockData';
 import { format, parseISO } from 'date-fns';
 import { getMeetups } from '@/lib/meetups';
 import { useQuery } from '@tanstack/react-query';
@@ -23,16 +23,55 @@ import { useAuth } from '@/contexts/AuthContext';
 export default function Profile() {
   const { userId } = useParams();
   const { user: authUser } = useAuth();
+  const [profileUser, setProfileUser] = useState<UserType | null>(null);
+  const [loading, setLoading] = useState(true);
   
   // Fetch meetups from backend
   const { data: allMeetups = [] } = useQuery({
     queryKey: ['meetups'],
     queryFn: () => getMeetups(),
   });
+
+  // Fetch user data
+  useEffect(() => {
+    const fetchUser = async () => {
+      setLoading(true);
+      try {
+        if (userId) {
+          // Fetch specific user by ID
+          const user = await getUserByIdAsync(userId);
+          setProfileUser(user || null);
+        } else {
+          // Use authenticated user
+          setProfileUser(authUser);
+        }
+      } catch (error) {
+        console.error('Failed to fetch user:', error);
+        setProfileUser(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchUser();
+  }, [userId, authUser]);
   
-  // If userId is provided, get that user, otherwise show current authenticated user
-  const user = userId ? getUserById(userId) : authUser;
+  const user = profileUser;
   const isOwnProfile = !userId || (authUser && userId === authUser.id);
+  
+  if (loading) {
+    return (
+      <div className="min-h-screen flex flex-col">
+        <Header />
+        <main className="flex-1 container mx-auto px-4 py-8">
+          <div className="animate-pulse space-y-4">
+            <div className="h-48 bg-muted rounded-lg" />
+            <div className="h-96 bg-muted rounded-lg" />
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
   
   if (!user) {
     return (

@@ -4,7 +4,9 @@ import { Trophy, Medal, Award, TrendingUp, ArrowRight } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { mockUsers } from '@/data/mockData';
+import { User } from '@/data/mockData';
+import { useState, useEffect } from 'react';
+import { getAllUsers } from '@/lib/userProfile';
 
 const getRankIcon = (rank: number) => {
   switch (rank) {
@@ -48,10 +50,62 @@ const itemVariants: Variants = {
 };
 
 export function Leaderboard() {
-  const topUsers = mockUsers
-    .filter(user => user.rank > 0)
-    .sort((a, b) => a.rank - b.rank)
-    .slice(0, 8);
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const allUsers = await getAllUsers();
+        console.log('Fetched users:', allUsers); // Debug log
+        setUsers(Array.isArray(allUsers) ? allUsers : []);
+      } catch (error) {
+        console.error('Failed to fetch users:', error);
+        setUsers([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchUsers();
+  }, []);
+
+  const topUsers = Array.isArray(users) 
+    ? users
+        .filter(user => user.rank > 0)
+        .sort((a, b) => a.rank - b.rank)
+        .slice(0, 8)
+    : [];
+
+  if (loading) {
+    return (
+      <Card className="glass-card overflow-hidden">
+        <CardHeader className="border-b border-border/50">
+          <CardTitle className="flex items-center gap-2">
+            <TrendingUp className="h-5 w-5 text-primary" />
+            Community Leaderboard
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-4">
+          <div className="space-y-2">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="flex items-center gap-4 p-3 rounded-lg border animate-pulse">
+                <div className="w-8 h-8 bg-muted rounded" />
+                <div className="h-10 w-10 bg-muted rounded-full" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 bg-muted rounded w-32" />
+                  <div className="h-3 bg-muted rounded w-20" />
+                </div>
+                <div className="space-y-2">
+                  <div className="h-4 bg-muted rounded w-16" />
+                  <div className="h-3 bg-muted rounded w-12" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <motion.div

@@ -133,7 +133,7 @@ export interface Sprint {
   endDate: string;
   status: 'upcoming' | 'active' | 'completed';
   participants: number;
-  sessions: Session[];
+  sessions: Session[]; // Deprecated - keeping for backward compatibility
   submissions: Submission[];
   githubRepo?: string;
   registeredUsers: string[];
@@ -201,6 +201,8 @@ export interface AgendaItem {
   speakerId?: string;
 }
 
+export type MeetupType = 'virtual' | 'in-person' | 'skill-sprint' | 'certification-circle' | 'college-champ';
+
 export interface Meetup {
   id: string;
   title: string;
@@ -208,7 +210,7 @@ export interface Meetup {
   richDescription?: string; // HTML content for rich text display
   date: string;
   time: string;
-  type: 'virtual' | 'in-person' | 'hybrid';
+  type: MeetupType;
   location?: string;
   meetingLink?: string;
   meetupUrl?: string; // External meetup.com registration link
@@ -221,6 +223,7 @@ export interface Meetup {
   volunteers?: MeetupPerson[];
   image?: string;
   duration?: string;
+  sprintId?: string; // Link to sprint if type is 'skill-sprint'
 }
 
 export interface MeetupPerson {
@@ -1630,9 +1633,44 @@ export const memberUser: User = mockUsers[3]; // Member (Ananya)
 // Default current user - change this to test different roles
 export const currentUser: User = organiserUser;
 
-// Helper function to get user by ID
+// Helper function to get user by ID (synchronous - for mock data only)
+// Use getUserByIdAsync for real user data
 export const getUserById = (id: string): User | undefined => {
   return mockUsers.find(user => user.id === id);
+};
+
+// Async version to fetch real users from API
+let usersCache: User[] | null = null;
+let cacheTimestamp = 0;
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+export const getUserByIdAsync = async (id: string): Promise<User | undefined> => {
+  try {
+    // Import dynamically to avoid circular dependency
+    const { getAllUsers } = await import('@/lib/userProfile');
+    
+    // Check cache
+    const now = Date.now();
+    if (usersCache && (now - cacheTimestamp) < CACHE_DURATION) {
+      return usersCache.find(user => user.id === id);
+    }
+    
+    // Fetch fresh data
+    const users = await getAllUsers();
+    usersCache = users;
+    cacheTimestamp = now;
+    
+    return users.find(user => user.id === id);
+  } catch (error) {
+    console.error('Failed to fetch user:', error);
+    return undefined;
+  }
+};
+
+// Clear users cache (useful after updates)
+export const clearUsersCache = () => {
+  usersCache = null;
+  cacheTimestamp = 0;
 };
 
 // Helper to get event link based on category

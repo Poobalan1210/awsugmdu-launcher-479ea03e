@@ -121,6 +121,11 @@ resource "aws_dynamodb_table" "meetups" {
     type = "S"
   }
 
+  attribute {
+    name = "sprintId"
+    type = "S"
+  }
+
   global_secondary_index {
     name     = "status-index"
     hash_key = "status"
@@ -130,6 +135,12 @@ resource "aws_dynamodb_table" "meetups" {
   global_secondary_index {
     name     = "date-index"
     hash_key = "date"
+    projection_type = "ALL"
+  }
+
+  global_secondary_index {
+    name     = "sprintId-index"
+    hash_key = "sprintId"
     projection_type = "ALL"
   }
 

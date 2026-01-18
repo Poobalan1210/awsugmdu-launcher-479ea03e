@@ -2,13 +2,33 @@ import { Link } from 'react-router-dom';
 import { motion, Variants } from 'framer-motion';
 import { ArrowRight, Rocket, Users, Calendar, Award } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { mockSprints, mockUsers, mockEvents } from '@/data/mockData';
+import { mockSprints, mockEvents } from '@/data/mockData';
+import { useState, useEffect } from 'react';
+import { getAllUsers } from '@/lib/userProfile';
 
-const stats = [
-  { label: 'Active Members', value: mockUsers.length * 12, icon: Users },
-  { label: 'Events Hosted', value: mockEvents.length * 5, icon: Calendar },
-  { label: 'Badges Awarded', value: 150, icon: Award },
-];
+export function HeroSection() {
+  const [userCount, setUserCount] = useState(0);
+  const activeSprint = mockSprints.find((s) => s.status === 'active');
+
+  useEffect(() => {
+    const fetchUserCount = async () => {
+      try {
+        const users = await getAllUsers();
+        console.log('Fetched users for count:', users); // Debug log
+        setUserCount(Array.isArray(users) ? users.length : 0);
+      } catch (error) {
+        console.error('Failed to fetch user count:', error);
+        setUserCount(0);
+      }
+    };
+    fetchUserCount();
+  }, []);
+
+  const stats = [
+    { label: 'Active Members', value: userCount || 4, icon: Users },
+    { label: 'Events Hosted', value: mockEvents.length * 5, icon: Calendar },
+    { label: 'Badges Awarded', value: 150, icon: Award },
+  ];
 
 const containerVariants: Variants = {
   hidden: { opacity: 0 },
@@ -22,9 +42,6 @@ const itemVariants: Variants = {
   hidden: { opacity: 0, y: 20 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.5 } }
 };
-
-export function HeroSection() {
-  const activeSprint = mockSprints.find((s) => s.status === 'active');
 
   return (
     <section className="relative overflow-hidden bg-gradient-to-br from-background via-background to-muted/50 py-20 md:py-28">

@@ -13,11 +13,12 @@ import { Input } from '@/components/ui/input';
 import { 
   Calendar, MapPin, Users, Video, Clock, 
   ArrowLeft, ExternalLink, PlayCircle,
-  Linkedin, Github, CheckCircle, Search
+  Linkedin, Github, CheckCircle, Search, Rocket, Award, GraduationCap
 } from 'lucide-react';
-import { mockMeetups, Meetup } from '@/data/mockData';
+import { PersonCard } from '@/components/PersonCard';
+import { Meetup } from '@/data/mockData';
 import { format, parseISO, isPast } from 'date-fns';
-import { getMeetups, registerForMeetup, getMeetupParticipants } from '@/lib/meetups';
+import { getMeetups, registerForMeetup, getMeetupParticipants, getMeetup } from '@/lib/meetups';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
@@ -57,6 +58,26 @@ function MeetupCard({ meetup, onSelect }: { meetup: Meetup; onSelect: () => void
   const isUpcoming = !isPast(eventDate);
   const spotsLeft = meetup.maxAttendees ? meetup.maxAttendees - meetup.attendees : null;
 
+  // Get type badge info
+  const getTypeBadge = () => {
+    switch (meetup.type) {
+      case 'virtual':
+        return { label: 'Virtual', variant: 'secondary' as const, icon: <Video className="h-3 w-3 mr-1" /> };
+      case 'in-person':
+        return { label: 'In-Person', variant: 'default' as const, icon: <MapPin className="h-3 w-3 mr-1" /> };
+      case 'skill-sprint':
+        return { label: 'Skill Sprint', variant: 'default' as const, icon: <Rocket className="h-3 w-3 mr-1" /> };
+      case 'certification-circle':
+        return { label: 'Certification Circle', variant: 'default' as const, icon: <Award className="h-3 w-3 mr-1" /> };
+      case 'college-champ':
+        return { label: 'College Champ', variant: 'default' as const, icon: <GraduationCap className="h-3 w-3 mr-1" /> };
+      default:
+        return { label: meetup.type, variant: 'secondary' as const, icon: null };
+    }
+  };
+
+  const typeBadge = getTypeBadge();
+
   return (
     <motion.div variants={cardVariants} whileHover={{ y: -5 }}>
       <Card className="glass-card h-full overflow-hidden cursor-pointer" onClick={onSelect}>
@@ -71,10 +92,9 @@ function MeetupCard({ meetup, onSelect }: { meetup: Meetup; onSelect: () => void
         )}
         <CardContent className="p-5">
           <div className="flex flex-wrap gap-2 mb-3">
-            <Badge variant={meetup.type === 'virtual' ? 'secondary' : 'default'}>
-              {meetup.type === 'virtual' && <Video className="h-3 w-3 mr-1" />}
-              {meetup.type === 'in-person' && <MapPin className="h-3 w-3 mr-1" />}
-              {meetup.type === 'virtual' ? 'Virtual' : 'In-Person'}
+            <Badge variant={typeBadge.variant}>
+              {typeBadge.icon}
+              {typeBadge.label}
             </Badge>
           </div>
           
@@ -107,8 +127,8 @@ function MeetupCard({ meetup, onSelect }: { meetup: Meetup; onSelect: () => void
 
           {meetup.speakers.length > 0 && (
             <div className="flex -space-x-2 mb-4">
-              {meetup.speakers.slice(0, 3).map((speaker) => (
-                <Avatar key={speaker.id} className="h-8 w-8 border-2 border-background">
+              {meetup.speakers.slice(0, 3).map((speaker, index) => (
+                <Avatar key={speaker.id || `speaker-${index}`} className="h-8 w-8 border-2 border-background">
                   <AvatarImage src={speaker.photo} alt={speaker.name} />
                   <AvatarFallback>{speaker.name.charAt(0)}</AvatarFallback>
                 </Avatar>
@@ -130,13 +150,28 @@ function MeetupCard({ meetup, onSelect }: { meetup: Meetup; onSelect: () => void
   );
 }
 
-function MeetupDetail({ meetup, onBack }: { meetup: Meetup; onBack: () => void }) {
-  const eventDate = parseISO(meetup.date);
+function MeetupDetail({ meetup: initialMeetup, onBack }: { meetup: Meetup; onBack: () => void }) {
+  const eventDate = parseISO(initialMeetup.date);
   const isUpcoming = !isPast(eventDate);
   const { user, isAuthenticated } = useAuth();
   const queryClient = useQueryClient();
   const [isRegistering, setIsRegistering] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Fetch fresh meetup data
+  const { data: meetup = initialMeetup } = useQuery({
+    queryKey: ['meetup', initialMeetup.id],
+    queryFn: async () => {
+      try {
+        return await getMeetup(initialMeetup.id);
+      } catch (error) {
+        console.error('Error fetching meetup:', error);
+        return initialMeetup;
+      }
+    },
+    initialData: initialMeetup,
+    staleTime: 0, // Always refetch
+  });
 
   // Fetch participants for this meetup
   const { data: participants = [] } = useQuery({
@@ -151,13 +186,33 @@ function MeetupDetail({ meetup, onBack }: { meetup: Meetup; onBack: () => void }
     return parseContent(meetup.richDescription);
   }, [meetup.richDescription]);
 
+  // Get type badge info
+  const getTypeBadge = () => {
+    switch (meetup.type) {
+      case 'virtual':
+        return { label: 'Virtual', variant: 'secondary' as const, icon: <Video className="h-3 w-3 mr-1" /> };
+      case 'in-person':
+        return { label: 'In-Person', variant: 'default' as const, icon: <MapPin className="h-3 w-3 mr-1" /> };
+      case 'skill-sprint':
+        return { label: 'Skill Sprint', variant: 'default' as const, icon: <Rocket className="h-3 w-3 mr-1" /> };
+      case 'certification-circle':
+        return { label: 'Certification Circle', variant: 'default' as const, icon: <Award className="h-3 w-3 mr-1" /> };
+      case 'college-champ':
+        return { label: 'College Champ', variant: 'default' as const, icon: <GraduationCap className="h-3 w-3 mr-1" /> };
+      default:
+        return { label: meetup.type, variant: 'secondary' as const, icon: null };
+    }
+  };
+
+  const typeBadge = getTypeBadge();
+
   // Combine all people and filter by search query
   const allPeople = useMemo(() => {
     const people = [
-      ...(meetup.speakers?.map(s => ({ ...s, role: 'Speaker' as const })) || []),
-      ...(meetup.hosts?.map((h, i) => ({ ...h, id: `host-${i}`, role: 'Organizer' as const })) || []),
-      ...(meetup.volunteers?.map((v, i) => ({ ...v, id: `volunteer-${i}`, role: 'Volunteer' as const })) || []),
-      ...participants.map(p => ({ ...p, photo: p.avatar, role: null as const }))
+      ...(meetup.speakers?.map(s => ({ ...s, role: 'Speaker' })) || []),
+      ...(meetup.hosts?.map((h, i) => ({ ...h, id: `host-${i}`, role: 'Organizer' })) || []),
+      ...(meetup.volunteers?.map((v, i) => ({ ...v, id: `volunteer-${i}`, role: 'Volunteer' })) || []),
+      ...participants.map(p => ({ ...p, userId: p.id, photo: p.avatar, role: null }))
     ];
 
     if (!searchQuery.trim()) return people;
@@ -195,7 +250,8 @@ function MeetupDetail({ meetup, onBack }: { meetup: Meetup; onBack: () => void }
         window.open(meetup.meetupUrl, '_blank');
       } else {
         toast.success('Successfully registered! Redirecting to Meetup.com...');
-        // Refresh meetups data and participants
+        // Refresh meetup data and participants
+        queryClient.invalidateQueries({ queryKey: ['meetup', meetup.id] });
         queryClient.invalidateQueries({ queryKey: ['meetups'] });
         queryClient.invalidateQueries({ queryKey: ['meetup-participants', meetup.id] });
         
@@ -230,10 +286,9 @@ function MeetupDetail({ meetup, onBack }: { meetup: Meetup; onBack: () => void }
           <Card className="glass-card">
             <CardContent className="p-6">
               <div className="flex flex-wrap gap-2 mb-4">
-                <Badge variant={meetup.type === 'virtual' ? 'secondary' : 'default'}>
-                  {meetup.type === 'virtual' && <Video className="h-3 w-3 mr-1" />}
-                  {meetup.type === 'in-person' && <MapPin className="h-3 w-3 mr-1" />}
-                  {meetup.type === 'virtual' ? 'Virtual' : 'In-Person'}
+                <Badge variant={typeBadge.variant}>
+                  {typeBadge.icon}
+                  {typeBadge.label}
                 </Badge>
               </div>
               
@@ -305,7 +360,7 @@ function MeetupDetail({ meetup, onBack }: { meetup: Meetup; onBack: () => void }
                     )}
                   </>
                 ) : (
-                  // Virtual events: meetup + meeting/recording links
+                  // Virtual/online events: meetup + meeting/recording links
                   <>
                     {isUpcoming ? (
                       <>
@@ -430,40 +485,17 @@ function MeetupDetail({ meetup, onBack }: { meetup: Meetup; onBack: () => void }
             <CardContent className="flex-1 overflow-y-auto">
               <div className="space-y-3">
                 {allPeople.length > 0 ? (
-                  allPeople.map((person) => (
-                    <div key={person.id} className="flex items-start gap-3 p-3 rounded-lg bg-muted/50">
-                      <Avatar className="h-10 w-10 flex-shrink-0">
-                        <AvatarImage src={person.photo} alt={person.name} />
-                        <AvatarFallback>{person.name.charAt(0)}</AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1 flex-wrap">
-                          <h4 className="font-medium text-sm truncate">{person.name}</h4>
-                          {person.role === 'Speaker' && (
-                            <Badge variant="default" className="text-xs px-1.5 py-0 h-5">Speaker</Badge>
-                          )}
-                          {person.role === 'Organizer' && (
-                            <Badge variant="secondary" className="text-xs px-1.5 py-0 h-5">Organizer</Badge>
-                          )}
-                          {person.role === 'Volunteer' && (
-                            <Badge variant="outline" className="text-xs px-1.5 py-0 h-5">Volunteer</Badge>
-                          )}
-                        </div>
-                        {person.designation && (
-                          <p className="text-xs text-muted-foreground truncate">
-                            {person.designation}
-                            {person.company && ` at ${person.company}`}
-                          </p>
-                        )}
-                        {person.linkedIn && (
-                          <Button variant="ghost" size="sm" className="h-6 w-6 p-0 mt-1" asChild>
-                            <a href={person.linkedIn} target="_blank" rel="noopener noreferrer">
-                              <Linkedin className="h-3 w-3" />
-                            </a>
-                          </Button>
-                        )}
-                      </div>
-                    </div>
+                  allPeople.map((person, index) => (
+                    <PersonCard
+                      key={person.id || `person-${index}`}
+                      userId={person.userId}
+                      name={person.name}
+                      photo={person.photo}
+                      avatar={person.avatar}
+                      designation={person.designation}
+                      company={person.company}
+                      role={person.role}
+                    />
                   ))
                 ) : (
                   <p className="text-sm text-muted-foreground text-center py-8">
@@ -491,8 +523,8 @@ export default function Meetups() {
         return await getMeetups();
       } catch (error) {
         console.error('Error fetching meetups:', error);
-        // Fallback to mock data
-        return mockMeetups;
+        toast.error('Failed to load meetups');
+        return [];
       }
     },
     staleTime: 60000, // Cache for 1 minute

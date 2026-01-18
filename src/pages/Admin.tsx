@@ -22,10 +22,11 @@ import {
   Upload, X, UserPlus, Check, ChevronDown, GraduationCap,
   Trophy, ListTodo, ClipboardCheck, Target, Shield, UserCog, Medal
 } from 'lucide-react';
-import { mockSprints, mockMeetups, currentUser, Submission, generateSpeakerInviteLink, Sprint, Session, SessionPerson, mockUsers, User as UserType, predefinedTasks, mockColleges, CollegeTask, College, getTaskById, getUserById, communityRoles, mockUserRoles, CommunityRole, UserRoleAssignment, PointActivity, mockPointActivities, Meetup, mockBadges, Badge as BadgeType, BadgeAward, mockBadgeAwards, BadgeCriteriaType, criteriaTypeLabels, BadgeCriteria } from '@/data/mockData';
+import { mockSprints, mockMeetups, currentUser, Submission, generateSpeakerInviteLink, Sprint, Session, SessionPerson, User as UserType, predefinedTasks, mockColleges, CollegeTask, College, getTaskById, getUserByIdAsync, communityRoles, mockUserRoles, CommunityRole, UserRoleAssignment, PointActivity, mockPointActivities, Meetup, mockBadges, Badge as BadgeType, BadgeAward, mockBadgeAwards, BadgeCriteriaType, criteriaTypeLabels, BadgeCriteria } from '@/data/mockData';
 import { createMeetup, updateMeetup, publishMeetup, getMeetups, CreateMeetupData, UpdateMeetupData, deleteMeetup } from '@/lib/meetups';
 import { createSprint, addSession, getSprints, deleteSprint, deleteSession, CreateSprintData, CreateSessionData } from '@/lib/sprints';
 import { uploadFileToS3 } from '@/lib/s3Upload';
+import { getAllUsers } from '@/lib/userProfile';
 import { Progress } from '@/components/ui/progress';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
@@ -146,6 +147,140 @@ function SubmissionReview({ submission, onAction }: {
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function ViewParticipantsDialog({ sprint }: { sprint: Sprint }) {
+  const [open, setOpen] = useState(false);
+  const [participants, setParticipants] = useState<UserType[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const fetchParticipants = async () => {
+      if (open) {
+        setLoading(true);
+        try {
+          // Import getSprint to fetch fresh data
+          const { getSprint } = await import('@/lib/sprints');
+          const { getUserProfile } = await import('@/lib/userProfile');
+          const freshSprint = await getSprint(sprint.id);
+          
+          // Get all users who registered for this sprint
+          const registeredUserIds = freshSprint.registeredUsers || [];
+          
+          // Fetch each user's profile from the API
+          const participantsList = await Promise.all(
+            registeredUserIds.map(async (userId) => {
+              try {
+                // Try to fetch from API first
+                const user = await getUserProfile(userId);
+                return user;
+              } catch (error) {
+                // Fallback to mock data
+                const mockUser = getUserById(userId);
+                if (mockUser) {
+                  return mockUser;
+                }
+                return null;
+              }
+            })
+          );
+          
+          // Filter out null values
+          const validParticipants = participantsList.filter((user): user is UserType => user !== null);
+          setParticipants(validParticipants);
+        } catch (error) {
+          console.error('Error fetching participants:', error);
+          // Fallback to prop data if fetch fails
+          const registeredUserIds = sprint.registeredUsers || [];
+          const participantsList = registeredUserIds
+            .map(userId => getUserById(userId))
+            .filter((user): user is UserType => user !== undefined);
+          setParticipants(participantsList);
+        } finally {
+          setLoading(false);
+        }
+      }
+    };
+    
+    fetchParticipants();
+  }, [open, sprint.id, sprint.registeredUsers]);
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" className="gap-1">
+          <Users className="h-4 w-4" />
+          View Participants
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Sprint Participants</DialogTitle>
+          <DialogDescription>
+            {participants.length} {participants.length === 1 ? 'person has' : 'people have'} registered for {sprint.title}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2">
+          {loading ? (
+            <div className="text-center py-8">
+              <Clock className="h-8 w-8 animate-spin mx-auto mb-4 text-muted-foreground" />
+              <p className="text-muted-foreground">Loading participants...</p>
+            </div>
+          ) : participants.length === 0 ? (
+            <div className="text-center py-8">
+              <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <p className="text-muted-foreground">No participants yet</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {participants.map((participant, index) => (
+                <Card key={`participant-${participant.id || participant.email || index}`} className="border">
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-4">
+                      <span className="text-sm font-medium text-muted-foreground min-w-[32px]">
+                        {index + 1}.
+                      </span>
+                      <Avatar className="h-12 w-12">
+                        <AvatarImage src={participant.avatar} alt={participant.name} />
+                        <AvatarFallback>{participant.name?.charAt(0) || 'U'}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-semibold">{participant.name}</h4>
+                          {participant.badges && participant.badges.length > 0 && (
+                            <Badge variant="secondary" className="text-xs">
+                              <Award className="h-3 w-3 mr-1" />
+                              {participant.badges.length}
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          {participant.designation}
+                          {participant.company && ` at ${participant.company}`}
+                        </p>
+                        <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                          <span className="flex items-center gap-1">
+                            <Trophy className="h-3 w-3" />
+                            {participant.points || 0} points
+                          </span>
+                          {participant.email && (
+                            <span className="flex items-center gap-1">
+                              <Mail className="h-3 w-3" />
+                              {participant.email}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -412,7 +547,7 @@ function CreateSprintDialog({ onSuccess }: { onSuccess?: () => void }) {
 
 // Helper function to convert User to SessionPerson
 const userToSessionPerson = (user: UserType): SessionPerson => ({
-  userId: user.id,
+  userId: (user as any).userId || user.id, // Use userId from API or id from mock data
   name: user.name,
   photo: user.avatar,
   email: user.email,
@@ -437,15 +572,17 @@ function UserSelect({
   selectedUser,
   onSelect,
   placeholder,
-  excludeUserIds = []
+  excludeUserIds = [],
+  allUsers = []
 }: {
   selectedUser?: SessionPerson;
   onSelect: (user: SessionPerson | undefined) => void;
   placeholder: string;
   excludeUserIds?: string[];
+  allUsers?: UserType[];
 }) {
   const [open, setOpen] = useState(false);
-  const availableUsers = mockUsers.filter(user => 
+  const availableUsers = allUsers.filter(user => 
     !excludeUserIds.includes(user.id) && user.id !== selectedUser?.userId
   );
 
@@ -478,11 +615,11 @@ function UserSelect({
           <CommandList>
             <CommandEmpty>No users found.</CommandEmpty>
             <CommandGroup>
-              {availableUsers.map((user) => {
+              {availableUsers.map((user, index) => {
                 const isSelected = selectedUser?.userId === user.id;
                 return (
                   <CommandItem
-                    key={user.id}
+                    key={user.id || `user-${index}`}
                     value={user.name}
                     onSelect={() => {
                       onSelect(isSelected ? undefined : userToSessionPerson(user));
@@ -520,16 +657,18 @@ function UserMultiSelect({
   selectedUsers,
   onSelect,
   placeholder,
-  excludeUserIds = []
+  excludeUserIds = [],
+  allUsers = []
 }: {
   selectedUsers: SessionPerson[];
   onSelect: (users: SessionPerson[]) => void;
   placeholder: string;
   excludeUserIds?: string[];
+  allUsers?: UserType[];
 }) {
   const [open, setOpen] = useState(false);
   const selectedUserIds = selectedUsers.map(u => u.userId).filter(Boolean) as string[];
-  const availableUsers = mockUsers.filter(user => 
+  const availableUsers = allUsers.filter(user => 
     !excludeUserIds.includes(user.id) && !selectedUserIds.includes(user.id)
   );
 
@@ -567,11 +706,11 @@ function UserMultiSelect({
           <CommandList>
             <CommandEmpty>No users found.</CommandEmpty>
             <CommandGroup>
-              {availableUsers.map((user) => {
+              {availableUsers.map((user, index) => {
                 const isSelected = selectedUsers.some(u => u.userId === user.id);
                 return (
                   <CommandItem
-                    key={user.id}
+                    key={user.id || `user-${index}`}
                     value={user.name}
                     onSelect={() => toggleUser(user)}
                   >
@@ -645,8 +784,8 @@ function SessionPeopleManager({
           Hosts ({sessionData.hosts?.length || 0})
         </Label>
         <div className="space-y-2">
-          {sessionData.hosts?.map((host) => (
-            <div key={host.userId} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+          {sessionData.hosts?.map((host, index) => (
+            <div key={host.userId || `host-${index}`} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
               <Avatar className="h-10 w-10">
                 <AvatarImage src={host.photo} />
                 <AvatarFallback>{host.name.charAt(0)}</AvatarFallback>
@@ -670,6 +809,7 @@ function SessionPeopleManager({
             </div>
           ))}
           <UserMultiSelect
+            allUsers={allUsers}
             selectedUsers={sessionData.hosts || []}
             onSelect={(users) => onUpdate({ ...sessionData, hosts: users })}
             placeholder="Select hosts..."
@@ -687,8 +827,8 @@ function SessionPeopleManager({
           Speakers ({sessionData.speakers?.length || 0}) *
         </Label>
         <div className="space-y-2">
-          {sessionData.speakers?.map((speaker) => (
-            <div key={speaker.userId} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+          {sessionData.speakers?.map((speaker, index) => (
+            <div key={speaker.userId || `speaker-${index}`} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
               <Avatar className="h-10 w-10">
                 <AvatarImage src={speaker.photo} />
                 <AvatarFallback>{speaker.name.charAt(0)}</AvatarFallback>
@@ -712,6 +852,7 @@ function SessionPeopleManager({
             </div>
           ))}
           <UserMultiSelect
+            allUsers={allUsers}
             selectedUsers={sessionData.speakers || []}
             onSelect={(users) => onUpdate({ ...sessionData, speakers: users })}
             placeholder="Select speakers..."
@@ -729,8 +870,8 @@ function SessionPeopleManager({
           Volunteers ({sessionData.volunteers?.length || 0})
         </Label>
         <div className="space-y-2">
-          {sessionData.volunteers?.map((volunteer) => (
-            <div key={volunteer.userId} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+          {sessionData.volunteers?.map((volunteer, index) => (
+            <div key={volunteer.userId || `volunteer-${index}`} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
               <Avatar className="h-10 w-10">
                 <AvatarImage src={volunteer.photo} />
                 <AvatarFallback>{volunteer.name.charAt(0)}</AvatarFallback>
@@ -754,6 +895,7 @@ function SessionPeopleManager({
             </div>
           ))}
           <UserMultiSelect
+            allUsers={allUsers}
             selectedUsers={sessionData.volunteers || []}
             onSelect={(users) => onUpdate({ ...sessionData, volunteers: users })}
             placeholder="Select volunteers..."
@@ -1069,7 +1211,8 @@ function AddSessionDialog({ sprint, onSuccess }: { sprint: Sprint; onSuccess?: (
 // Meetup People Manager Component
 function MeetupPeopleManager({ 
   meetupData, 
-  onUpdate 
+  onUpdate,
+  allUsers = []
 }: { 
   meetupData: {
     speakers?: any[];
@@ -1081,6 +1224,7 @@ function MeetupPeopleManager({
     hosts?: any[];
     volunteers?: any[];
   }) => void;
+  allUsers?: UserType[];
 }) {
   const removeSpeaker = (userId: string) => {
     const updated = (meetupData.speakers || []).filter(s => s.userId !== userId);
@@ -1105,8 +1249,8 @@ function MeetupPeopleManager({
           Speakers ({meetupData.speakers?.length || 0})
         </Label>
         <div className="space-y-2">
-          {meetupData.speakers?.map((speaker) => (
-            <div key={speaker.userId} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+          {meetupData.speakers?.map((speaker, index) => (
+            <div key={speaker.userId || `speaker-${index}`} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
               <Avatar className="h-10 w-10">
                 <AvatarImage src={speaker.photo} />
                 <AvatarFallback>{speaker.name.charAt(0)}</AvatarFallback>
@@ -1130,6 +1274,7 @@ function MeetupPeopleManager({
             </div>
           ))}
           <UserMultiSelect
+            allUsers={allUsers}
             selectedUsers={meetupData.speakers || []}
             onSelect={(users) => onUpdate({ ...meetupData, speakers: users })}
             placeholder="Select speakers..."
@@ -1147,8 +1292,8 @@ function MeetupPeopleManager({
           Organisers ({meetupData.hosts?.length || 0})
         </Label>
         <div className="space-y-2">
-          {meetupData.hosts?.map((host) => (
-            <div key={host.userId} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+          {meetupData.hosts?.map((host, index) => (
+            <div key={host.userId || `host-${index}`} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
               <Avatar className="h-10 w-10">
                 <AvatarImage src={host.photo} />
                 <AvatarFallback>{host.name.charAt(0)}</AvatarFallback>
@@ -1172,6 +1317,7 @@ function MeetupPeopleManager({
             </div>
           ))}
           <UserMultiSelect
+            allUsers={allUsers}
             selectedUsers={meetupData.hosts || []}
             onSelect={(users) => onUpdate({ ...meetupData, hosts: users })}
             placeholder="Select organisers..."
@@ -1189,8 +1335,8 @@ function MeetupPeopleManager({
           Volunteers ({meetupData.volunteers?.length || 0})
         </Label>
         <div className="space-y-2">
-          {meetupData.volunteers?.map((volunteer) => (
-            <div key={volunteer.userId} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+          {meetupData.volunteers?.map((volunteer, index) => (
+            <div key={volunteer.userId || `volunteer-${index}`} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
               <Avatar className="h-10 w-10">
                 <AvatarImage src={volunteer.photo} />
                 <AvatarFallback>{volunteer.name.charAt(0)}</AvatarFallback>
@@ -1214,6 +1360,7 @@ function MeetupPeopleManager({
             </div>
           ))}
           <UserMultiSelect
+            allUsers={allUsers}
             selectedUsers={meetupData.volunteers || []}
             onSelect={(users) => onUpdate({ ...meetupData, volunteers: users })}
             placeholder="Select volunteers..."
@@ -1228,11 +1375,12 @@ function MeetupPeopleManager({
   );
 }
 
-function CreateMeetupDialog({ onSuccess }: { onSuccess?: () => void }) {
+function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => void; allUsers?: UserType[] }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const [sprints, setSprints] = useState<Sprint[]>([]);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -1240,12 +1388,13 @@ function CreateMeetupDialog({ onSuccess }: { onSuccess?: () => void }) {
     date: '',
     time: '',
     duration: '',
-    type: 'virtual' as 'virtual' | 'in-person' | 'hybrid',
+    type: 'virtual' as 'virtual' | 'in-person' | 'skill-sprint' | 'certification-circle' | 'college-champ',
     location: '',
     meetingLink: '',
     meetupUrl: '',
     image: '',
-    maxAttendees: ''
+    maxAttendees: '',
+    sprintId: ''
   });
   
   const [peopleData, setPeopleData] = useState<{
@@ -1258,8 +1407,31 @@ function CreateMeetupDialog({ onSuccess }: { onSuccess?: () => void }) {
     volunteers: []
   });
 
+  // Load sprints when dialog opens
+  useEffect(() => {
+    if (open) {
+      loadSprints();
+    }
+  }, [open]);
+
+  const loadSprints = async () => {
+    try {
+      const allSprints = await getSprints();
+      setSprints(allSprints);
+    } catch (error) {
+      console.error('Error loading sprints:', error);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Validate sprint selection if type is skill-sprint
+    if (formData.type === 'skill-sprint' && !formData.sprintId) {
+      toast.error('Please select a sprint for this session');
+      return;
+    }
+    
     setLoading(true);
     
     try {
@@ -1278,7 +1450,8 @@ function CreateMeetupDialog({ onSuccess }: { onSuccess?: () => void }) {
         maxAttendees: formData.maxAttendees ? parseInt(formData.maxAttendees) : undefined,
         speakers: peopleData.speakers,
         hosts: peopleData.hosts,
-        volunteers: peopleData.volunteers
+        volunteers: peopleData.volunteers,
+        sprintId: (formData.type === 'skill-sprint' && formData.sprintId) ? formData.sprintId : undefined
       };
       
       await createMeetup(meetupData);
@@ -1299,7 +1472,8 @@ function CreateMeetupDialog({ onSuccess }: { onSuccess?: () => void }) {
         meetingLink: '',
         meetupUrl: '',
         image: '',
-        maxAttendees: ''
+        maxAttendees: '',
+        sprintId: ''
       });
       setPeopleData({
         speakers: [],
@@ -1337,6 +1511,65 @@ function CreateMeetupDialog({ onSuccess }: { onSuccess?: () => void }) {
             />
           </div>
           
+          {/* Event Type */}
+          <div className="space-y-2">
+            <Label>Event Type *</Label>
+            <Select 
+              value={formData.type}
+              onValueChange={(value: 'virtual' | 'in-person' | 'skill-sprint' | 'certification-circle' | 'college-champ') => 
+                setFormData({ ...formData, type: value, sprintId: value !== 'skill-sprint' ? '' : formData.sprintId })
+              }
+            >
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="virtual">Virtual Meetup</SelectItem>
+                <SelectItem value="in-person">In-Person Meetup</SelectItem>
+                <SelectItem value="skill-sprint">Skill Sprint Session</SelectItem>
+                <SelectItem value="certification-circle">Certification Circle Session</SelectItem>
+                <SelectItem value="college-champ">College Champ Session</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              {formData.type === 'skill-sprint' && 'This session will be linked to a sprint'}
+              {formData.type === 'certification-circle' && 'This session will be part of the certification circle program'}
+              {formData.type === 'college-champ' && 'This session will be part of the college champ program'}
+              {formData.type === 'virtual' && 'A virtual community meetup event'}
+              {formData.type === 'in-person' && 'An in-person community meetup event'}
+            </p>
+          </div>
+
+          {/* Sprint Selection - Only show if type is skill-sprint */}
+          {formData.type === 'skill-sprint' && (
+            <div className="space-y-2">
+              <Label>Select Sprint *</Label>
+              <Select 
+                value={formData.sprintId}
+                onValueChange={(value) => setFormData({ ...formData, sprintId: value })}
+                required
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose a sprint..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {sprints.length === 0 ? (
+                    <SelectItem value="none" disabled>No sprints available</SelectItem>
+                  ) : (
+                    sprints.map((sprint) => (
+                      <SelectItem key={sprint.id} value={sprint.id}>
+                        {sprint.title} ({format(parseISO(sprint.startDate), 'MMM yyyy')})
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+              {sprints.length === 0 && (
+                <p className="text-xs text-amber-600">
+                  ⚠️ No sprints found. Please create a sprint first before adding sprint sessions.
+                </p>
+              )}
+            </div>
+          )}
+          
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Date *</Label>
@@ -1367,34 +1600,43 @@ function CreateMeetupDialog({ onSuccess }: { onSuccess?: () => void }) {
             />
           </div>
           
-          <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label>Max Attendees</Label>
+            <Input 
+              type="number"
+              placeholder="e.g., 100"
+              value={formData.maxAttendees}
+              onChange={(e) => setFormData({ ...formData, maxAttendees: e.target.value })}
+              min="1"
+            />
+          </div>
+          
+          {/* Location - show for in-person events */}
+          {formData.type === 'in-person' && (
             <div className="space-y-2">
-              <Label>Event Type *</Label>
-              <Select 
-                value={formData.type}
-                onValueChange={(value: 'virtual' | 'in-person' | 'hybrid') => 
-                  setFormData({ ...formData, type: value })
-                }
-              >
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="virtual">Virtual</SelectItem>
-                  <SelectItem value="in-person">In-Person</SelectItem>
-                  <SelectItem value="hybrid">Hybrid</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Max Attendees</Label>
+              <Label>Location</Label>
               <Input 
-                type="number"
-                placeholder="e.g., 100"
-                value={formData.maxAttendees}
-                onChange={(e) => setFormData({ ...formData, maxAttendees: e.target.value })}
-                min="1"
+                placeholder="e.g., Tech Hub, Bangalore"
+                value={formData.location}
+                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
               />
             </div>
-          </div>
+          )}
+          
+          {/* Meeting Link - show for virtual events */}
+          {(formData.type === 'virtual' || formData.type === 'skill-sprint' || formData.type === 'certification-circle' || formData.type === 'college-champ') && (
+            <div className="space-y-2">
+              <Label>Meeting Link</Label>
+              <Input 
+                placeholder="https://meet.example.com/..."
+                value={formData.meetingLink}
+                onChange={(e) => setFormData({ ...formData, meetingLink: e.target.value })}
+              />
+              <p className="text-xs text-muted-foreground">
+                Use meeting link for live events. After the event, replace with YouTube recording link.
+              </p>
+            </div>
+          )}
           
           <div className="space-y-2">
             <Label>Event Poster Image</Label>
@@ -1477,37 +1719,13 @@ function CreateMeetupDialog({ onSuccess }: { onSuccess?: () => void }) {
             />
           </div>
           
-          {(formData.type === 'in-person' || formData.type === 'hybrid') && (
-            <div className="space-y-2">
-              <Label>Location</Label>
-              <Input 
-                placeholder="e.g., Tech Hub, Bangalore"
-                value={formData.location}
-                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-              />
-            </div>
-          )}
-          
-          {(formData.type === 'virtual' || formData.type === 'hybrid') && (
-            <div className="space-y-2">
-              <Label>Meeting Link</Label>
-              <Input 
-                placeholder="https://meet.example.com/..."
-                value={formData.meetingLink}
-                onChange={(e) => setFormData({ ...formData, meetingLink: e.target.value })}
-              />
-              <p className="text-xs text-muted-foreground">
-                Use meeting link for live events. After the event, replace with YouTube recording link.
-              </p>
-            </div>
-          )}
-          
           {/* People Management */}
           <div className="space-y-4 border-t pt-6">
             <h3 className="font-semibold text-lg">Event Team</h3>
             <MeetupPeopleManager
               meetupData={peopleData}
               onUpdate={setPeopleData}
+              allUsers={allUsers}
             />
           </div>
           
@@ -1552,7 +1770,7 @@ function CreateMeetupDialog({ onSuccess }: { onSuccess?: () => void }) {
 
 // ================== MEETUPS MANAGEMENT ==================
 
-function EditMeetupDialog({ meetup, onSuccess }: { meetup: Meetup; onSuccess?: () => void }) {
+function EditMeetupDialog({ meetup, onSuccess, allUsers = [] }: { meetup: Meetup; onSuccess?: () => void; allUsers?: UserType[] }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -1568,7 +1786,8 @@ function EditMeetupDialog({ meetup, onSuccess }: { meetup: Meetup; onSuccess?: (
     meetingLink: meetup.meetingLink || '',
     meetupUrl: meetup.meetupUrl || '',
     image: meetup.image || '',
-    maxAttendees: meetup.maxAttendees?.toString() || ''
+    maxAttendees: meetup.maxAttendees?.toString() || '',
+    sprintId: meetup.sprintId || ''
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1587,7 +1806,8 @@ function EditMeetupDialog({ meetup, onSuccess }: { meetup: Meetup; onSuccess?: (
         meetingLink: formData.meetingLink || undefined,
         meetupUrl: formData.meetupUrl || undefined,
         image: formData.image || undefined,
-        maxAttendees: formData.maxAttendees ? parseInt(formData.maxAttendees) : undefined
+        maxAttendees: formData.maxAttendees ? parseInt(formData.maxAttendees) : undefined,
+        sprintId: (formData.type === 'skill-sprint' && formData.sprintId) ? formData.sprintId : null
       };
       
       await updateMeetup(meetup.id, updateData);
@@ -1820,7 +2040,7 @@ function EditMeetupDialog({ meetup, onSuccess }: { meetup: Meetup; onSuccess?: (
   );
 }
 
-function MeetupsManagementTab() {
+function MeetupsManagementTab({ allUsers = [] }: { allUsers?: UserType[] }) {
   const [meetups, setMeetups] = useState<Meetup[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<'all' | 'draft' | 'upcoming' | 'completed'>('all');
@@ -1882,7 +2102,7 @@ function MeetupsManagementTab() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <h2 className="text-xl font-semibold">Manage Meetups</h2>
-        <CreateMeetupDialog onSuccess={loadMeetups} />
+        <CreateMeetupDialog onSuccess={loadMeetups} allUsers={allUsers} />
       </div>
 
       {/* Stats */}
@@ -2032,7 +2252,7 @@ function MeetupsManagementTab() {
                       eventId={meetup.id} 
                       eventTitle={meetup.title}
                     />
-                    <EditMeetupDialog meetup={meetup} onSuccess={loadMeetups} />
+                    <EditMeetupDialog meetup={meetup} onSuccess={loadMeetups} allUsers={allUsers} />
                     <Button 
                       variant="outline" 
                       size="sm" 
@@ -2683,11 +2903,11 @@ function CollegeChampsTab() {
 }
 
 // Members Tab Component with integrated role management and points awarding
-function MembersTab() {
+function MembersTab({ allUsers }: { allUsers: UserType[] }) {
   const [userRoles, setUserRoles] = useState<UserRoleAssignment[]>(mockUserRoles);
   const [pointActivities, setPointActivities] = useState<PointActivity[]>(mockPointActivities);
   const [userPoints, setUserPoints] = useState<Record<string, number>>(
-    () => mockUsers.reduce((acc, u) => ({ ...acc, [u.id]: u.points }), {})
+    () => allUsers.reduce((acc, u) => ({ ...acc, [u.id]: u.points }), {})
   );
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedUser, setSelectedUser] = useState<UserType | null>(null);
@@ -2695,7 +2915,7 @@ function MembersTab() {
   const [isAwardDialogOpen, setIsAwardDialogOpen] = useState(false);
   const [awardForm, setAwardForm] = useState({ points: '', reason: '' });
 
-  const filteredUsers = mockUsers.filter(user => 
+  const filteredUsers = allUsers.filter(user => 
     user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     user.email.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -3009,7 +3229,7 @@ function MembersTab() {
 }
 
 // Badge Management Tab Component
-function BadgesTab() {
+function BadgesTab({ allUsers }: { allUsers: UserType[] }) {
   const [badges, setBadges] = useState<BadgeType[]>(mockBadges);
   const [badgeAwards, setBadgeAwards] = useState<BadgeAward[]>(mockBadgeAwards);
   const [searchQuery, setSearchQuery] = useState('');
@@ -3045,11 +3265,11 @@ function BadgesTab() {
   };
 
   const getUsersWithBadge = (badgeId: string) => {
-    return mockUsers.filter(user => user.badges.some(b => b.id === badgeId));
+    return allUsers.filter(user => user.badges.some(b => b.id === badgeId));
   };
 
   const getUsersWithoutBadge = (badgeId: string) => {
-    return mockUsers.filter(user => !user.badges.some(b => b.id === badgeId));
+    return allUsers.filter(user => !user.badges.some(b => b.id === badgeId));
   };
 
   const handleAwardBadge = () => {
@@ -3058,7 +3278,7 @@ function BadgesTab() {
       return;
     }
 
-    const user = getUserById(selectedUserId);
+    const user = allUsers.find(u => u.id === selectedUserId);
     if (!user) {
       toast.error('User not found');
       return;
@@ -3420,11 +3640,27 @@ export default function Admin() {
   const [activeTab, setActiveTab] = useState('submissions');
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [loadingSprints, setLoadingSprints] = useState(false);
+  const [allUsers, setAllUsers] = useState<UserType[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
   const isAdmin = currentUser.role === 'organiser';
   const isSpeaker = currentUser.role === 'speaker';
 
   const pendingSubmissions = allSubmissions.filter(s => s.status === 'pending');
   const reviewedSubmissions = allSubmissions.filter(s => s.status !== 'pending');
+
+  // Fetch users from API
+  const fetchUsers = async () => {
+    setLoadingUsers(true);
+    try {
+      const fetchedUsers = await getAllUsers();
+      setAllUsers(fetchedUsers);
+    } catch (error) {
+      console.error('Error fetching users:', error);
+      setAllUsers([]);
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
 
   // Fetch sprints from API
   const fetchSprints = async () => {
@@ -3480,6 +3716,13 @@ export default function Admin() {
     }
   }, [isAdmin, activeTab]);
 
+  // Load users when component mounts
+  useEffect(() => {
+    if (isAdmin) {
+      fetchUsers();
+    }
+  }, [isAdmin]);
+
   const handleSubmissionAction = (submissionId: string, action: 'approve' | 'reject', points?: number, feedback?: string) => {
     toast.success(`Submission ${action}d${points ? ` with ${points} points` : ''}`);
   };
@@ -3512,16 +3755,6 @@ export default function Admin() {
             <div>
               <h1 className="text-3xl font-bold">Admin Panel</h1>
               <p className="text-muted-foreground">Manage events, sprints, and submissions</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Avatar className="h-10 w-10 border-2 border-primary">
-                <AvatarImage src={currentUser.avatar} />
-                <AvatarFallback>{currentUser.name.charAt(0)}</AvatarFallback>
-              </Avatar>
-              <div>
-                <p className="text-sm font-medium">{currentUser.name}</p>
-                <Badge variant="outline" className="text-xs capitalize">{currentUser.role}</Badge>
-              </div>
             </div>
           </div>
 
@@ -3687,16 +3920,7 @@ export default function Admin() {
                               </div>
                             </div>
                             <div className="flex flex-wrap gap-2">
-                              <AddSessionDialog sprint={sprint} onSuccess={fetchSprints} />
-                              <SpeakerInviteDialog 
-                                eventType="sprint" 
-                                eventId={sprint.id} 
-                                eventTitle={sprint.title}
-                              />
-                              <Button variant="outline" size="sm" className="gap-1">
-                                <Eye className="h-4 w-4" />
-                                View
-                              </Button>
+                              <ViewParticipantsDialog sprint={sprint} />
                               <Button variant="outline" size="sm" className="gap-1">
                                 <Edit className="h-4 w-4" />
                                 Edit
@@ -3721,16 +3945,16 @@ export default function Admin() {
                 </TabsContent>
 
                 <TabsContent value="meetups">
-                  <MeetupsManagementTab />
+                  <MeetupsManagementTab allUsers={allUsers} />
                 </TabsContent>
 
 
                 <TabsContent value="members">
-                  <MembersTab />
+                  <MembersTab allUsers={allUsers} />
                 </TabsContent>
 
                 <TabsContent value="badges">
-                  <BadgesTab />
+                  <BadgesTab allUsers={allUsers} />
                 </TabsContent>
 
                 <TabsContent value="college-champs">

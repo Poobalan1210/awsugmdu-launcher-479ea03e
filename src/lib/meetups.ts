@@ -1,5 +1,7 @@
 import { callApi } from './api';
-import { Meetup } from '@/data/mockData';
+import { Meetup, MeetupType } from '@/data/mockData';
+
+export type { MeetupType };
 
 export interface CreateMeetupData {
   title: string;
@@ -8,7 +10,7 @@ export interface CreateMeetupData {
   date: string;
   time: string;
   duration?: string;
-  type: 'virtual' | 'in-person' | 'hybrid';
+  type: MeetupType;
   location?: string;
   meetingLink?: string;
   meetupUrl?: string;
@@ -17,6 +19,7 @@ export interface CreateMeetupData {
   speakers?: any[];
   hosts?: any[];
   volunteers?: any[];
+  sprintId?: string;
 }
 
 export interface UpdateMeetupData extends Partial<CreateMeetupData> {
@@ -101,6 +104,16 @@ export async function getMeetupParticipants(id: string): Promise<MeetupParticipa
     return response.participants || [];
   } catch (error) {
     console.error('Error fetching participants:', error);
+    return [];
+  }
+}
+
+export async function getMeetupsBySprint(sprintId: string): Promise<Meetup[]> {
+  try {
+    const response = await callApi<MeetupsResponse>(`/meetups?sprintId=${sprintId}`);
+    return response.meetups || [];
+  } catch (error) {
+    console.error('Error fetching sprint meetups:', error);
     return [];
   }
 }

@@ -1,5 +1,5 @@
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
-const { DynamoDBDocumentClient, PutCommand, GetCommand, UpdateCommand, ScanCommand, QueryCommand } = require('@aws-sdk/lib-dynamodb');
+const { DynamoDBDocumentClient, PutCommand, GetCommand, UpdateCommand, ScanCommand, QueryCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
 
 const client = new DynamoDBClient({ region: process.env.AWS_REGION });
 const docClient = DynamoDBDocumentClient.from(client);
@@ -83,12 +83,18 @@ exports.handler = async (event) => {
       } else if (method === 'GET' && id && !action) {
         // GET /meetups/{id} - Get single meetup
         return await getMeetup(id);
+      } else if (method === 'GET' && id && action === 'participants') {
+        // GET /meetups/{id}/participants - Get meetup participants
+        return await getMeetupParticipants(id);
       } else if (method === 'POST' && !id) {
         // POST /meetups - Create meetup
         return await createMeetup(event);
       } else if (method === 'PUT' && id && !action) {
         // PUT /meetups/{id} - Update meetup
         return await updateMeetup(id, event);
+      } else if (method === 'DELETE' && id && !action) {
+        // DELETE /meetups/{id} - Delete meetup
+        return await deleteMeetup(id);
       } else if (method === 'PATCH' && id && action === 'publish') {
         // PATCH /meetups/{id}/publish - Publish/unpublish meetup
         return await publishMeetup(id, event);
@@ -196,12 +202,16 @@ async function createMeetup(event) {
     richDescription,
     date,
     time,
+    duration,
     type,
     location,
     meetingLink,
     meetupUrl,
     image,
-    maxAttendees
+    maxAttendees,
+    speakers,
+    hosts,
+    volunteers
   } = body;
   
   // Validation
@@ -228,6 +238,7 @@ async function createMeetup(event) {
     richDescription: richDescription || '',
     date,
     time,
+    duration: duration || undefined,
     type,
     location: location || undefined,
     meetingLink: meetingLink || undefined,
@@ -237,7 +248,9 @@ async function createMeetup(event) {
     attendees: 0,
     maxAttendees: maxAttendees ? parseInt(maxAttendees) : undefined,
     registeredUsers: [],
-    speakers: [],
+    speakers: speakers || [],
+    hosts: hosts || [],
+    volunteers: volunteers || [],
     createdAt: now,
     updatedAt: now
   };
@@ -270,8 +283,9 @@ async function updateMeetup(id, event) {
   const expressionAttributeValues = {};
   
   const allowedFields = [
-    'title', 'description', 'richDescription', 'date', 'time', 'type',
-    'location', 'meetingLink', 'meetupUrl', 'image', 'maxAttendees'
+    'title', 'description', 'richDescription', 'date', 'time', 'duration', 'type',
+    'location', 'meetingLink', 'meetupUrl', 'image', 'maxAttendees',
+    'speakers', 'hosts', 'volunteers'
   ];
   
   allowedFields.forEach(field => {
@@ -423,4 +437,75 @@ async function registerForMeetup(id, event) {
     message: 'Successfully registered for meetup',
     alreadyRegistered: false
   });
+}
+
+// Get meetup participants
+async function getMeetupParticipants(id) {
+  // Check if meetup exists
+  const meetupResult = await docClient.send(new GetCommand({
+    TableName: MEETUPS_TABLE,
+    Key: { id }
+  }));
+  
+  if (!meetupResult.Item) {
+    return createResponse(404, { error: 'Meetup not found' });
+  }
+  
+  const meetup = meetupResult.Item;
+  const registeredUsers = meetup.registeredUsers || [];
+  
+  if (registeredUsers.length === 0) {
+    return createResponse(200, { participants: [] });
+  }
+  
+  // Fetch user details for all registered users
+  const USERS_TABLE = process.env.USERS_TABLE_NAME || 'awsug-users';
+  const participants = [];
+  
+  for (const userId of registeredUsers) {
+    try {
+      const userResult = await docClient.send(new GetCommand({
+        TableName: USERS_TABLE,
+        Key: { userId }
+      }));
+      
+      if (userResult.Item) {
+        const user = userResult.Item;
+        participants.push({
+          id: user.userId,
+          name: user.name || 'Unknown User',
+          email: user.email,
+          avatar: user.avatar || user.profilePicture,
+          designation: user.designation,
+          company: user.company
+        });
+      }
+    } catch (error) {
+      console.error(`Error fetching user ${userId}:`, error);
+      // Continue with other users even if one fails
+    }
+  }
+  
+  return createResponse(200, { participants });
+}
+
+// Delete meetup
+async function deleteMeetup(id) {
+  // Check if meetup exists
+  const existing = await docClient.send(new GetCommand({
+    TableName: MEETUPS_TABLE,
+    Key: { id }
+  }));
+  
+  if (!existing.Item) {
+    return createResponse(404, { error: 'Meetup not found' });
+  }
+  
+  // Delete the meetup
+  await docClient.send(new DeleteCommand({
+    TableName: MEETUPS_TABLE,
+    Key: { id }
+  }));
+  
+  return createResponse(200, { message: 'Meetup deleted successfully' });
 }

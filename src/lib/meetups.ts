@@ -7,12 +7,16 @@ export interface CreateMeetupData {
   richDescription?: string;
   date: string;
   time: string;
+  duration?: string;
   type: 'virtual' | 'in-person' | 'hybrid';
   location?: string;
   meetingLink?: string;
   meetupUrl?: string;
   image?: string;
   maxAttendees?: number;
+  speakers?: any[];
+  hosts?: any[];
+  volunteers?: any[];
 }
 
 export interface UpdateMeetupData extends Partial<CreateMeetupData> {
@@ -62,10 +66,25 @@ export async function publishMeetup(id: string, publish: boolean): Promise<Meetu
   return response.meetup;
 }
 
+export async function deleteMeetup(id: string): Promise<void> {
+  await callApi(`/meetups/${id}`, {
+    method: 'DELETE',
+  });
+}
+
 export interface RegisterMeetupResponse {
   meetup: Meetup;
   message: string;
   alreadyRegistered?: boolean;
+}
+
+export interface MeetupParticipant {
+  id: string;
+  name: string;
+  email: string;
+  avatar?: string;
+  designation?: string;
+  company?: string;
 }
 
 export async function registerForMeetup(id: string, userId: string): Promise<RegisterMeetupResponse> {
@@ -74,4 +93,14 @@ export async function registerForMeetup(id: string, userId: string): Promise<Reg
     body: JSON.stringify({ userId }),
   });
   return response;
+}
+
+export async function getMeetupParticipants(id: string): Promise<MeetupParticipant[]> {
+  try {
+    const response = await callApi<{ participants: MeetupParticipant[] }>(`/meetups/${id}/participants`);
+    return response.participants || [];
+  } catch (error) {
+    console.error('Error fetching participants:', error);
+    return [];
+  }
 }

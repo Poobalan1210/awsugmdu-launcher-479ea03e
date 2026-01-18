@@ -9,14 +9,15 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Input } from '@/components/ui/input';
 import { 
   Calendar, MapPin, Users, Video, Clock, 
   ArrowLeft, ExternalLink, PlayCircle,
-  Linkedin, Github, CheckCircle
+  Linkedin, Github, CheckCircle, Search
 } from 'lucide-react';
 import { mockMeetups, Meetup } from '@/data/mockData';
 import { format, parseISO, isPast } from 'date-fns';
-import { getMeetups, registerForMeetup } from '@/lib/meetups';
+import { getMeetups, registerForMeetup, getMeetupParticipants } from '@/lib/meetups';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
@@ -135,12 +136,39 @@ function MeetupDetail({ meetup, onBack }: { meetup: Meetup; onBack: () => void }
   const { user, isAuthenticated } = useAuth();
   const queryClient = useQueryClient();
   const [isRegistering, setIsRegistering] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Fetch participants for this meetup
+  const { data: participants = [] } = useQuery({
+    queryKey: ['meetup-participants', meetup.id],
+    queryFn: () => getMeetupParticipants(meetup.id),
+    enabled: !!meetup.id,
+  });
 
   // Parse markdown or HTML content
   const parsedDescription = useMemo(() => {
     if (!meetup.richDescription) return null;
     return parseContent(meetup.richDescription);
   }, [meetup.richDescription]);
+
+  // Combine all people and filter by search query
+  const allPeople = useMemo(() => {
+    const people = [
+      ...(meetup.speakers?.map(s => ({ ...s, role: 'Speaker' as const })) || []),
+      ...(meetup.hosts?.map((h, i) => ({ ...h, id: `host-${i}`, role: 'Organizer' as const })) || []),
+      ...(meetup.volunteers?.map((v, i) => ({ ...v, id: `volunteer-${i}`, role: 'Volunteer' as const })) || []),
+      ...participants.map(p => ({ ...p, photo: p.avatar, role: null as const }))
+    ];
+
+    if (!searchQuery.trim()) return people;
+
+    const query = searchQuery.toLowerCase();
+    return people.filter(person => 
+      person.name.toLowerCase().includes(query) ||
+      person.designation?.toLowerCase().includes(query) ||
+      person.company?.toLowerCase().includes(query)
+    );
+  }, [meetup.speakers, meetup.hosts, meetup.volunteers, participants, searchQuery]);
 
   // Check if user is registered
   const isRegistered = user && meetup.registeredUsers?.includes(user.id);
@@ -158,20 +186,24 @@ function MeetupDetail({ meetup, onBack }: { meetup: Meetup; onBack: () => void }
 
     setIsRegistering(true);
     try {
+      // First, register in our system
       const result = await registerForMeetup(meetup.id, user.id);
       
       if (result.alreadyRegistered) {
         toast.info('You are already registered for this meetup');
-      } else {
-        toast.success('Successfully registered for the meetup!');
-        // Refresh meetups data
-        queryClient.invalidateQueries({ queryKey: ['meetups'] });
-      }
-      
-      // Redirect to meetup URL after a short delay
-      setTimeout(() => {
+        // Still redirect to meetup URL
         window.open(meetup.meetupUrl, '_blank');
-      }, 1000);
+      } else {
+        toast.success('Successfully registered! Redirecting to Meetup.com...');
+        // Refresh meetups data and participants
+        queryClient.invalidateQueries({ queryKey: ['meetups'] });
+        queryClient.invalidateQueries({ queryKey: ['meetup-participants', meetup.id] });
+        
+        // Redirect to meetup URL after registration
+        setTimeout(() => {
+          window.open(meetup.meetupUrl, '_blank');
+        }, 1500);
+      }
     } catch (error) {
       console.error('Registration error:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to register for meetup');
@@ -191,9 +223,9 @@ function MeetupDetail({ meetup, onBack }: { meetup: Meetup; onBack: () => void }
         Back to Meetups
       </Button>
 
-      {/* Two-column layout: Content on left, Poster on right */}
+      {/* Two-column layout: Description on left, People on right */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Left Column: Event Details */}
+        {/* Left Column: Event Details & Description */}
         <div className="lg:col-span-2 space-y-6">
           <Card className="glass-card">
             <CardContent className="p-6">
@@ -216,6 +248,7 @@ function MeetupDetail({ meetup, onBack }: { meetup: Meetup; onBack: () => void }
                 <div className="flex items-center gap-2">
                   <Clock className="h-4 w-4 text-primary" />
                   {meetup.time}
+                  {meetup.duration && ` (${meetup.duration})`}
                 </div>
                 {meetup.location && (
                   <div className="flex items-center gap-2">
@@ -335,12 +368,10 @@ function MeetupDetail({ meetup, onBack }: { meetup: Meetup; onBack: () => void }
               </div>
             </CardContent>
           </Card>
-        </div>
 
-        {/* Right Column: Event Poster */}
-        {meetup.image && (
-          <div className="lg:col-span-1">
-            <Card className="glass-card sticky top-4">
+          {/* Event Poster */}
+          {meetup.image && (
+            <Card className="glass-card">
               <CardContent className="p-0">
                 <div className="rounded-xl overflow-hidden bg-muted/20 flex items-center justify-center">
                   <img 
@@ -351,73 +382,99 @@ function MeetupDetail({ meetup, onBack }: { meetup: Meetup; onBack: () => void }
                 </div>
               </CardContent>
             </Card>
-          </div>
-        )}
-      </div>
+          )}
 
-      {/* Speakers Section */}
-      {meetup.speakers.length > 0 && (
-        <Card className="glass-card">
-          <CardHeader>
-            <CardTitle>Speakers</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-6 md:grid-cols-2">
-              {meetup.speakers.map((speaker) => (
-                <div key={speaker.id} className="flex gap-4 p-4 rounded-lg bg-muted/50">
-                  <Avatar className="h-16 w-16 border-2 border-primary">
-                    <AvatarImage src={speaker.photo} alt={speaker.name} />
-                    <AvatarFallback>{speaker.name.charAt(0)}</AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1">
-                    <h4 className="font-semibold text-lg">{speaker.name}</h4>
-                    <p className="text-sm text-muted-foreground">
-                      {speaker.designation}
-                      {speaker.company && ` at ${speaker.company}`}
-                    </p>
-                    <p className="text-sm text-primary mt-1">{speaker.topic}</p>
-                    {speaker.bio && (
-                      <p className="text-sm text-muted-foreground mt-2">{speaker.bio}</p>
-                    )}
-                    <div className="flex gap-2 mt-2">
-                      {speaker.linkedIn && (
-                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0" asChild>
-                          <a href={speaker.linkedIn} target="_blank" rel="noopener noreferrer">
-                            <Linkedin className="h-4 w-4" />
-                          </a>
-                        </Button>
-                      )}
-                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                        <Github className="h-4 w-4" />
-                      </Button>
+          {/* Rich Description Section - Supports HTML and Markdown */}
+          {parsedDescription && (
+            <Card className="glass-card">
+              <CardHeader>
+                <CardTitle>About this Event</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div 
+                  className="prose prose-sm max-w-none dark:prose-invert
+                    prose-headings:text-foreground prose-headings:font-semibold
+                    prose-h2:text-xl prose-h2:mt-0 prose-h2:mb-4
+                    prose-h3:text-lg prose-h3:mt-6 prose-h3:mb-3
+                    prose-p:text-muted-foreground prose-p:leading-relaxed
+                    prose-ul:text-muted-foreground prose-ul:my-4
+                    prose-li:my-1
+                    prose-strong:text-foreground
+                    prose-em:text-muted-foreground"
+                  dangerouslySetInnerHTML={{ __html: parsedDescription }}
+                />
+              </CardContent>
+            </Card>
+          )}
+        </div>
+
+        {/* Right Column: Combined People Section (Scrollable) */}
+        <div className="lg:col-span-1">
+          <Card className="glass-card sticky top-4 flex flex-col max-h-[calc(100vh-2rem)]">
+            <CardHeader className="flex-shrink-0">
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5" />
+                People ({allPeople.length})
+              </CardTitle>
+              <div className="relative mt-3">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  type="text"
+                  placeholder="Search people..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+            </CardHeader>
+            <CardContent className="flex-1 overflow-y-auto">
+              <div className="space-y-3">
+                {allPeople.length > 0 ? (
+                  allPeople.map((person) => (
+                    <div key={person.id} className="flex items-start gap-3 p-3 rounded-lg bg-muted/50">
+                      <Avatar className="h-10 w-10 flex-shrink-0">
+                        <AvatarImage src={person.photo} alt={person.name} />
+                        <AvatarFallback>{person.name.charAt(0)}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <h4 className="font-medium text-sm truncate">{person.name}</h4>
+                          {person.role === 'Speaker' && (
+                            <Badge variant="default" className="text-xs px-1.5 py-0 h-5">Speaker</Badge>
+                          )}
+                          {person.role === 'Organizer' && (
+                            <Badge variant="secondary" className="text-xs px-1.5 py-0 h-5">Organizer</Badge>
+                          )}
+                          {person.role === 'Volunteer' && (
+                            <Badge variant="outline" className="text-xs px-1.5 py-0 h-5">Volunteer</Badge>
+                          )}
+                        </div>
+                        {person.designation && (
+                          <p className="text-xs text-muted-foreground truncate">
+                            {person.designation}
+                            {person.company && ` at ${person.company}`}
+                          </p>
+                        )}
+                        {person.linkedIn && (
+                          <Button variant="ghost" size="sm" className="h-6 w-6 p-0 mt-1" asChild>
+                            <a href={person.linkedIn} target="_blank" rel="noopener noreferrer">
+                              <Linkedin className="h-3 w-3" />
+                            </a>
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Rich Description Section - Supports HTML and Markdown */}
-      {parsedDescription && (
-        <Card className="glass-card">
-          <CardContent className="pt-6">
-            <div 
-              className="prose prose-sm max-w-none dark:prose-invert
-                prose-headings:text-foreground prose-headings:font-semibold
-                prose-h2:text-xl prose-h2:mt-0 prose-h2:mb-4
-                prose-h3:text-lg prose-h3:mt-6 prose-h3:mb-3
-                prose-p:text-muted-foreground prose-p:leading-relaxed
-                prose-ul:text-muted-foreground prose-ul:my-4
-                prose-li:my-1
-                prose-strong:text-foreground
-                prose-em:text-muted-foreground"
-              dangerouslySetInnerHTML={{ __html: parsedDescription }}
-            />
-          </CardContent>
-        </Card>
-      )}
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground text-center py-8">
+                    {searchQuery ? 'No people found matching your search.' : 'No people registered yet.'}
+                  </p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     </motion.div>
   );
 }

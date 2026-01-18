@@ -217,7 +217,20 @@ export interface Meetup {
   maxAttendees?: number;
   registeredUsers: string[];
   speakers: MeetupSpeaker[];
+  hosts?: MeetupPerson[];
+  volunteers?: MeetupPerson[];
   image?: string;
+  duration?: string;
+}
+
+export interface MeetupPerson {
+  userId?: string;
+  name: string;
+  photo?: string;
+  designation?: string;
+  company?: string;
+  email?: string;
+  linkedIn?: string;
 }
 
 export interface MeetupSpeaker {

@@ -23,7 +23,7 @@ import {
   Trophy, ListTodo, ClipboardCheck, Target, Shield, UserCog, Medal
 } from 'lucide-react';
 import { mockSprints, mockMeetups, currentUser, Submission, generateSpeakerInviteLink, Sprint, Session, SessionPerson, mockUsers, User as UserType, predefinedTasks, mockColleges, CollegeTask, College, getTaskById, getUserById, communityRoles, mockUserRoles, CommunityRole, UserRoleAssignment, PointActivity, mockPointActivities, Meetup, mockBadges, Badge as BadgeType, BadgeAward, mockBadgeAwards, BadgeCriteriaType, criteriaTypeLabels, BadgeCriteria } from '@/data/mockData';
-import { createMeetup, updateMeetup, publishMeetup, getMeetups, CreateMeetupData, UpdateMeetupData } from '@/lib/meetups';
+import { createMeetup, updateMeetup, publishMeetup, getMeetups, CreateMeetupData, UpdateMeetupData, deleteMeetup } from '@/lib/meetups';
 import { createSprint, addSession, getSprints, deleteSprint, deleteSession, CreateSprintData, CreateSessionData } from '@/lib/sprints';
 import { uploadFileToS3 } from '@/lib/s3Upload';
 import { Progress } from '@/components/ui/progress';
@@ -412,6 +412,17 @@ function CreateSprintDialog({ onSuccess }: { onSuccess?: () => void }) {
 
 // Helper function to convert User to SessionPerson
 const userToSessionPerson = (user: UserType): SessionPerson => ({
+  userId: user.id,
+  name: user.name,
+  photo: user.avatar,
+  email: user.email,
+  designation: user.designation,
+  company: user.company,
+  linkedIn: user.linkedIn
+});
+
+// Helper to convert User to MeetupPerson (same structure as SessionPerson)
+const userToMeetupPerson = (user: UserType) => ({
   userId: user.id,
   name: user.name,
   photo: user.avatar,
@@ -1055,6 +1066,168 @@ function AddSessionDialog({ sprint, onSuccess }: { sprint: Sprint; onSuccess?: (
   );
 }
 
+// Meetup People Manager Component
+function MeetupPeopleManager({ 
+  meetupData, 
+  onUpdate 
+}: { 
+  meetupData: {
+    speakers?: any[];
+    hosts?: any[];
+    volunteers?: any[];
+  };
+  onUpdate: (data: {
+    speakers?: any[];
+    hosts?: any[];
+    volunteers?: any[];
+  }) => void;
+}) {
+  const removeSpeaker = (userId: string) => {
+    const updated = (meetupData.speakers || []).filter(s => s.userId !== userId);
+    onUpdate({ ...meetupData, speakers: updated });
+  };
+
+  const removeHost = (userId: string) => {
+    const updated = (meetupData.hosts || []).filter(h => h.userId !== userId);
+    onUpdate({ ...meetupData, hosts: updated });
+  };
+
+  const removeVolunteer = (userId: string) => {
+    const updated = (meetupData.volunteers || []).filter(v => v.userId !== userId);
+    onUpdate({ ...meetupData, volunteers: updated });
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Speakers */}
+      <div>
+        <Label className="text-sm font-semibold mb-2 block">
+          Speakers ({meetupData.speakers?.length || 0})
+        </Label>
+        <div className="space-y-2">
+          {meetupData.speakers?.map((speaker) => (
+            <div key={speaker.userId} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+              <Avatar className="h-10 w-10">
+                <AvatarImage src={speaker.photo} />
+                <AvatarFallback>{speaker.name.charAt(0)}</AvatarFallback>
+              </Avatar>
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">{speaker.name}</span>
+                  <Badge variant="default" className="text-xs">Speaker</Badge>
+                </div>
+                {speaker.designation && (
+                  <p className="text-xs text-muted-foreground">{speaker.designation}</p>
+                )}
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => removeSpeaker(speaker.userId!)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          ))}
+          <UserMultiSelect
+            selectedUsers={meetupData.speakers || []}
+            onSelect={(users) => onUpdate({ ...meetupData, speakers: users })}
+            placeholder="Select speakers..."
+            excludeUserIds={[
+              ...(meetupData.hosts || []).map(h => h.userId),
+              ...(meetupData.volunteers || []).map(v => v.userId)
+            ].filter(Boolean) as string[]}
+          />
+        </div>
+      </div>
+
+      {/* Organisers */}
+      <div>
+        <Label className="text-sm font-semibold mb-2 block">
+          Organisers ({meetupData.hosts?.length || 0})
+        </Label>
+        <div className="space-y-2">
+          {meetupData.hosts?.map((host) => (
+            <div key={host.userId} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+              <Avatar className="h-10 w-10">
+                <AvatarImage src={host.photo} />
+                <AvatarFallback>{host.name.charAt(0)}</AvatarFallback>
+              </Avatar>
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">{host.name}</span>
+                  <Badge variant="outline" className="text-xs">Organiser</Badge>
+                </div>
+                {host.designation && (
+                  <p className="text-xs text-muted-foreground">{host.designation}</p>
+                )}
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => removeHost(host.userId!)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          ))}
+          <UserMultiSelect
+            selectedUsers={meetupData.hosts || []}
+            onSelect={(users) => onUpdate({ ...meetupData, hosts: users })}
+            placeholder="Select organisers..."
+            excludeUserIds={[
+              ...(meetupData.speakers || []).map(s => s.userId),
+              ...(meetupData.volunteers || []).map(v => v.userId)
+            ].filter(Boolean) as string[]}
+          />
+        </div>
+      </div>
+
+      {/* Volunteers */}
+      <div>
+        <Label className="text-sm font-semibold mb-2 block">
+          Volunteers ({meetupData.volunteers?.length || 0})
+        </Label>
+        <div className="space-y-2">
+          {meetupData.volunteers?.map((volunteer) => (
+            <div key={volunteer.userId} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+              <Avatar className="h-10 w-10">
+                <AvatarImage src={volunteer.photo} />
+                <AvatarFallback>{volunteer.name.charAt(0)}</AvatarFallback>
+              </Avatar>
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">{volunteer.name}</span>
+                  <Badge variant="secondary" className="text-xs">Volunteer</Badge>
+                </div>
+                {volunteer.designation && (
+                  <p className="text-xs text-muted-foreground">{volunteer.designation}</p>
+                )}
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => removeVolunteer(volunteer.userId!)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          ))}
+          <UserMultiSelect
+            selectedUsers={meetupData.volunteers || []}
+            onSelect={(users) => onUpdate({ ...meetupData, volunteers: users })}
+            placeholder="Select volunteers..."
+            excludeUserIds={[
+              ...(meetupData.speakers || []).map(s => s.userId),
+              ...(meetupData.hosts || []).map(h => h.userId)
+            ].filter(Boolean) as string[]}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CreateMeetupDialog({ onSuccess }: { onSuccess?: () => void }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -1066,12 +1239,23 @@ function CreateMeetupDialog({ onSuccess }: { onSuccess?: () => void }) {
     richDescription: '',
     date: '',
     time: '',
+    duration: '',
     type: 'virtual' as 'virtual' | 'in-person' | 'hybrid',
     location: '',
     meetingLink: '',
     meetupUrl: '',
     image: '',
     maxAttendees: ''
+  });
+  
+  const [peopleData, setPeopleData] = useState<{
+    speakers?: any[];
+    hosts?: any[];
+    volunteers?: any[];
+  }>({
+    speakers: [],
+    hosts: [],
+    volunteers: []
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1085,12 +1269,16 @@ function CreateMeetupDialog({ onSuccess }: { onSuccess?: () => void }) {
         richDescription: formData.richDescription || undefined,
         date: formData.date,
         time: formData.time,
+        duration: formData.duration || undefined,
         type: formData.type,
         location: formData.location || undefined,
         meetingLink: formData.meetingLink || undefined,
         meetupUrl: formData.meetupUrl || undefined,
         image: formData.image || undefined,
-        maxAttendees: formData.maxAttendees ? parseInt(formData.maxAttendees) : undefined
+        maxAttendees: formData.maxAttendees ? parseInt(formData.maxAttendees) : undefined,
+        speakers: peopleData.speakers,
+        hosts: peopleData.hosts,
+        volunteers: peopleData.volunteers
       };
       
       await createMeetup(meetupData);
@@ -1105,12 +1293,18 @@ function CreateMeetupDialog({ onSuccess }: { onSuccess?: () => void }) {
         richDescription: '',
         date: '',
         time: '',
+        duration: '',
         type: 'virtual',
         location: '',
         meetingLink: '',
         meetupUrl: '',
         image: '',
         maxAttendees: ''
+      });
+      setPeopleData({
+        speakers: [],
+        hosts: [],
+        volunteers: []
       });
     } catch (error) {
       console.error('Error creating meetup:', error);
@@ -1162,6 +1356,15 @@ function CreateMeetupDialog({ onSuccess }: { onSuccess?: () => void }) {
                 required
               />
             </div>
+          </div>
+          
+          <div className="space-y-2">
+            <Label>Duration</Label>
+            <Input 
+              placeholder="e.g., 2 hours"
+              value={formData.duration}
+              onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
+            />
           </div>
           
           <div className="grid grid-cols-2 gap-4">
@@ -1293,8 +1496,20 @@ function CreateMeetupDialog({ onSuccess }: { onSuccess?: () => void }) {
                 value={formData.meetingLink}
                 onChange={(e) => setFormData({ ...formData, meetingLink: e.target.value })}
               />
+              <p className="text-xs text-muted-foreground">
+                Use meeting link for live events. After the event, replace with YouTube recording link.
+              </p>
             </div>
           )}
+          
+          {/* People Management */}
+          <div className="space-y-4 border-t pt-6">
+            <h3 className="font-semibold text-lg">Event Team</h3>
+            <MeetupPeopleManager
+              meetupData={peopleData}
+              onUpdate={setPeopleData}
+            />
+          </div>
           
           <div className="space-y-2">
             <Label>Short Description *</Label>
@@ -1640,6 +1855,21 @@ function MeetupsManagementTab() {
     }
   };
 
+  const handleDelete = async (meetup: Meetup) => {
+    if (!confirm(`Are you sure you want to delete "${meetup.title}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      await deleteMeetup(meetup.id);
+      toast.success('Meetup deleted successfully!');
+      loadMeetups();
+    } catch (error) {
+      console.error('Error deleting meetup:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to delete meetup');
+    }
+  };
+
   const filteredMeetups = filterStatus === 'all' 
     ? meetups 
     : meetups.filter(m => m.status === filterStatus);
@@ -1811,6 +2041,15 @@ function MeetupsManagementTab() {
                     >
                       <Eye className="h-4 w-4" />
                       View
+                    </Button>
+                    <Button 
+                      variant="destructive" 
+                      size="sm" 
+                      className="gap-1"
+                      onClick={() => handleDelete(meetup)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Delete
                     </Button>
                   </div>
                 </div>

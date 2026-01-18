@@ -1,0 +1,1 @@
+"Do not automatically generate markdown files (like analysis.md or plan.md) unless I specifically request it. Only provide code changes and necessary terminal commands."

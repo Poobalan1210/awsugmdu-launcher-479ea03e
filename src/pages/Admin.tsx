@@ -20,11 +20,11 @@ import {
   Rocket, ExternalLink, MessageSquare, Award, Link2,
   Copy, Mail, Edit, Trash2, Eye, FileText, User, Video,
   Upload, X, UserPlus, Check, ChevronDown, GraduationCap,
-  Trophy, ListTodo, ClipboardCheck, Target, Shield, UserCog, Medal
+  Trophy, ListTodo, ClipboardCheck, Target, Shield, UserCog, Medal, Github
 } from 'lucide-react';
 import { mockSprints, mockMeetups, currentUser, Submission, generateSpeakerInviteLink, Sprint, Session, SessionPerson, User as UserType, predefinedTasks, mockColleges, CollegeTask, College, getTaskById, getUserByIdAsync, communityRoles, mockUserRoles, CommunityRole, UserRoleAssignment, PointActivity, mockPointActivities, Meetup, mockBadges, Badge as BadgeType, BadgeAward, mockBadgeAwards, BadgeCriteriaType, criteriaTypeLabels, BadgeCriteria } from '@/data/mockData';
 import { createMeetup, updateMeetup, publishMeetup, getMeetups, CreateMeetupData, UpdateMeetupData, deleteMeetup } from '@/lib/meetups';
-import { createSprint, addSession, getSprints, deleteSprint, deleteSession, CreateSprintData, CreateSessionData } from '@/lib/sprints';
+import { createSprint, addSession, getSprints, deleteSprint, deleteSession, CreateSprintData, CreateSessionData, reviewSubmission } from '@/lib/sprints';
 import { uploadFileToS3 } from '@/lib/s3Upload';
 import { getAllUsers } from '@/lib/userProfile';
 import { Progress } from '@/components/ui/progress';
@@ -66,24 +66,54 @@ function SubmissionReview({ submission, onAction }: {
                   {submission.status}
                 </Badge>
               </div>
-              <p className="text-sm text-muted-foreground mb-3">{submission.description}</p>
-              <div className="flex flex-wrap gap-3 text-sm">
+              
+              {/* Comments */}
+              {submission.comments && (
+                <p className="text-sm text-muted-foreground mb-3">{submission.comments}</p>
+              )}
+              
+              {/* Links */}
+              <div className="flex flex-wrap gap-3 text-sm mb-3">
                 {submission.blogUrl && (
                   <a href={submission.blogUrl} target="_blank" rel="noopener noreferrer" 
                      className="text-primary hover:underline flex items-center gap-1 bg-primary/10 px-2 py-1 rounded">
                     <FileText className="h-3 w-3" />
-                    Blog
+                    AWS Builder Blog
                     <ExternalLink className="h-3 w-3" />
                   </a>
                 )}
-                {submission.repoUrl && (
-                  <a href={submission.repoUrl} target="_blank" rel="noopener noreferrer"
+                {submission.githubUrl && (
+                  <a href={submission.githubUrl} target="_blank" rel="noopener noreferrer"
                      className="text-primary hover:underline flex items-center gap-1 bg-primary/10 px-2 py-1 rounded">
+                    <Github className="h-3 w-3" />
+                    GitHub Repository
                     <ExternalLink className="h-3 w-3" />
-                    Repository
                   </a>
                 )}
               </div>
+              
+              {/* Supporting Documents */}
+              {submission.supportingDocuments && submission.supportingDocuments.length > 0 && (
+                <div className="mb-3">
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Supporting Documents:</p>
+                  <div className="flex flex-wrap gap-2">
+                    {submission.supportingDocuments.map((docUrl, index) => (
+                      <a 
+                        key={index}
+                        href={docUrl} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-xs text-primary hover:underline flex items-center gap-1 bg-muted/50 px-2 py-1 rounded"
+                      >
+                        <FileText className="h-3 w-3" />
+                        Document {index + 1}
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
               <p className="text-xs text-muted-foreground mt-2">
                 Submitted {format(parseISO(submission.submittedAt), 'MMM d, yyyy')}
               </p>
@@ -3642,6 +3672,8 @@ export default function Admin() {
   const [loadingSprints, setLoadingSprints] = useState(false);
   const [allUsers, setAllUsers] = useState<UserType[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
+  const [allSubmissions, setAllSubmissions] = useState<Array<Submission & { sprintTitle: string; sprintId: string }>>([]);
+  const [loadingSubmissions, setLoadingSubmissions] = useState(false);
   const isAdmin = currentUser.role === 'organiser';
   const isSpeaker = currentUser.role === 'speaker';
 
@@ -3668,10 +3700,20 @@ export default function Admin() {
     try {
       const fetchedSprints = await getSprints();
       setSprints(fetchedSprints);
+      
+      // Extract all submissions from sprints
+      const submissions = fetchedSprints.flatMap(s => 
+        (s.submissions || []).map(sub => ({ ...sub, sprintTitle: s.title, sprintId: s.id }))
+      );
+      setAllSubmissions(submissions);
     } catch (error) {
       console.error('Error fetching sprints:', error);
       // Fallback to mock data if API fails
       setSprints(mockSprints);
+      const submissions = mockSprints.flatMap(s => 
+        s.submissions.map(sub => ({ ...sub, sprintTitle: s.title, sprintId: s.id }))
+      );
+      setAllSubmissions(submissions);
     } finally {
       setLoadingSprints(false);
     }
@@ -3716,6 +3758,13 @@ export default function Admin() {
     }
   }, [isAdmin, activeTab]);
 
+  // Load submissions when submissions tab is active
+  useEffect(() => {
+    if (isAdmin && activeTab === 'submissions') {
+      fetchSprints(); // Fetch sprints to get submissions
+    }
+  }, [isAdmin, activeTab]);
+
   // Load users when component mounts
   useEffect(() => {
     if (isAdmin) {
@@ -3723,8 +3772,24 @@ export default function Admin() {
     }
   }, [isAdmin]);
 
-  const handleSubmissionAction = (submissionId: string, action: 'approve' | 'reject', points?: number, feedback?: string) => {
-    toast.success(`Submission ${action}d${points ? ` with ${points} points` : ''}`);
+  const handleSubmissionAction = async (submissionId: string, sprintId: string, action: 'approve' | 'reject', points?: number, feedback?: string) => {
+    try {
+      await reviewSubmission(sprintId, {
+        submissionId,
+        status: action === 'approve' ? 'approved' : 'rejected',
+        points: action === 'approve' ? points : 0,
+        feedback,
+        reviewedBy: currentUser.id
+      });
+      
+      toast.success(`Submission ${action}d${points ? ` with ${points} points` : ''}`);
+      
+      // Refresh submissions
+      fetchSprints();
+    } catch (error) {
+      console.error('Error reviewing submission:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to review submission');
+    }
   };
 
   if (!isAdmin && !isSpeaker) {
@@ -3845,7 +3910,7 @@ export default function Admin() {
                       <SubmissionReview 
                         key={sub.id} 
                         submission={sub} 
-                        onAction={(action, points, feedback) => handleSubmissionAction(sub.id, action, points, feedback)}
+                        onAction={(action, points, feedback) => handleSubmissionAction(sub.id, sub.sprintId, action, points, feedback)}
                       />
                     ))
                   )}

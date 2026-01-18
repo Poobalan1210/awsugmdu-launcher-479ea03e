@@ -16,17 +16,20 @@ import {
   Rocket, Calendar, Users, Github, MessageSquare, 
   Video, Send, ThumbsUp, Clock, ExternalLink,
   ChevronRight, ChevronDown, Linkedin, User,
-  CheckCircle, Image, FileText, PlayCircle, Link2, Youtube
+  CheckCircle, Image, FileText, PlayCircle, Link2, Youtube,
+  Upload, X
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
 import { mockForumPosts, Sprint, Session, currentUser, getUserByIdAsync, Meetup, User as UserType } from '@/data/mockData';
-import { getSprints, getSprint, registerForSprint, registerForSession } from '@/lib/sprints';
+import { getSprints, getSprint, registerForSprint, registerForSession, submitWork } from '@/lib/sprints';
 import { getMeetupsBySprint, registerForMeetup } from '@/lib/meetups';
 import { getAllUsers } from '@/lib/userProfile';
+import { uploadFileToS3 } from '@/lib/s3Upload';
 import { format, parseISO, isPast } from 'date-fns';
 import { marked } from 'marked';
 import { useAuth } from '@/contexts/AuthContext';
+import { DiscussionForum } from '@/components/DiscussionForum';
 
 // Helper to parse markdown or HTML content
 function parseContent(content: string): string {
@@ -739,6 +742,284 @@ function MeetupSessionCard({ meetup, isExpanded, onToggle }: {
   );
 }
 
+function SubmitWorkForm({ sprint, onSuccess }: { sprint: Sprint; onSuccess?: () => void }) {
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(false);
+  const [blogUrl, setBlogUrl] = useState('');
+  const [githubUrl, setGithubUrl] = useState('');
+  const [comments, setComments] = useState('');
+  const [supportingFiles, setSupportingFiles] = useState<File[]>([]);
+  const [uploadingFiles, setUploadingFiles] = useState(false);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const newFiles = Array.from(e.target.files);
+      setSupportingFiles(prev => [...prev, ...newFiles]);
+    }
+  };
+
+  const removeFile = (index: number) => {
+    setSupportingFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!user) {
+      toast.error('Please log in to submit work');
+      return;
+    }
+
+    // Validate AWS Builder Center URL
+    if (blogUrl) {
+      const builderUrlPattern = /^https:\/\/builder\.aws\.com\/content\/[a-zA-Z0-9]+\/.+$/;
+      if (!builderUrlPattern.test(blogUrl)) {
+        toast.error('Please provide a valid AWS Builder Center URL (e.g., https://builder.aws.com/content/...)');
+        return;
+      }
+    }
+
+    // Validate GitHub URL
+    if (githubUrl) {
+      const githubUrlPattern = /^https:\/\/(www\.)?github\.com\/.+\/.+$/;
+      if (!githubUrlPattern.test(githubUrl)) {
+        toast.error('Please provide a valid GitHub repository URL');
+        return;
+      }
+    }
+
+    // At least one URL is required
+    if (!blogUrl && !githubUrl) {
+      toast.error('Please provide at least one of: AWS Builder Center blog URL or GitHub repository URL');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Upload supporting documents if any
+      let uploadedDocUrls: string[] = [];
+      if (supportingFiles.length > 0) {
+        setUploadingFiles(true);
+        try {
+          uploadedDocUrls = await Promise.all(
+            supportingFiles.map(file => uploadFileToS3(file, 'meetup-posters'))
+          );
+          toast.success(`Uploaded ${supportingFiles.length} supporting document(s)`);
+        } catch (error) {
+          console.error('Error uploading files:', error);
+          toast.error('Failed to upload some files. Continuing with submission...');
+        } finally {
+          setUploadingFiles(false);
+        }
+      }
+
+      // Submit work
+      await submitWork(sprint.id, {
+        userId: user.id,
+        userName: user.name,
+        userAvatar: user.avatar,
+        blogUrl: blogUrl || undefined,
+        githubUrl: githubUrl || undefined,
+        comments: comments || undefined,
+        supportingDocuments: uploadedDocUrls.length > 0 ? uploadedDocUrls : undefined,
+      });
+
+      toast.success('Work submitted successfully! Awaiting review.');
+      
+      // Reset form
+      setBlogUrl('');
+      setGithubUrl('');
+      setComments('');
+      setSupportingFiles([]);
+      
+      if (onSuccess) {
+        onSuccess();
+      }
+    } catch (error) {
+      console.error('Submission error:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to submit work');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Card className="glass-card">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Send className="h-5 w-5 text-primary" />
+          Submit Your Work
+        </CardTitle>
+        <CardDescription>
+          Share your AWS Builder Center blog post and/or GitHub repository to earn points
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="space-y-2">
+            <Label htmlFor="blog-url">
+              AWS Builder Center Blog URL <span className="text-muted-foreground text-xs">(Optional)</span>
+            </Label>
+            <Input 
+              id="blog-url" 
+              type="url" 
+              placeholder="https://builder.aws.com/content/..." 
+              value={blogUrl}
+              onChange={(e) => setBlogUrl(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Share your learning journey through an AWS Builder Center blog post
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="github-url">
+              GitHub Repository URL <span className="text-muted-foreground text-xs">(Optional)</span>
+            </Label>
+            <Input 
+              id="github-url" 
+              type="url" 
+              placeholder="https://github.com/username/project" 
+              value={githubUrl}
+              onChange={(e) => setGithubUrl(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Link to your project repository
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="supporting-docs">
+              Supporting Documents <span className="text-muted-foreground text-xs">(Optional)</span>
+            </Label>
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Input 
+                  id="supporting-docs"
+                  type="file"
+                  multiple
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => document.getElementById('supporting-docs')?.click()}
+                  className="gap-2"
+                >
+                  <Upload className="h-4 w-4" />
+                  Upload Files
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  Screenshots, diagrams, or other supporting materials
+                </span>
+              </div>
+              
+              {supportingFiles.length > 0 && (
+                <div className="space-y-2">
+                  {supportingFiles.map((file, index) => (
+                    <div key={index} className="flex items-center justify-between p-2 rounded-lg bg-muted/50">
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-sm">{file.name}</span>
+                        <span className="text-xs text-muted-foreground">
+                          ({(file.size / 1024).toFixed(1)} KB)
+                        </span>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeFile(index)}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="comments">Comments</Label>
+            <Textarea 
+              id="comments" 
+              placeholder="Tell us about what you built and learned..."
+              rows={4}
+              value={comments}
+              onChange={(e) => setComments(e.target.value)}
+            />
+          </div>
+
+          <Button type="submit" className="w-full" disabled={loading || uploadingFiles}>
+            {loading || uploadingFiles ? (
+              <>
+                <Clock className="h-4 w-4 mr-2 animate-spin" />
+                {uploadingFiles ? 'Uploading files...' : 'Submitting...'}
+              </>
+            ) : (
+              <>
+                <Send className="h-4 w-4 mr-2" />
+                Submit for Review
+              </>
+            )}
+          </Button>
+        </form>
+
+        {/* Past Submissions */}
+        {sprint.submissions && sprint.submissions.length > 0 && (
+          <div className="mt-8 pt-8 border-t">
+            <h3 className="font-semibold mb-4">Community Submissions</h3>
+            <div className="space-y-3">
+              {sprint.submissions.map((sub) => (
+                <div key={sub.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+                  <div className="flex items-center gap-3">
+                    <Avatar className="h-8 w-8">
+                      <AvatarImage src={sub.userAvatar} />
+                      <AvatarFallback>{sub.userName.charAt(0)}</AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <p className="font-medium text-sm">{sub.userName}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {format(parseISO(sub.submittedAt), 'MMM d, yyyy')}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {sub.blogUrl && (
+                      <a 
+                        href={sub.blogUrl} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        <FileText className="h-4 w-4" />
+                      </a>
+                    )}
+                    {sub.githubUrl && (
+                      <a 
+                        href={sub.githubUrl} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        <Github className="h-4 w-4" />
+                      </a>
+                    )}
+                    <Badge variant={sub.status === 'approved' ? 'default' : 'secondary'}>
+                      {sub.status === 'approved' ? `+${sub.points} pts` : sub.status}
+                    </Badge>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 function JoinSprintDialog({ sprint, open, onOpenChange, onSuccess }: { 
   sprint: Sprint; 
@@ -891,7 +1172,7 @@ function JoinSprintDialog({ sprint, open, onOpenChange, onSuccess }: {
   );
 }
 
-function SprintDetail({ sprint: initialSprint, onBack }: { sprint: Sprint; onBack: () => void }) {
+function SprintDetail({ sprint: initialSprint, onBack, defaultTab = 'sessions' }: { sprint: Sprint; onBack: () => void; defaultTab?: string }) {
   const { user, isAuthenticated } = useAuth();
   const forumPosts = mockForumPosts.filter((p) => p.sprintId === initialSprint.id);
   const [expandedSession, setExpandedSession] = useState<string | null>(null);
@@ -990,7 +1271,7 @@ function SprintDetail({ sprint: initialSprint, onBack }: { sprint: Sprint; onBac
         onSuccess={refreshSprint}
       />
 
-      <Tabs defaultValue="sessions" className="space-y-6">
+      <Tabs defaultValue={defaultTab} className="space-y-6">
         <TabsList className="grid w-full grid-cols-3 max-w-lg">
           <TabsTrigger value="sessions">Sessions</TabsTrigger>
           <TabsTrigger value="forum">Discussion</TabsTrigger>
@@ -1108,119 +1389,7 @@ function SprintDetail({ sprint: initialSprint, onBack }: { sprint: Sprint; onBac
               </CardContent>
             </Card>
           ) : (
-            <Card className="glass-card">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <MessageSquare className="h-5 w-5 text-primary" />
-                  Sprint Discussion Forum
-                </CardTitle>
-                <CardDescription>
-                  Ask questions, share learnings, and help fellow participants
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-              {/* New Post Form */}
-              <div className="mb-6 p-4 rounded-lg bg-muted/50">
-                <div className="flex gap-4">
-                  <Avatar className="h-10 w-10">
-                    <AvatarImage src={user?.avatar} />
-                    <AvatarFallback>{user?.name?.charAt(0) || 'U'}</AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1 space-y-3">
-                    <Input placeholder="Post title..." />
-                    <Textarea placeholder="Share your thoughts or ask a question..." rows={3} />
-                    <Button size="sm">
-                      <Send className="h-4 w-4 mr-2" />
-                      Post
-                    </Button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Posts */}
-              <div className="space-y-4">
-                {forumPosts.map((post) => (
-                  <Card key={post.id} className="border">
-                    <CardContent className="p-4">
-                      <div className="flex gap-4">
-                        <Avatar className="h-10 w-10">
-                          <AvatarImage src={post.userAvatar} />
-                          <AvatarFallback>{post.userName.charAt(0)}</AvatarFallback>
-                        </Avatar>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="font-semibold">{post.userName}</span>
-                            <span className="text-sm text-muted-foreground">
-                              · {format(parseISO(post.createdAt), 'MMM d')}
-                            </span>
-                          </div>
-                          <h4 className="font-medium mb-2">{post.title}</h4>
-                          <p className="text-sm text-muted-foreground mb-3">{post.content}</p>
-                          <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                            <button className="flex items-center gap-1 hover:text-primary transition-colors">
-                              <ThumbsUp className="h-4 w-4" />
-                              {post.likes}
-                            </button>
-                            <button className="flex items-center gap-1 hover:text-primary transition-colors">
-                              <MessageSquare className="h-4 w-4" />
-                              {post.replies.length} replies
-                            </button>
-                            <button 
-                              className="flex items-center gap-1 hover:text-primary transition-colors"
-                              onClick={() => {
-                                const url = `${window.location.origin}/skill-sprint?post=${post.id}`;
-                                navigator.clipboard.writeText(url);
-                                toast.success('Link copied to clipboard!');
-                              }}
-                            >
-                              <Link2 className="h-4 w-4" />
-                              Share
-                            </button>
-                          </div>
-                          {/* Replies */}
-                          {post.replies.length > 0 && (
-                            <div className="mt-4 pl-4 border-l-2 border-muted space-y-3">
-                              {post.replies.slice(0, 2).map((reply) => (
-                                <div key={reply.id} className="flex gap-3">
-                                  <Avatar className="h-7 w-7">
-                                    <AvatarImage src={reply.userAvatar} />
-                                    <AvatarFallback>{reply.userName.charAt(0)}</AvatarFallback>
-                                  </Avatar>
-                                  <div className="flex-1">
-                                    <div className="flex items-center gap-2 text-sm">
-                                      <span className="font-medium">{reply.userName}</span>
-                                      <span className="text-muted-foreground">· {format(parseISO(reply.createdAt), 'MMM d')}</span>
-                                    </div>
-                                    <p className="text-sm text-muted-foreground">{reply.content}</p>
-                                    <button 
-                                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors mt-1"
-                                      onClick={() => {
-                                        const url = `${window.location.origin}/skill-sprint?reply=${reply.id}`;
-                                        navigator.clipboard.writeText(url);
-                                        toast.success('Link copied to clipboard!');
-                                      }}
-                                    >
-                                      <Link2 className="h-3 w-3" />
-                                      Share
-                                    </button>
-                                  </div>
-                                </div>
-                              ))}
-                              {post.replies.length > 2 && (
-                                <button className="text-sm text-primary hover:underline">
-                                  View all {post.replies.length} replies
-                                </button>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+            <DiscussionForum sprintId={sprint.id} />
           )}
         </TabsContent>
 
@@ -1241,86 +1410,7 @@ function SprintDetail({ sprint: initialSprint, onBack }: { sprint: Sprint; onBac
               </CardContent>
             </Card>
           ) : (
-            <Card className="glass-card">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Send className="h-5 w-5 text-primary" />
-                  Submit Your Work
-                </CardTitle>
-                <CardDescription>
-                  Share your blog post or project repository to earn points
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-              <form className="space-y-6">
-                <div className="space-y-2">
-                  <Label htmlFor="blog-url">Blog Post URL (Optional)</Label>
-                  <Input 
-                    id="blog-url" 
-                    type="url" 
-                    placeholder="https://dev.to/your-post" 
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Share your learning journey through a blog post
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="repo-url">Repository URL (Optional)</Label>
-                  <Input 
-                    id="repo-url" 
-                    type="url" 
-                    placeholder="https://github.com/username/project" 
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Link to your project repository
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="description">Description</Label>
-                  <Textarea 
-                    id="description" 
-                    placeholder="Tell us about what you built and learned..."
-                    rows={4}
-                  />
-                </div>
-
-                <Button type="submit" className="w-full">
-                  <Send className="h-4 w-4 mr-2" />
-                  Submit for Review
-                </Button>
-              </form>
-
-              {/* Past Submissions */}
-              {sprint.submissions.length > 0 && (
-                <div className="mt-8 pt-8 border-t">
-                  <h3 className="font-semibold mb-4">Community Submissions</h3>
-                  <div className="space-y-3">
-                    {sprint.submissions.map((sub) => (
-                      <div key={sub.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-                        <div className="flex items-center gap-3">
-                          <Avatar className="h-8 w-8">
-                            <AvatarImage src={sub.userAvatar} />
-                            <AvatarFallback>{sub.userName.charAt(0)}</AvatarFallback>
-                          </Avatar>
-                          <div>
-                            <p className="font-medium text-sm">{sub.userName}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {format(parseISO(sub.submittedAt), 'MMM d, yyyy')}
-                            </p>
-                          </div>
-                        </div>
-                        <Badge variant={sub.status === 'approved' ? 'default' : 'secondary'}>
-                          {sub.status === 'approved' ? `+${sub.points} pts` : sub.status}
-                        </Badge>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+            <SubmitWorkForm sprint={sprint} onSuccess={refreshSprint} />
           )}
         </TabsContent>
       </Tabs>
@@ -1333,6 +1423,27 @@ export default function SkillSprint() {
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [sprintSessionCounts, setSprintSessionCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('sessions');
+
+  // Handle URL parameters for deep linking to posts/replies
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const sprintId = params.get('sprint');
+
+    if (sprintId) {
+      // Find and select the sprint
+      const sprint = sprints.find(s => s.id === sprintId);
+      if (sprint) {
+        setSelectedSprint(sprint);
+        // Check if we need to show the forum tab
+        const postId = params.get('post');
+        const replyId = params.get('reply');
+        if (postId || replyId) {
+          setActiveTab('forum');
+        }
+      }
+    }
+  }, [sprints]);
 
   // Fetch sprints from API
   useEffect(() => {
@@ -1386,7 +1497,8 @@ export default function SkillSprint() {
               <SprintDetail 
                 key="detail"
                 sprint={selectedSprint} 
-                onBack={() => setSelectedSprint(null)} 
+                onBack={() => setSelectedSprint(null)}
+                defaultTab={activeTab}
               />
             ) : (
               <motion.div

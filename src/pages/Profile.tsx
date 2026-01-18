@@ -15,6 +15,8 @@ import {
   Mic, BookOpen, CheckCircle, Clock, Award, Shield
 } from 'lucide-react';
 import { mockSprints, mockBadges, getUserByIdAsync, mockUsers, mockMeetups, mockColleges, mockUserRoles, communityRoles, CommunityRole, User as UserType } from '@/data/mockData';
+import { getSprints } from '@/lib/sprints';
+import { getUserProfile } from '@/lib/userProfile';
 import { format, parseISO } from 'date-fns';
 import { getMeetups } from '@/lib/meetups';
 import { useQuery } from '@tanstack/react-query';
@@ -25,6 +27,8 @@ export default function Profile() {
   const { user: authUser } = useAuth();
   const [profileUser, setProfileUser] = useState<UserType | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sprints, setSprints] = useState<any[]>([]);
+  const [loadingSprints, setLoadingSprints] = useState(true);
   
   // Fetch meetups from backend
   const { data: allMeetups = [] } = useQuery({
@@ -32,18 +36,63 @@ export default function Profile() {
     queryFn: () => getMeetups(),
   });
 
+  // Fetch sprints from backend
+  useEffect(() => {
+    const fetchSprints = async () => {
+      setLoadingSprints(true);
+      try {
+        const fetchedSprints = await getSprints();
+        setSprints(fetchedSprints);
+      } catch (error) {
+        console.error('Failed to fetch sprints:', error);
+        setSprints(mockSprints);
+      } finally {
+        setLoadingSprints(false);
+      }
+    };
+    fetchSprints();
+  }, []);
+
   // Fetch user data
   useEffect(() => {
     const fetchUser = async () => {
       setLoading(true);
       try {
         if (userId) {
-          // Fetch specific user by ID
-          const user = await getUserByIdAsync(userId);
-          setProfileUser(user || null);
-        } else {
-          // Use authenticated user
-          setProfileUser(authUser);
+          // Fetch specific user by ID from API
+          try {
+            const apiUser = await getUserProfile(userId);
+            // Merge with mock data to fill in missing fields
+            const mockUser = await getUserByIdAsync(userId);
+            setProfileUser({
+              ...mockUser,
+              ...apiUser,
+              id: (apiUser as any).userId || apiUser.id || userId,
+              points: apiUser.points ?? mockUser?.points ?? 0,
+              badges: apiUser.badges || mockUser?.badges || [],
+            });
+          } catch (apiError) {
+            console.error('Failed to fetch user from API, falling back to mock:', apiError);
+            // Fallback to mock data
+            const user = await getUserByIdAsync(userId);
+            setProfileUser(user || null);
+          }
+        } else if (authUser) {
+          // Fetch authenticated user from API to get latest data
+          try {
+            const apiUser = await getUserProfile(authUser.id);
+            // Merge API data with auth context data
+            setProfileUser({
+              ...authUser,
+              ...apiUser,
+              id: (apiUser as any).userId || apiUser.id || authUser.id,
+              points: apiUser.points ?? authUser.points ?? 0,
+              badges: apiUser.badges || authUser.badges || [],
+            });
+          } catch (apiError) {
+            console.error('Failed to fetch auth user from API, using context:', apiError);
+            setProfileUser(authUser);
+          }
         }
       } catch (error) {
         console.error('Failed to fetch user:', error);
@@ -53,7 +102,7 @@ export default function Profile() {
       }
     };
     fetchUser();
-  }, [userId, authUser]);
+  }, [userId, authUser?.id]); // Depend on authUser.id to refetch when it changes
   
   const user = profileUser;
   const isOwnProfile = !userId || (authUser && userId === authUser.id);
@@ -95,11 +144,11 @@ export default function Profile() {
   }
 
   // Calculate activity summary for this user
-  const userSubmissions = mockSprints.flatMap(s => 
+  const userSubmissions = sprints.flatMap(s => 
     s.submissions.filter(sub => sub.userId === user.id)
   );
   
-  const userSprintsParticipated = mockSprints.filter(s => 
+  const userSprintsParticipated = sprints.filter(s => 
     s.registeredUsers.includes(user.id)
   );
 
@@ -176,7 +225,7 @@ export default function Profile() {
     });
 
     // Sprint speaking engagements
-    mockSprints.forEach(sprint => {
+    sprints.forEach(sprint => {
       sprint.sessions.forEach(session => {
         if (session.speakerId === user.id) {
           activities.push({
@@ -228,12 +277,12 @@ export default function Profile() {
     // Blog submissions
     userSubmissions.forEach(submission => {
       if (submission.blogUrl) {
-        const sprint = mockSprints.find(s => s.id === submission.sprintId);
+        const sprint = sprints.find(s => s.id === submission.sprintId);
         activities.push({
           id: `blog-${submission.id}`,
           type: 'blog_submitted',
           title: `Submitted blog for ${sprint?.title || 'Sprint'}`,
-          description: submission.description || 'Blog submission',
+          description: submission.comments || submission.description || 'Blog submission',
           date: submission.submittedAt,
           link: submission.blogUrl,
           icon: <BookOpen className="h-4 w-4" />
@@ -243,7 +292,7 @@ export default function Profile() {
 
     // Approved submissions
     userSubmissions.filter(s => s.status === 'approved' && s.points > 0).forEach(submission => {
-      const sprint = mockSprints.find(s => s.id === submission.sprintId);
+      const sprint = sprints.find(s => s.id === submission.sprintId);
       activities.push({
         id: `submission-${submission.id}`,
         type: 'submission_approved',
@@ -728,7 +777,7 @@ export default function Profile() {
                   {userSubmissions.length > 0 ? (
                     <div className="space-y-4">
                       {userSubmissions.map((submission, index) => {
-                        const sprint = mockSprints.find(s => s.id === submission.sprintId);
+                        const sprint = sprints.find(s => s.id === submission.sprintId);
                         return (
                           <motion.div
                             key={submission.id}
@@ -754,9 +803,11 @@ export default function Profile() {
                                         {format(parseISO(submission.submittedAt), 'MMM d, yyyy')}
                                       </span>
                                     </div>
-                                    <p className="text-sm text-muted-foreground mb-2">
-                                      {submission.description}
-                                    </p>
+                                    {(submission.comments || submission.description) && (
+                                      <p className="text-sm text-muted-foreground mb-2">
+                                        {submission.comments || submission.description}
+                                      </p>
+                                    )}
                                     <div className="flex flex-wrap gap-2">
                                       {submission.blogUrl && (
                                         <a 
@@ -769,9 +820,9 @@ export default function Profile() {
                                           <ExternalLink className="h-3 w-3" />
                                         </a>
                                       )}
-                                      {submission.repoUrl && (
+                                      {(submission.githubUrl || submission.repoUrl) && (
                                         <a 
-                                          href={submission.repoUrl} 
+                                          href={submission.githubUrl || submission.repoUrl} 
                                           target="_blank"
                                           rel="noopener noreferrer"
                                           className="text-sm text-primary hover:underline flex items-center gap-1"
@@ -779,6 +830,11 @@ export default function Profile() {
                                           💻 Repository
                                           <ExternalLink className="h-3 w-3" />
                                         </a>
+                                      )}
+                                      {submission.supportingDocuments && submission.supportingDocuments.length > 0 && (
+                                        <span className="text-sm text-muted-foreground">
+                                          📎 {submission.supportingDocuments.length} document{submission.supportingDocuments.length > 1 ? 's' : ''}
+                                        </span>
                                       )}
                                     </div>
                                   </div>

@@ -507,6 +507,7 @@ resource "aws_lambda_function" "sprints_crud" {
   environment {
     variables = {
       SPRINTS_TABLE_NAME = aws_dynamodb_table.sprints.name
+      USERS_TABLE_NAME   = aws_dynamodb_table.users.name
     }
   }
 
@@ -648,6 +649,24 @@ resource "aws_api_gateway_resource" "sprints_id_submit" {
   rest_api_id = aws_api_gateway_rest_api.api.id
   parent_id   = aws_api_gateway_resource.sprints_id.id
   path_part   = "submit"
+}
+
+resource "aws_api_gateway_resource" "sprints_id_submissions" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  parent_id   = aws_api_gateway_resource.sprints_id.id
+  path_part   = "submissions"
+}
+
+resource "aws_api_gateway_resource" "sprints_id_submissions_submissionid" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  parent_id   = aws_api_gateway_resource.sprints_id_submissions.id
+  path_part   = "{submissionId}"
+}
+
+resource "aws_api_gateway_resource" "sprints_id_submissions_submissionid_review" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  parent_id   = aws_api_gateway_resource.sprints_id_submissions_submissionid.id
+  path_part   = "review"
 }
 
 resource "aws_api_gateway_resource" "sprints_id_forum" {
@@ -947,6 +966,20 @@ resource "aws_api_gateway_method" "sprints_id_submit_post" {
 resource "aws_api_gateway_method" "sprints_id_submit_options" {
   rest_api_id   = aws_api_gateway_rest_api.api.id
   resource_id   = aws_api_gateway_resource.sprints_id_submit.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "sprints_id_submissions_submissionid_review_post" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.sprints_id_submissions_submissionid_review.id
+  http_method   = "POST"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "sprints_id_submissions_submissionid_review_options" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.sprints_id_submissions_submissionid_review.id
   http_method   = "OPTIONS"
   authorization = "NONE"
 }
@@ -1607,6 +1640,58 @@ resource "aws_api_gateway_integration" "sprints_id_submit_options_lambda" {
   uri                     = aws_lambda_function.sprints_crud.invoke_arn
 }
 
+resource "aws_api_gateway_integration" "sprints_id_submissions_submissionid_review_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.sprints_id_submissions_submissionid_review.id
+  http_method = aws_api_gateway_method.sprints_id_submissions_submissionid_review_post.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.sprints_crud.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "sprints_id_submissions_submissionid_review_options_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.sprints_id_submissions_submissionid_review.id
+  http_method = aws_api_gateway_method.sprints_id_submissions_submissionid_review_options.http_method
+
+  type = "MOCK"
+  
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "sprints_id_submissions_submissionid_review_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.sprints_id_submissions_submissionid_review.id
+  http_method = aws_api_gateway_method.sprints_id_submissions_submissionid_review_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin" = true
+  }
+
+  depends_on = [aws_api_gateway_method.sprints_id_submissions_submissionid_review_options]
+}
+
+resource "aws_api_gateway_integration_response" "sprints_id_submissions_submissionid_review_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.sprints_id_submissions_submissionid_review.id
+  http_method = aws_api_gateway_method.sprints_id_submissions_submissionid_review_options.http_method
+  status_code = aws_api_gateway_method_response.sprints_id_submissions_submissionid_review_options_200.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+  }
+
+  depends_on = [aws_api_gateway_integration.sprints_id_submissions_submissionid_review_options_lambda]
+}
+
 resource "aws_api_gateway_integration" "sprints_id_forum_lambda" {
   rest_api_id = aws_api_gateway_rest_api.api.id
   resource_id = aws_api_gateway_resource.sprints_id_forum.id
@@ -1706,6 +1791,10 @@ resource "aws_api_gateway_deployment" "api" {
       aws_api_gateway_integration.sprints_id_sessions_sessionid_register_options_lambda.id,
       aws_lambda_function.sprints_crud.source_code_hash,
       aws_lambda_function.meetups_crud.source_code_hash,
+      aws_api_gateway_integration.discussions_get_lambda.id,
+      aws_api_gateway_integration.discussions_post_lambda.id,
+      aws_api_gateway_integration.discussions_options_lambda.id,
+      aws_lambda_function.discussions_crud.source_code_hash,
     ]))
   }
 
@@ -1742,10 +1831,28 @@ resource "aws_api_gateway_deployment" "api" {
     aws_api_gateway_integration.sprints_id_register_options_lambda,
     aws_api_gateway_integration.sprints_id_submit_lambda,
     aws_api_gateway_integration.sprints_id_submit_options_lambda,
+    aws_api_gateway_integration.sprints_id_submissions_submissionid_review_lambda,
+    aws_api_gateway_integration.sprints_id_submissions_submissionid_review_options_lambda,
     aws_api_gateway_integration.sprints_id_forum_lambda,
     aws_api_gateway_integration.sprints_id_forum_options_lambda,
     aws_api_gateway_integration.sprints_id_forum_postid_reply_lambda,
     aws_api_gateway_integration.sprints_id_forum_postid_reply_options_lambda,
+    aws_api_gateway_integration.discussions_get_lambda,
+    aws_api_gateway_integration.discussions_post_lambda,
+    aws_api_gateway_integration.discussions_options_lambda,
+    aws_api_gateway_integration.discussions_id_get_lambda,
+    aws_api_gateway_integration.discussions_id_put_lambda,
+    aws_api_gateway_integration.discussions_id_delete_lambda,
+    aws_api_gateway_integration.discussions_id_options_lambda,
+    aws_api_gateway_integration.discussions_id_replies_post_lambda,
+    aws_api_gateway_integration.discussions_id_replies_options_lambda,
+    aws_api_gateway_integration.discussions_id_replies_replyid_put_lambda,
+    aws_api_gateway_integration.discussions_id_replies_replyid_delete_lambda,
+    aws_api_gateway_integration.discussions_id_replies_replyid_options_lambda,
+    aws_api_gateway_integration.discussions_id_like_post_lambda,
+    aws_api_gateway_integration.discussions_id_like_options_lambda,
+    aws_api_gateway_integration.discussions_id_replies_like_post_lambda,
+    aws_api_gateway_integration.discussions_id_replies_like_options_lambda,
   ]
 
   rest_api_id = aws_api_gateway_rest_api.api.id

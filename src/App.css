@@ -40,3 +40,18 @@
 .read-the-docs {
   color: #888;
 }
+
+/* Highlight animation for shared posts/replies */
+@keyframes highlight-pulse {
+  0%, 100% {
+    background-color: transparent;
+  }
+  50% {
+    background-color: hsl(var(--primary) / 0.1);
+  }
+}
+
+.highlight-post {
+  animation: highlight-pulse 1.5s ease-in-out 2;
+  border-radius: 0.5rem;
+}

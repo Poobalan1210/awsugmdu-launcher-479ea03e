@@ -89,6 +89,9 @@ exports.handler = async (event) => {
       } else if (method === 'POST' && id && action === 'submit') {
         // POST /sprints/{id}/submit - Submit work for sprint
         return await submitWork(id, event);
+      } else if (method === 'POST' && id && action === 'submissions' && subAction && routeParts[4] === 'review') {
+        // POST /sprints/{id}/submissions/{submissionId}/review - Review submission
+        return await reviewSubmission(id, subAction, event);
       } else if (method === 'POST' && id && action === 'forum') {
         // POST /sprints/{id}/forum - Create forum post
         return await createForumPost(id, event);
@@ -674,12 +677,40 @@ async function submitWork(id, event) {
     userName,
     userAvatar,
     blogUrl,
-    repoUrl,
-    description
+    githubUrl,
+    comments,
+    supportingDocuments
   } = body;
   
   if (!userId || !userName) {
     return createResponse(400, { error: 'Missing required fields: userId, userName' });
+  }
+  
+  // Validate AWS Builder Center blog URL if provided
+  if (blogUrl) {
+    const builderUrlPattern = /^https:\/\/builder\.aws\.com\/content\/[a-zA-Z0-9]+\/.+$/;
+    if (!builderUrlPattern.test(blogUrl)) {
+      return createResponse(400, { 
+        error: 'Invalid blog URL. Please provide a valid AWS Builder Center URL (e.g., https://builder.aws.com/content/...)' 
+      });
+    }
+  }
+  
+  // Validate GitHub URL if provided
+  if (githubUrl) {
+    const githubUrlPattern = /^https:\/\/(www\.)?github\.com\/.+\/.+$/;
+    if (!githubUrlPattern.test(githubUrl)) {
+      return createResponse(400, { 
+        error: 'Invalid GitHub URL. Please provide a valid GitHub repository URL' 
+      });
+    }
+  }
+  
+  // At least one of blogUrl or githubUrl must be provided
+  if (!blogUrl && !githubUrl) {
+    return createResponse(400, { 
+      error: 'Please provide at least one of: AWS Builder Center blog URL or GitHub repository URL' 
+    });
   }
   
   // Check if sprint exists
@@ -709,10 +740,11 @@ async function submitWork(id, event) {
     sprintId: id,
     userId,
     userName,
-    userAvatar: userAvatar || undefined,
-    blogUrl: blogUrl || undefined,
-    repoUrl: repoUrl || undefined,
-    description: description || undefined,
+    ...(userAvatar && { userAvatar }),
+    ...(blogUrl && { blogUrl }),
+    ...(githubUrl && { githubUrl }),
+    ...(comments && { comments }),
+    ...(supportingDocuments && supportingDocuments.length > 0 && { supportingDocuments }),
     submittedAt: new Date().toISOString(),
     points: 0,
     status: 'pending'
@@ -738,6 +770,113 @@ async function submitWork(id, event) {
   }));
   
   return createResponse(201, { sprint: updated.Item, submission: newSubmission });
+}
+
+// Review submission
+async function reviewSubmission(sprintId, submissionId, event) {
+  const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
+  
+  const {
+    status,
+    points,
+    feedback,
+    reviewedBy
+  } = body;
+  
+  if (!status || !reviewedBy) {
+    return createResponse(400, { error: 'Missing required fields: status, reviewedBy' });
+  }
+  
+  if (!['approved', 'rejected'].includes(status)) {
+    return createResponse(400, { error: 'Status must be either "approved" or "rejected"' });
+  }
+  
+  // Check if sprint exists
+  const existing = await docClient.send(new GetCommand({
+    TableName: SPRINTS_TABLE,
+    Key: { id: sprintId }
+  }));
+  
+  if (!existing.Item) {
+    return createResponse(404, { error: 'Sprint not found' });
+  }
+  
+  const sprint = existing.Item;
+  const submissions = sprint.submissions || [];
+  
+  // Find submission
+  const submissionIndex = submissions.findIndex(s => s.id === submissionId);
+  if (submissionIndex === -1) {
+    return createResponse(404, { error: 'Submission not found' });
+  }
+  
+  const submission = submissions[submissionIndex];
+  
+  // Update submission
+  const updatedSubmission = {
+    ...submission,
+    status,
+    points: status === 'approved' ? (points || 0) : 0,
+    ...(feedback && { feedback }),
+    reviewedBy,
+    reviewedAt: new Date().toISOString()
+  };
+  
+  submissions[submissionIndex] = updatedSubmission;
+  
+  await docClient.send(new UpdateCommand({
+    TableName: SPRINTS_TABLE,
+    Key: { id: sprintId },
+    UpdateExpression: 'SET submissions = :submissions, updatedAt = :updatedAt',
+    ExpressionAttributeValues: {
+      ':submissions': submissions,
+      ':updatedAt': new Date().toISOString()
+    }
+  }));
+  
+  // If approved, update user's points
+  if (status === 'approved' && points > 0) {
+    const USERS_TABLE = process.env.USERS_TABLE_NAME || 'awsug-users';
+    
+    try {
+      // Get user by userId (the primary key in users table)
+      const userResult = await docClient.send(new GetCommand({
+        TableName: USERS_TABLE,
+        Key: { userId: submission.userId }
+      }));
+      
+      if (userResult.Item) {
+        const currentPoints = userResult.Item.points || 0;
+        const newPoints = currentPoints + points;
+        
+        // Update user's points
+        await docClient.send(new UpdateCommand({
+          TableName: USERS_TABLE,
+          Key: { userId: userResult.Item.userId },
+          UpdateExpression: 'SET points = :points, updatedAt = :updatedAt',
+          ExpressionAttributeValues: {
+            ':points': newPoints,
+            ':updatedAt': new Date().toISOString()
+          }
+        }));
+        
+        console.log(`Updated user ${userResult.Item.userId} points from ${currentPoints} to ${newPoints}`);
+      } else {
+        console.log(`User not found with userId: ${submission.userId}`);
+      }
+    } catch (error) {
+      console.error('Error updating user points:', error);
+      // Don't fail the whole operation if points update fails
+    }
+  }
+  
+  // Fetch updated sprint
+  const updated = await docClient.send(new GetCommand({
+    TableName: SPRINTS_TABLE,
+    Key: { id: sprintId }
+  }));
+  
+  return createResponse(200, { sprint: updated.Item, submission: updatedSubmission });
 }
 
 // Create forum post

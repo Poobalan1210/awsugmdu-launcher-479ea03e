@@ -184,8 +184,9 @@ export interface Submission {
   userName: string;
   userAvatar?: string;
   blogUrl?: string;
-  repoUrl?: string;
-  description?: string;
+  githubUrl?: string;
+  comments?: string;
+  supportingDocuments?: string[];
   submittedAt: string;
   points: number;
   status: 'pending' | 'approved' | 'rejected';

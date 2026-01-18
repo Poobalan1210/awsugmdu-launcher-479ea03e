@@ -87,8 +87,9 @@ export interface SubmitWorkData {
   userName: string;
   userAvatar?: string;
   blogUrl?: string;
-  repoUrl?: string;
-  description?: string;
+  githubUrl?: string;
+  comments?: string;
+  supportingDocuments?: string[];
 }
 
 export interface SubmitWorkResponse {
@@ -155,6 +156,27 @@ export async function deleteSession(sprintId: string, sessionId: string): Promis
 
 export async function submitWork(sprintId: string, data: SubmitWorkData): Promise<SubmitWorkResponse> {
   const response = await callApi<SubmitWorkResponse>(`/sprints/${sprintId}/submit`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+  return response;
+}
+
+export interface ReviewSubmissionData {
+  submissionId: string;
+  status: 'approved' | 'rejected';
+  points?: number;
+  feedback?: string;
+  reviewedBy: string;
+}
+
+export interface ReviewSubmissionResponse {
+  sprint: Sprint;
+  submission: Submission;
+}
+
+export async function reviewSubmission(sprintId: string, data: ReviewSubmissionData): Promise<ReviewSubmissionResponse> {
+  const response = await callApi<ReviewSubmissionResponse>(`/sprints/${sprintId}/submissions/${data.submissionId}/review`, {
     method: 'POST',
     body: JSON.stringify(data),
   });

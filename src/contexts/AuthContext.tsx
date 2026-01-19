@@ -25,6 +25,7 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   resendConfirmationCode: (email: string) => Promise<void>;
   uploadProfilePhoto: (file: File, userId: string) => Promise<string>;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -227,6 +228,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const refreshUser = async () => {
+    try {
+      const currentUser = await getCurrentUser();
+      const email = currentUser.signInDetails?.loginId || '';
+      const userId = currentUser.userId;
+      const profile = await fetchUserProfile(userId, email);
+      setUser(profile);
+    } catch (error) {
+      console.error('Failed to refresh user:', error);
+    }
+  };
+
   const value: AuthContextType = {
     user,
     isLoading,
@@ -237,6 +250,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     signOut,
     resendConfirmationCode,
     uploadProfilePhoto,
+    refreshUser,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -1795,6 +1795,10 @@ resource "aws_api_gateway_deployment" "api" {
       aws_api_gateway_integration.discussions_post_lambda.id,
       aws_api_gateway_integration.discussions_options_lambda.id,
       aws_lambda_function.discussions_crud.source_code_hash,
+      aws_api_gateway_integration.store_items_get_lambda.id,
+      aws_api_gateway_integration.store_items_post_lambda.id,
+      aws_api_gateway_integration.store_orders_get_lambda.id,
+      aws_lambda_function.store_crud.source_code_hash,
     ]))
   }
 
@@ -1853,6 +1857,24 @@ resource "aws_api_gateway_deployment" "api" {
     aws_api_gateway_integration.discussions_id_like_options_lambda,
     aws_api_gateway_integration.discussions_id_replies_like_post_lambda,
     aws_api_gateway_integration.discussions_id_replies_like_options_lambda,
+    aws_api_gateway_integration.store_items_get_lambda,
+    aws_api_gateway_integration.store_items_post_lambda,
+    aws_api_gateway_integration.store_items_options_lambda,
+    aws_api_gateway_integration.store_items_id_get_lambda,
+    aws_api_gateway_integration.store_items_id_put_lambda,
+    aws_api_gateway_integration.store_items_id_delete_lambda,
+    aws_api_gateway_integration.store_items_id_options_lambda,
+    aws_api_gateway_integration.store_items_id_redeem_post_lambda,
+    aws_api_gateway_integration.store_items_id_redeem_options_lambda,
+    aws_api_gateway_integration.store_orders_get_lambda,
+    aws_api_gateway_integration.store_orders_post_lambda,
+    aws_api_gateway_integration.store_orders_options_lambda,
+    aws_api_gateway_integration.store_orders_id_get_lambda,
+    aws_api_gateway_integration.store_orders_id_options_lambda,
+    aws_api_gateway_integration.store_orders_id_status_patch_lambda,
+    aws_api_gateway_integration.store_orders_id_status_options_lambda,
+    aws_api_gateway_integration.store_orders_id_assign_code_patch_lambda,
+    aws_api_gateway_integration.store_orders_id_assign_code_options_lambda,
   ]
 
   rest_api_id = aws_api_gateway_rest_api.api.id

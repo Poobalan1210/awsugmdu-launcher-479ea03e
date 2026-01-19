@@ -20,7 +20,7 @@ import {
   Rocket, ExternalLink, MessageSquare, Award, Link2,
   Copy, Mail, Edit, Trash2, Eye, FileText, User, Video,
   Upload, X, UserPlus, Check, ChevronDown, GraduationCap,
-  Trophy, ListTodo, ClipboardCheck, Target, Shield, UserCog, Medal, Github
+  Trophy, ListTodo, ClipboardCheck, Target, Shield, UserCog, Medal, Github, ShoppingBag
 } from 'lucide-react';
 import { mockSprints, mockMeetups, currentUser, Submission, generateSpeakerInviteLink, Sprint, Session, SessionPerson, User as UserType, predefinedTasks, mockColleges, CollegeTask, College, getTaskById, getUserByIdAsync, communityRoles, mockUserRoles, CommunityRole, UserRoleAssignment, PointActivity, mockPointActivities, Meetup, mockBadges, Badge as BadgeType, BadgeAward, mockBadgeAwards, BadgeCriteriaType, criteriaTypeLabels, BadgeCriteria } from '@/data/mockData';
 import { createMeetup, updateMeetup, publishMeetup, getMeetups, CreateMeetupData, UpdateMeetupData, deleteMeetup } from '@/lib/meetups';
@@ -32,6 +32,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { format, parseISO } from 'date-fns';
 import { toast } from 'sonner';
+import StoreManagement from '@/components/admin/StoreManagement';
 
 // Get all submissions across sprints
 const allSubmissions = mockSprints.flatMap(s => 
@@ -3872,6 +3873,10 @@ export default function Admin() {
                     <Calendar className="h-4 w-4" />
                     Meetups
                   </TabsTrigger>
+                  <TabsTrigger value="store" className="gap-2">
+                    <ShoppingBag className="h-4 w-4" />
+                    Store
+                  </TabsTrigger>
                   <TabsTrigger value="members" className="gap-2">
                     <Users className="h-4 w-4" />
                     Members
@@ -4013,6 +4018,9 @@ export default function Admin() {
                   <MeetupsManagementTab allUsers={allUsers} />
                 </TabsContent>
 
+                <TabsContent value="store">
+                  <StoreManagement />
+                </TabsContent>
 
                 <TabsContent value="members">
                   <MembersTab allUsers={allUsers} />

@@ -122,6 +122,7 @@ async function listMeetups(event) {
   const queryParams = event.queryStringParameters || {};
   const status = queryParams.status; // 'draft', 'upcoming', 'completed'
   const sprintId = queryParams.sprintId; // Filter by sprint
+  const certificationGroupId = queryParams.certificationGroupId; // Filter by certification group
   
   let meetups;
   
@@ -133,6 +134,22 @@ async function listMeetups(event) {
       KeyConditionExpression: 'sprintId = :sprintId',
       ExpressionAttributeValues: {
         ':sprintId': sprintId
+      }
+    }));
+    meetups = result.Items || [];
+    
+    // Further filter by status if provided
+    if (status) {
+      meetups = meetups.filter(m => m.status === status);
+    }
+  } else if (certificationGroupId) {
+    // Query by certificationGroupId using GSI
+    const result = await docClient.send(new QueryCommand({
+      TableName: MEETUPS_TABLE,
+      IndexName: 'certificationGroupId-index',
+      KeyConditionExpression: 'certificationGroupId = :certificationGroupId',
+      ExpressionAttributeValues: {
+        ':certificationGroupId': certificationGroupId
       }
     }));
     meetups = result.Items || [];
@@ -229,7 +246,8 @@ async function createMeetup(event) {
     speakers,
     hosts,
     volunteers,
-    sprintId
+    sprintId,
+    certificationGroupId
   } = body;
   
   // Validation
@@ -243,6 +261,13 @@ async function createMeetup(event) {
   if (type === 'skill-sprint' && !sprintId) {
     return createResponse(400, { 
       error: 'Sprint ID is required when type is skill-sprint' 
+    });
+  }
+  
+  // Validate certification group selection if type is certification-circle
+  if (type === 'certification-circle' && !certificationGroupId) {
+    return createResponse(400, { 
+      error: 'Certification Group ID is required when type is certification-circle' 
     });
   }
   
@@ -274,6 +299,7 @@ async function createMeetup(event) {
     maxAttendees: maxAttendees ? parseInt(maxAttendees) : undefined,
     registeredUsers: [],
     ...(type === 'skill-sprint' && sprintId ? { sprintId } : {}),
+    ...(type === 'certification-circle' && certificationGroupId ? { certificationGroupId } : {}),
     speakers: speakers || [],
     hosts: hosts || [],
     volunteers: volunteers || [],
@@ -311,7 +337,7 @@ async function updateMeetup(id, event) {
   const allowedFields = [
     'title', 'description', 'richDescription', 'date', 'time', 'duration', 'type',
     'location', 'meetingLink', 'meetupUrl', 'image', 'maxAttendees',
-    'speakers', 'hosts', 'volunteers', 'sprintId'
+    'speakers', 'hosts', 'volunteers', 'sprintId', 'certificationGroupId'
   ];
   
   allowedFields.forEach(field => {
@@ -330,6 +356,16 @@ async function updateMeetup(id, event) {
     // Add or update sprintId
     updateExpressions.push('sprintId = :sprintId');
     expressionAttributeValues[':sprintId'] = body.sprintId;
+  }
+  
+  // Handle certificationGroupId - add it if provided, remove it if explicitly set to null
+  if (body.certificationGroupId === null) {
+    // Remove the certificationGroupId attribute
+    updateExpressions.push('REMOVE certificationGroupId');
+  } else if (body.certificationGroupId !== undefined) {
+    // Add or update certificationGroupId
+    updateExpressions.push('certificationGroupId = :certificationGroupId');
+    expressionAttributeValues[':certificationGroupId'] = body.certificationGroupId;
   }
   
   // Always update updatedAt

@@ -20,6 +20,7 @@ export interface CreateMeetupData {
   hosts?: any[];
   volunteers?: any[];
   sprintId?: string;
+  certificationGroupId?: string;
 }
 
 export interface UpdateMeetupData extends Partial<CreateMeetupData> {
@@ -114,6 +115,16 @@ export async function getMeetupsBySprint(sprintId: string): Promise<Meetup[]> {
     return response.meetups || [];
   } catch (error) {
     console.error('Error fetching sprint meetups:', error);
+    return [];
+  }
+}
+
+export async function getMeetupsByCertificationGroup(certificationGroupId: string): Promise<Meetup[]> {
+  try {
+    const response = await callApi<MeetupsResponse>(`/meetups?certificationGroupId=${certificationGroupId}`);
+    return response.meetups || [];
+  } catch (error) {
+    console.error('Error fetching certification group meetups:', error);
     return [];
   }
 }

@@ -1,0 +1,10 @@
+{
+  "name": "certifications-crud",
+  "version": "1.0.0",
+  "description": "Lambda function for certification groups CRUD operations",
+  "main": "index.js",
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.621.0",
+    "@aws-sdk/lib-dynamodb": "^3.621.0"
+  }
+}

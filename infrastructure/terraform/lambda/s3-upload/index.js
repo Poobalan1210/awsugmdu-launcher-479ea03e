@@ -73,12 +73,13 @@ exports.handler = async (event) => {
       : `posters/${timestamp}-${sanitizedFileName}`;
     
     // Generate presigned URL (valid for 5 minutes)
-    // Include ContentType in command so S3 stores it correctly
-    // The presigned URL will enforce this content type
+    // Include ContentType and CacheControl in command so S3 stores it correctly
+    // The presigned URL will enforce these headers
     const command = new PutObjectCommand({
       Bucket: bucketName,
       Key: key,
       ContentType: contentType,
+      CacheControl: 'public, max-age=31536000, immutable', // Cache for 1 year
     });
     
     const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn: 300 });

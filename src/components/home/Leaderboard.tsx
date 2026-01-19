@@ -71,9 +71,9 @@ export function Leaderboard() {
 
   const topUsers = Array.isArray(users) 
     ? users
-        .filter(user => user.rank > 0)
-        .sort((a, b) => a.rank - b.rank)
-        .slice(0, 8)
+        .sort((a, b) => (b.points || 0) - (a.points || 0)) // Sort by points descending
+        .slice(0, 10) // Show top 10 users
+        .map((user, index) => ({ ...user, rank: index + 1 })) // Assign ranks based on position
     : [];
 
   if (loading) {
@@ -134,40 +134,46 @@ export function Leaderboard() {
           </div>
         </CardHeader>
         <CardContent className="p-4">
-          <motion.div
-            className="space-y-2"
-            variants={containerVariants}
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true }}
-          >
-            {topUsers.map((user) => (
-              <motion.div key={user.id} variants={itemVariants}>
-                <Link
-                  to={`/profile/${user.id}`}
-                  className={`flex items-center gap-4 p-3 rounded-lg border transition-all hover:scale-[1.02] ${getRankStyle(user.rank)}`}
-                >
-                  <div className="flex items-center justify-center w-8">
-                    {getRankIcon(user.rank)}
-                  </div>
-                  <Avatar className="h-10 w-10 border-2 border-border">
-                    <AvatarImage src={user.avatar} alt={user.name} />
-                    <AvatarFallback>{user.name.charAt(0)}</AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium truncate">{user.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {user.badges.length} badges earned
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-bold text-primary">{user.points.toLocaleString()}</p>
-                    <p className="text-xs text-muted-foreground">points</p>
-                  </div>
-                </Link>
-              </motion.div>
-            ))}
-          </motion.div>
+          {topUsers.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <p>No users found. Start building your community!</p>
+            </div>
+          ) : (
+            <motion.div
+              className="space-y-2"
+              variants={containerVariants}
+              initial="hidden"
+              whileInView="visible"
+              viewport={{ once: true }}
+            >
+              {topUsers.map((user) => (
+                <motion.div key={user.id} variants={itemVariants}>
+                  <Link
+                    to={`/profile/${user.id}`}
+                    className={`flex items-center gap-4 p-3 rounded-lg border transition-all hover:scale-[1.02] ${getRankStyle(user.rank)}`}
+                  >
+                    <div className="flex items-center justify-center w-8">
+                      {getRankIcon(user.rank)}
+                    </div>
+                    <Avatar className="h-10 w-10 border-2 border-border">
+                      <AvatarImage src={user.avatar} alt={user.name} />
+                      <AvatarFallback>{user.name.charAt(0)}</AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium truncate">{user.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {user.badges?.length || 0} badges earned
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-bold text-primary">{(user.points || 0).toLocaleString()}</p>
+                      <p className="text-xs text-muted-foreground">points</p>
+                    </div>
+                  </Link>
+                </motion.div>
+              ))}
+            </motion.div>
+          )}
         </CardContent>
       </Card>
     </motion.div>

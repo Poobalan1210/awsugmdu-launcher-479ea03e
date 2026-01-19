@@ -5,8 +5,10 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { mockEvents, getEventLink } from '@/data/mockData';
 import { format, parseISO, isPast } from 'date-fns';
+import { useState, useEffect } from 'react';
+import { getMeetups } from '@/lib/meetups';
+import { Meetup } from '@/data/mockData';
 
 const getEventTypeBadge = (type: string) => {
   switch (type) {
@@ -16,24 +18,15 @@ const getEventTypeBadge = (type: string) => {
       return <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/30 gap-1"><MapPin className="h-3 w-3" />In-Person</Badge>;
     case 'hybrid':
       return <Badge className="bg-purple-500/10 text-purple-600 border-purple-500/30">Hybrid</Badge>;
+    case 'skill-sprint':
+      return <Badge className="bg-primary/10 text-primary border-primary/30">Skill Sprint</Badge>;
+    case 'certification-circle':
+      return <Badge className="bg-amber-500/10 text-amber-600 border-amber-500/30">Certification</Badge>;
+    case 'college-champ':
+      return <Badge className="bg-pink-500/10 text-pink-600 border-pink-500/30">College Champ</Badge>;
     default:
       return null;
   }
-};
-
-const getCategoryBadge = (category: string) => {
-  const styles: Record<string, string> = {
-    sprint: 'bg-primary/10 text-primary border-primary/30',
-    workshop: 'bg-blue-500/10 text-blue-600 border-blue-500/30',
-    meetup: 'bg-teal-500/10 text-teal-600 border-teal-500/30',
-    certification: 'bg-amber-500/10 text-amber-600 border-amber-500/30',
-    champs: 'bg-pink-500/10 text-pink-600 border-pink-500/30',
-  };
-  return (
-    <Badge className={styles[category] || ''}>
-      {category.charAt(0).toUpperCase() + category.slice(1)}
-    </Badge>
-  );
 };
 
 const cardVariants: Variants = {
@@ -49,9 +42,9 @@ const containerVariants: Variants = {
   }
 };
 
-function EventCard({ event }: { event: typeof mockEvents[0] }) {
+function EventCard({ event }: { event: Meetup }) {
   const eventDate = parseISO(event.date);
-  const isUpcoming = !isPast(eventDate);
+  const isUpcoming = event.status === 'upcoming' || event.status === 'draft';
 
   return (
     <motion.div
@@ -62,7 +55,6 @@ function EventCard({ event }: { event: typeof mockEvents[0] }) {
         <CardContent className="p-5 flex-1 flex flex-col">
           <div className="flex flex-wrap gap-2 mb-3">
             {getEventTypeBadge(event.type)}
-            {getCategoryBadge(event.category)}
           </div>
           <h3 className="font-semibold text-lg mb-2 line-clamp-2">{event.title}</h3>
           <p className="text-sm text-muted-foreground mb-4 line-clamp-2 flex-1">
@@ -84,7 +76,7 @@ function EventCard({ event }: { event: typeof mockEvents[0] }) {
             size="sm"
             asChild
           >
-            <Link to={getEventLink(event)}>
+            <Link to={`/meetups?id=${event.id}`}>
               {isUpcoming ? 'Register Now' : 'View Details'}
               <ExternalLink className="h-4 w-4 ml-2 group-hover:translate-x-1 transition-transform" />
             </Link>
@@ -96,8 +88,49 @@ function EventCard({ event }: { event: typeof mockEvents[0] }) {
 }
 
 export function EventsSection() {
-  const upcomingEvents = mockEvents.filter((e) => !isPast(parseISO(e.date)));
-  const pastEvents = mockEvents.filter((e) => isPast(parseISO(e.date)));
+  const [meetups, setMeetups] = useState<Meetup[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchMeetups = async () => {
+      try {
+        const allMeetups = await getMeetups();
+        setMeetups(allMeetups.filter(m => m.status !== 'draft'));
+      } catch (error) {
+        console.error('Failed to fetch meetups:', error);
+        setMeetups([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchMeetups();
+  }, []);
+
+  const upcomingEvents = meetups.filter((e) => e.status === 'upcoming');
+  const pastEvents = meetups.filter((e) => e.status === 'completed');
+
+  if (loading) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true, margin: "-50px" }}
+        transition={{ duration: 0.5 }}
+      >
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
+            <Calendar className="h-7 w-7 text-primary" />
+            Events & Highlights
+          </h2>
+        </div>
+        <Card className="glass-card">
+          <CardContent className="p-8 text-center">
+            <p className="text-muted-foreground">Loading events...</p>
+          </CardContent>
+        </Card>
+      </motion.div>
+    );
+  }
 
   return (
     <motion.div

@@ -27,12 +27,14 @@ import { createMeetup, updateMeetup, publishMeetup, getMeetups, CreateMeetupData
 import { createSprint, addSession, getSprints, deleteSprint, deleteSession, CreateSprintData, CreateSessionData, reviewSubmission } from '@/lib/sprints';
 import { uploadFileToS3 } from '@/lib/s3Upload';
 import { getAllUsers } from '@/lib/userProfile';
+import { listCertificationGroups, CertificationGroup } from '@/lib/certifications';
 import { Progress } from '@/components/ui/progress';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { format, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 import StoreManagement from '@/components/admin/StoreManagement';
+import CertificationGroupsManagement from '@/components/admin/CertificationGroupsManagement';
 
 // Get all submissions across sprints
 const allSubmissions = mockSprints.flatMap(s => 
@@ -1412,6 +1414,7 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
   const [uploadingImage, setUploadingImage] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [sprints, setSprints] = useState<Sprint[]>([]);
+  const [certificationGroups, setCertificationGroups] = useState<CertificationGroup[]>([]);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -1425,7 +1428,8 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
     meetupUrl: '',
     image: '',
     maxAttendees: '',
-    sprintId: ''
+    sprintId: '',
+    certificationGroupId: ''
   });
   
   const [peopleData, setPeopleData] = useState<{
@@ -1438,10 +1442,11 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
     volunteers: []
   });
 
-  // Load sprints when dialog opens
+  // Load sprints and certification groups when dialog opens
   useEffect(() => {
     if (open) {
       loadSprints();
+      loadCertificationGroups();
     }
   }, [open]);
 
@@ -1454,12 +1459,27 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
     }
   };
 
+  const loadCertificationGroups = async () => {
+    try {
+      const groups = await listCertificationGroups();
+      setCertificationGroups(groups);
+    } catch (error) {
+      console.error('Error loading certification groups:', error);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     // Validate sprint selection if type is skill-sprint
     if (formData.type === 'skill-sprint' && !formData.sprintId) {
       toast.error('Please select a sprint for this session');
+      return;
+    }
+    
+    // Validate certification group selection if type is certification-circle
+    if (formData.type === 'certification-circle' && !formData.certificationGroupId) {
+      toast.error('Please select a certification group for this session');
       return;
     }
     
@@ -1482,7 +1502,8 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
         speakers: peopleData.speakers,
         hosts: peopleData.hosts,
         volunteers: peopleData.volunteers,
-        sprintId: (formData.type === 'skill-sprint' && formData.sprintId) ? formData.sprintId : undefined
+        sprintId: (formData.type === 'skill-sprint' && formData.sprintId) ? formData.sprintId : undefined,
+        certificationGroupId: (formData.type === 'certification-circle' && formData.certificationGroupId) ? formData.certificationGroupId : undefined
       };
       
       await createMeetup(meetupData);
@@ -1504,7 +1525,8 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
         meetupUrl: '',
         image: '',
         maxAttendees: '',
-        sprintId: ''
+        sprintId: '',
+        certificationGroupId: ''
       });
       setPeopleData({
         speakers: [],
@@ -1548,7 +1570,12 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
             <Select 
               value={formData.type}
               onValueChange={(value: 'virtual' | 'in-person' | 'skill-sprint' | 'certification-circle' | 'college-champ') => 
-                setFormData({ ...formData, type: value, sprintId: value !== 'skill-sprint' ? '' : formData.sprintId })
+                setFormData({ 
+                  ...formData, 
+                  type: value, 
+                  sprintId: value !== 'skill-sprint' ? '' : formData.sprintId,
+                  certificationGroupId: value !== 'certification-circle' ? '' : formData.certificationGroupId
+                })
               }
             >
               <SelectTrigger><SelectValue /></SelectTrigger>
@@ -1596,6 +1623,38 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
               {sprints.length === 0 && (
                 <p className="text-xs text-amber-600">
                   ⚠️ No sprints found. Please create a sprint first before adding sprint sessions.
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Certification Group Selection - Only show if type is certification-circle */}
+          {formData.type === 'certification-circle' && (
+            <div className="space-y-2">
+              <Label>Select Certification Group *</Label>
+              <Select 
+                value={formData.certificationGroupId}
+                onValueChange={(value) => setFormData({ ...formData, certificationGroupId: value })}
+                required
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose a certification group..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {certificationGroups.length === 0 ? (
+                    <SelectItem value="none" disabled>No certification groups available</SelectItem>
+                  ) : (
+                    certificationGroups.map((group) => (
+                      <SelectItem key={group.id} value={group.id}>
+                        {group.name} ({group.level})
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+              {certificationGroups.length === 0 && (
+                <p className="text-xs text-amber-600">
+                  ⚠️ No certification groups found. Please create a certification group first.
                 </p>
               )}
             </div>
@@ -3889,6 +3948,10 @@ export default function Admin() {
                     <GraduationCap className="h-4 w-4" />
                     College Champs
                   </TabsTrigger>
+                  <TabsTrigger value="certifications" className="gap-2">
+                    <Award className="h-4 w-4" />
+                    Certifications
+                  </TabsTrigger>
                 </>
               )}
             </TabsList>
@@ -4032,6 +4095,10 @@ export default function Admin() {
 
                 <TabsContent value="college-champs">
                   <CollegeChampsTab />
+                </TabsContent>
+
+                <TabsContent value="certifications">
+                  <CertificationGroupsManagement allUsers={allUsers} />
                 </TabsContent>
               </>
             )}

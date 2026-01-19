@@ -14,6 +14,7 @@ import CollegeChamps from "./pages/CollegeChamps";
 import CertificationCircle from "./pages/CertificationCircle";
 import Store from "./pages/Store";
 import Meetups from "./pages/Meetups";
+import Leaderboard from "./pages/Leaderboard";
 import Admin from "./pages/Admin";
 import SpeakerInvite from "./pages/SpeakerInvite";
 import NotFound from "./pages/NotFound";
@@ -66,6 +67,11 @@ const App = () => (
             <Route path="/meetups" element={
               <ProtectedRoute>
                 <Meetups />
+              </ProtectedRoute>
+            } />
+            <Route path="/leaderboard" element={
+              <ProtectedRoute>
+                <Leaderboard />
               </ProtectedRoute>
             } />
             <Route path="/admin" element={

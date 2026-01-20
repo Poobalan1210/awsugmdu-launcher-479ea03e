@@ -43,13 +43,13 @@ export async function uploadFileToS3(
     });
 
     // Upload file to S3 using presigned URL
-    // Note: Don't set Content-Type header as it's handled by the presigned URL
-    // Setting custom headers can cause CORS issues
+    // Set Content-Type header explicitly
     const uploadResponse = await fetch(presignedUrl, {
       method: 'PUT',
       body: file,
-      // Don't set Content-Type header - let browser set it automatically
-      // or let S3 infer it from the file
+      headers: {
+        'Content-Type': file.type,
+      },
     });
 
     if (!uploadResponse.ok) {

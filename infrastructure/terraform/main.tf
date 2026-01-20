@@ -270,7 +270,7 @@ resource "aws_s3_bucket_cors_configuration" "profile_photos" {
     allowed_headers = ["*"]
     allowed_methods = ["GET", "PUT", "POST", "DELETE", "HEAD"]
     allowed_origins = var.allowed_cors_origins
-    expose_headers  = ["ETag"]
+    expose_headers  = ["ETag", "x-amz-server-side-encryption", "x-amz-request-id", "x-amz-id-2"]
     max_age_seconds = 3000
   }
 }

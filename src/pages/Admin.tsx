@@ -1415,6 +1415,32 @@ function MarkAttendanceDialog({ meetup, onSuccess }: { meetup: Meetup; onSuccess
   const [emailsText, setEmailsText] = useState('');
   const [pointsPerAttendee, setPointsPerAttendee] = useState(50);
   const [results, setResults] = useState<any>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      // Parse CSV - handle both comma and newline separated
+      const emails = text
+        .split(/[\n,]/)
+        .map(line => {
+          // Remove quotes and trim
+          return line.replace(/['"]/g, '').trim();
+        })
+        .filter(email => {
+          // Basic email validation
+          return email.length > 0 && email.includes('@');
+        });
+      
+      setEmailsText(emails.join('\n'));
+      toast.success(`Loaded ${emails.length} email addresses from CSV`);
+    };
+    reader.readAsText(file);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1461,6 +1487,9 @@ function MarkAttendanceDialog({ meetup, onSuccess }: { meetup: Meetup; onSuccess
     setEmailsText('');
     setPointsPerAttendee(50);
     setResults(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
   return (
@@ -1475,12 +1504,45 @@ function MarkAttendanceDialog({ meetup, onSuccess }: { meetup: Meetup; onSuccess
         <DialogHeader>
           <DialogTitle>Mark Attendance - {meetup.title}</DialogTitle>
           <DialogDescription>
-            Enter email addresses of attendees (one per line or comma-separated). Points will be awarded to each attendee.
+            Upload a CSV file or enter email addresses manually. Points will be awarded to each attendee.
           </DialogDescription>
         </DialogHeader>
         
         {!results ? (
           <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label>Upload CSV File</Label>
+              <div className="flex gap-2">
+                <Input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".csv,.txt"
+                  onChange={handleFileUpload}
+                  className="flex-1"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  Browse
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                CSV file with email addresses (one per line or comma-separated)
+              </p>
+            </div>
+
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-background px-2 text-muted-foreground">Or enter manually</span>
+              </div>
+            </div>
+
             <div className="space-y-2">
               <Label>Attendee Email Addresses *</Label>
               <Textarea

@@ -296,7 +296,7 @@ export default function Signup() {
         await signIn(formData.email, formData.password);
         
         // Wait for auth session
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 1000));
 
         await createUserProfile({
           userId,
@@ -323,13 +323,8 @@ export default function Signup() {
           description: "Your profile has been created successfully.",
         });
 
-        // Wait a moment for DynamoDB to be consistent
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
-        // Sign out and sign in again to refresh the profile
-        await signOut();
-        await new Promise(resolve => setTimeout(resolve, 500));
-        await signIn(formData.email, formData.password);
+        // Wait for DynamoDB eventual consistency
+        await new Promise(resolve => setTimeout(resolve, 2000));
         
       } catch (profileError: any) {
         console.error('Profile creation failed:', profileError);

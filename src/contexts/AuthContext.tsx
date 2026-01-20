@@ -120,8 +120,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (output.isSignedIn) {
         const currentUser = await getCurrentUser();
         const userId = currentUser.userId;
-        const profile = await fetchUserProfile(userId, email);
-        setUser(profile);
+        
+        // Try to fetch profile, but don't fail if it doesn't exist yet
+        try {
+          const profile = await fetchUserProfile(userId, email);
+          setUser(profile);
+        } catch (error) {
+          console.log('Profile not found during sign-in, will be created shortly');
+          // Set a basic user object temporarily
+          const role = isOrganiserEmail(email) ? 'organiser' : 'member';
+          setUser({
+            id: userId,
+            email: email,
+            name: email.split('@')[0],
+            avatar: '',
+            points: 0,
+            rank: 0,
+            badges: [],
+            joinedDate: new Date().toISOString(),
+            role,
+          } as User);
+        }
       }
     } catch (error: any) {
       console.error('Sign in error:', error);

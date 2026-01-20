@@ -244,7 +244,17 @@ export default function StoreManagement() {
                 <Card key={item.id}>
                   <CardHeader>
                     <div className="flex items-start justify-between">
-                      <div className="text-4xl">{item.image}</div>
+                      <div className="w-16 h-16 flex items-center justify-center bg-gradient-to-br from-purple-500/5 to-blue-500/5 rounded overflow-hidden">
+                        {item.image?.startsWith('http') ? (
+                          <img 
+                            src={item.image} 
+                            alt={item.name}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <span className="text-4xl">{item.image}</span>
+                        )}
+                      </div>
                       <div className="flex gap-2">
                         <Button size="sm" variant="ghost" onClick={() => handleEditItem(item)}>
                           <Edit className="h-4 w-4" />
@@ -443,12 +453,12 @@ export default function StoreManagement() {
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="image">Emoji</Label>
+                <Label htmlFor="image">Image (Emoji or URL)</Label>
                 <Input
                   id="image"
                   value={itemForm.image}
                   onChange={(e) => setItemForm({ ...itemForm, image: e.target.value })}
-                  placeholder="💳"
+                  placeholder="💳 or https://..."
                 />
               </div>
             </div>

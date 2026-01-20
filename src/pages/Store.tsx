@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ShoppingBag, Coins, Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { getStoreItems, redeemStoreItem, type StoreItem } from '@/lib/store';
@@ -19,6 +20,7 @@ export default function Store() {
   const [redeemingItemId, setRedeemingItemId] = useState<string | null>(null);
   const [showRedeemDialog, setShowRedeemDialog] = useState(false);
   const [selectedItem, setSelectedItem] = useState<StoreItem | null>(null);
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [shippingAddress, setShippingAddress] = useState({
     name: '',
     address: '',
@@ -80,6 +82,15 @@ export default function Store() {
       setRedeemingItemId(null);
     }
   };
+
+  // Get unique categories
+  const categories = ['all', ...new Set(storeItems.map(item => item.category || 'general'))];
+  
+  // Filter items by category
+  const filteredItems = categoryFilter === 'all' 
+    ? storeItems 
+    : storeItems.filter(item => (item.category || 'general') === categoryFilter);
+
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
@@ -119,17 +130,44 @@ export default function Store() {
 
         {/* Products */}
         <section className="py-16 container mx-auto px-4">
+          {/* Category Filter */}
+          <div className="mb-6 flex items-center gap-4">
+            <Label htmlFor="category-filter" className="text-sm font-medium">Filter by Category:</Label>
+            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+              <SelectTrigger id="category-filter" className="w-[200px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {categories.map((category) => (
+                  <SelectItem key={category} value={category}>
+                    {category === 'all' ? 'All Items' : category.charAt(0).toUpperCase() + category.slice(1)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           {loading ? (
             <div className="flex justify-center items-center py-12">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
           ) : (
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {storeItems.map((item) => (
+              {filteredItems.map((item) => (
                 <Card key={item.id} className="glass-card hover-lift overflow-hidden">
                   <CardContent className="p-0">
-                    <div className="h-40 bg-muted/50 flex items-center justify-center text-6xl">
-                      {item.image}
+                    <div className="h-40 bg-gradient-to-br from-purple-500/5 to-blue-500/5 flex items-center justify-center overflow-hidden">
+                      {item.image?.startsWith('http') ? (
+                        <img 
+                          src={item.image} 
+                          alt={item.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <span role="img" aria-label={item.name} className="text-7xl">
+                          {item.image}
+                        </span>
+                      )}
                     </div>
                     <div className="p-6">
                       <div className="flex items-start justify-between gap-2 mb-2">

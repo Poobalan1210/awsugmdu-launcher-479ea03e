@@ -5,6 +5,8 @@ const s3Client = new S3Client({ region: process.env.AWS_REGION });
 
 const MEETUP_POSTERS_BUCKET = process.env.MEETUP_POSTERS_BUCKET || 'awsug-meetup-posters';
 const PROFILE_PHOTOS_BUCKET = process.env.PROFILE_PHOTOS_BUCKET || 'awsug-profile-photos';
+const CLOUDFRONT_PROFILE_PHOTOS = process.env.CLOUDFRONT_PROFILE_PHOTOS_DOMAIN || '';
+const CLOUDFRONT_MEETUP_POSTERS = process.env.CLOUDFRONT_MEETUP_POSTERS_DOMAIN || '';
 
 // Helper function to generate CORS headers
 function getCorsHeaders() {
@@ -78,12 +80,17 @@ exports.handler = async (event) => {
     const command = new PutObjectCommand({
       Bucket: bucketName,
       Key: key,
+      CacheControl: 'public, max-age=31536000, immutable',
     });
     
     const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn: 300 });
     
-    // Generate public URL for the uploaded file
-    const publicUrl = `https://${bucketName}.s3.${process.env.AWS_REGION}.amazonaws.com/${key}`;
+    // Generate public URL - use CloudFront if available, otherwise S3
+    const publicUrl = bucketType === 'profile-photos' && CLOUDFRONT_PROFILE_PHOTOS
+      ? `https://${CLOUDFRONT_PROFILE_PHOTOS}/${key}`
+      : bucketType === 'meetup-posters' && CLOUDFRONT_MEETUP_POSTERS
+      ? `https://${CLOUDFRONT_MEETUP_POSTERS}/${key}`
+      : `https://${bucketName}.s3.${process.env.AWS_REGION}.amazonaws.com/${key}`;
     
     return createResponse(200, {
       presignedUrl,

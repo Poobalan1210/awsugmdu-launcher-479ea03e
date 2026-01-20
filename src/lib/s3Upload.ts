@@ -43,12 +43,13 @@ export async function uploadFileToS3(
     });
 
     // Upload file to S3 using presigned URL
-    // Set Content-Type header explicitly
+    // Set Content-Type and Cache-Control headers explicitly
     const uploadResponse = await fetch(presignedUrl, {
       method: 'PUT',
       body: file,
       headers: {
         'Content-Type': file.type,
+        'Cache-Control': 'public, max-age=31536000, immutable',
       },
     });
 

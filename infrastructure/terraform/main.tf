@@ -499,6 +499,8 @@ resource "aws_lambda_function" "s3_upload" {
     variables = {
       MEETUP_POSTERS_BUCKET = aws_s3_bucket.meetup_posters.id
       PROFILE_PHOTOS_BUCKET = aws_s3_bucket.profile_photos.id
+      CLOUDFRONT_PROFILE_PHOTOS_DOMAIN = aws_cloudfront_distribution.profile_photos.domain_name
+      CLOUDFRONT_MEETUP_POSTERS_DOMAIN = aws_cloudfront_distribution.meetup_posters.domain_name
     }
   }
 
@@ -1962,6 +1964,172 @@ resource "aws_cognito_user_pool_client" "web_client" {
   prevent_user_existence_errors = "ENABLED"
 }
 
+# CloudFront Distribution for Profile Photos
+resource "aws_cloudfront_origin_access_identity" "profile_photos" {
+  comment = "OAI for ${var.project_name} profile photos"
+}
+
+resource "aws_cloudfront_distribution" "profile_photos" {
+  enabled             = true
+  is_ipv6_enabled     = true
+  comment             = "${var.project_name} Profile Photos CDN"
+  price_class         = "PriceClass_100"
+
+  origin {
+    domain_name = aws_s3_bucket.profile_photos.bucket_regional_domain_name
+    origin_id   = "S3-${aws_s3_bucket.profile_photos.id}"
+
+    s3_origin_config {
+      origin_access_identity = aws_cloudfront_origin_access_identity.profile_photos.cloudfront_access_identity_path
+    }
+  }
+
+  default_cache_behavior {
+    allowed_methods  = ["GET", "HEAD", "OPTIONS"]
+    cached_methods   = ["GET", "HEAD", "OPTIONS"]
+    target_origin_id = "S3-${aws_s3_bucket.profile_photos.id}"
+
+    forwarded_values {
+      query_string = false
+      headers      = ["Origin", "Access-Control-Request-Headers", "Access-Control-Request-Method"]
+
+      cookies {
+        forward = "none"
+      }
+    }
+
+    viewer_protocol_policy = "redirect-to-https"
+    min_ttl                = 0
+    default_ttl            = 86400
+    max_ttl                = 31536000
+    compress               = true
+  }
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+
+  viewer_certificate {
+    cloudfront_default_certificate = true
+  }
+
+  tags = {
+    Name = "${var.project_name}-profile-photos-cdn"
+  }
+}
+
+# Update S3 bucket policy to allow CloudFront
+resource "aws_s3_bucket_policy" "profile_photos_cloudfront" {
+  bucket = aws_s3_bucket.profile_photos.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "CloudFrontReadGetObject"
+        Effect    = "Allow"
+        Principal = {
+          AWS = aws_cloudfront_origin_access_identity.profile_photos.iam_arn
+        }
+        Action    = "s3:GetObject"
+        Resource  = "${aws_s3_bucket.profile_photos.arn}/*"
+      },
+      {
+        Sid       = "PublicReadGetObject"
+        Effect    = "Allow"
+        Principal = "*"
+        Action    = "s3:GetObject"
+        Resource  = "${aws_s3_bucket.profile_photos.arn}/*"
+      }
+    ]
+  })
+}
+
+# CloudFront Distribution for Meetup Posters
+resource "aws_cloudfront_origin_access_identity" "meetup_posters" {
+  comment = "OAI for ${var.project_name} meetup posters"
+}
+
+resource "aws_cloudfront_distribution" "meetup_posters" {
+  enabled             = true
+  is_ipv6_enabled     = true
+  comment             = "${var.project_name} Meetup Posters CDN"
+  price_class         = "PriceClass_100"
+
+  origin {
+    domain_name = aws_s3_bucket.meetup_posters.bucket_regional_domain_name
+    origin_id   = "S3-${aws_s3_bucket.meetup_posters.id}"
+
+    s3_origin_config {
+      origin_access_identity = aws_cloudfront_origin_access_identity.meetup_posters.cloudfront_access_identity_path
+    }
+  }
+
+  default_cache_behavior {
+    allowed_methods  = ["GET", "HEAD", "OPTIONS"]
+    cached_methods   = ["GET", "HEAD", "OPTIONS"]
+    target_origin_id = "S3-${aws_s3_bucket.meetup_posters.id}"
+
+    forwarded_values {
+      query_string = false
+      headers      = ["Origin", "Access-Control-Request-Headers", "Access-Control-Request-Method"]
+
+      cookies {
+        forward = "none"
+      }
+    }
+
+    viewer_protocol_policy = "redirect-to-https"
+    min_ttl                = 0
+    default_ttl            = 86400
+    max_ttl                = 31536000
+    compress               = true
+  }
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+
+  viewer_certificate {
+    cloudfront_default_certificate = true
+  }
+
+  tags = {
+    Name = "${var.project_name}-meetup-posters-cdn"
+  }
+}
+
+# Update S3 bucket policy to allow CloudFront
+resource "aws_s3_bucket_policy" "meetup_posters_cloudfront" {
+  bucket = aws_s3_bucket.meetup_posters.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "CloudFrontReadGetObject"
+        Effect    = "Allow"
+        Principal = {
+          AWS = aws_cloudfront_origin_access_identity.meetup_posters.iam_arn
+        }
+        Action    = "s3:GetObject"
+        Resource  = "${aws_s3_bucket.meetup_posters.arn}/*"
+      },
+      {
+        Sid       = "PublicReadGetObject"
+        Effect    = "Allow"
+        Principal = "*"
+        Action    = "s3:GetObject"
+        Resource  = "${aws_s3_bucket.meetup_posters.arn}/*"
+      }
+    ]
+  })
+}
+
 # Outputs
 output "cognito_user_pool_id" {
   description = "Cognito User Pool ID"
@@ -1996,6 +2164,16 @@ output "s3_meetup_posters_bucket_name" {
 output "api_gateway_url" {
   description = "API Gateway URL"
   value       = "https://${aws_api_gateway_rest_api.api.id}.execute-api.${var.aws_region}.amazonaws.com/${var.environment}"
+}
+
+output "cloudfront_profile_photos_domain" {
+  description = "CloudFront domain for profile photos"
+  value       = aws_cloudfront_distribution.profile_photos.domain_name
+}
+
+output "cloudfront_meetup_posters_domain" {
+  description = "CloudFront domain for meetup posters"
+  value       = aws_cloudfront_distribution.meetup_posters.domain_name
 }
 
 output "lambda_user_profile_creation_arn" {

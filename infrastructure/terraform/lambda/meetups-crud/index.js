@@ -101,6 +101,9 @@ exports.handler = async (event) => {
       } else if (method === 'POST' && id && action === 'register') {
         // POST /meetups/{id}/register - Register user for meetup
         return await registerForMeetup(id, event);
+      } else if (method === 'POST' && id && action === 'mark-attendance') {
+        // POST /meetups/{id}/mark-attendance - Mark attendance for users
+        return await markAttendance(id, event);
       }
     }
     
@@ -581,3 +584,157 @@ async function deleteMeetup(id) {
   
   return createResponse(200, { message: 'Meetup deleted successfully' });
 }
+
+// Mark attendance for meetup
+async function markAttendance(id, event) {
+  const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
+  const { emails, pointsPerAttendee = 50 } = body;
+  
+  if (!emails || !Array.isArray(emails) || emails.length === 0) {
+    return createResponse(400, { error: 'Missing required field: emails (array)' });
+  }
+  
+  // Check if meetup exists
+  const meetupResult = await docClient.send(new GetCommand({
+    TableName: MEETUPS_TABLE,
+    Key: { id }
+  }));
+  
+  if (!meetupResult.Item) {
+    return createResponse(404, { error: 'Meetup not found' });
+  }
+  
+  const meetup = meetupResult.Item;
+  
+  // Fetch users by email
+  const USERS_TABLE = process.env.USERS_TABLE_NAME || 'awsug-users';
+  const results = {
+    success: [],
+    notFound: [],
+    alreadyMarked: [],
+    errors: []
+  };
+  
+  // Get current attendedUsers list
+  const attendedUsers = meetup.attendedUsers || [];
+  const attendedEmails = new Set();
+  
+  // Build a map of already attended users
+  for (const userId of attendedUsers) {
+    try {
+      const userResult = await docClient.send(new GetCommand({
+        TableName: USERS_TABLE,
+        Key: { userId }
+      }));
+      if (userResult.Item) {
+        attendedEmails.add(userResult.Item.email.toLowerCase());
+      }
+    } catch (error) {
+      console.error(`Error fetching user ${userId}:`, error);
+    }
+  }
+  
+  // Process each email
+  for (const email of emails) {
+    const normalizedEmail = email.trim().toLowerCase();
+    
+    if (!normalizedEmail) {
+      continue;
+    }
+    
+    // Check if already marked
+    if (attendedEmails.has(normalizedEmail)) {
+      results.alreadyMarked.push(email);
+      continue;
+    }
+    
+    try {
+      // Find user by email using GSI
+      const userQueryResult = await docClient.send(new QueryCommand({
+        TableName: USERS_TABLE,
+        IndexName: 'email-index',
+        KeyConditionExpression: 'email = :email',
+        ExpressionAttributeValues: {
+          ':email': normalizedEmail
+        }
+      }));
+      
+      if (!userQueryResult.Items || userQueryResult.Items.length === 0) {
+        results.notFound.push(email);
+        continue;
+      }
+      
+      const user = userQueryResult.Items[0];
+      const userId = user.userId;
+      
+      // Add to attendedUsers list
+      attendedUsers.push(userId);
+      attendedEmails.add(normalizedEmail);
+      
+      // Award points to user
+      const currentPoints = user.points || 0;
+      const newPoints = currentPoints + pointsPerAttendee;
+      
+      // Update user's points and add activity
+      const activity = {
+        type: 'meetup_attended',
+        meetupId: id,
+        meetupTitle: meetup.title,
+        points: pointsPerAttendee,
+        timestamp: new Date().toISOString()
+      };
+      
+      const userActivities = user.activities || [];
+      userActivities.push(activity);
+      
+      await docClient.send(new UpdateCommand({
+        TableName: USERS_TABLE,
+        Key: { userId },
+        UpdateExpression: 'SET points = :points, activities = :activities, updatedAt = :updatedAt',
+        ExpressionAttributeValues: {
+          ':points': newPoints,
+          ':activities': userActivities,
+          ':updatedAt': new Date().toISOString()
+        }
+      }));
+      
+      results.success.push({
+        email,
+        userId,
+        name: user.name,
+        pointsAwarded: pointsPerAttendee,
+        newTotal: newPoints
+      });
+    } catch (error) {
+      console.error(`Error processing email ${email}:`, error);
+      results.errors.push({
+        email,
+        error: error.message
+      });
+    }
+  }
+  
+  // Update meetup with new attendedUsers list
+  await docClient.send(new UpdateCommand({
+    TableName: MEETUPS_TABLE,
+    Key: { id },
+    UpdateExpression: 'SET attendedUsers = :attendedUsers, updatedAt = :updatedAt',
+    ExpressionAttributeValues: {
+      ':attendedUsers': attendedUsers,
+      ':updatedAt': new Date().toISOString()
+    }
+  }));
+  
+  return createResponse(200, {
+    message: 'Attendance marked successfully',
+    results,
+    summary: {
+      total: emails.length,
+      successful: results.success.length,
+      notFound: results.notFound.length,
+      alreadyMarked: results.alreadyMarked.length,
+      errors: results.errors.length
+    }
+  });
+}
+

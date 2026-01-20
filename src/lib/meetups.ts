@@ -128,3 +128,46 @@ export async function getMeetupsByCertificationGroup(certificationGroupId: strin
     return [];
   }
 }
+
+export interface MarkAttendanceRequest {
+  emails: string[];
+  pointsPerAttendee?: number;
+}
+
+export interface MarkAttendanceResult {
+  email: string;
+  userId?: string;
+  name?: string;
+  pointsAwarded?: number;
+  newTotal?: number;
+  error?: string;
+}
+
+export interface MarkAttendanceResponse {
+  message: string;
+  results: {
+    success: MarkAttendanceResult[];
+    notFound: string[];
+    alreadyMarked: string[];
+    errors: MarkAttendanceResult[];
+  };
+  summary: {
+    total: number;
+    successful: number;
+    notFound: number;
+    alreadyMarked: number;
+    errors: number;
+  };
+}
+
+export async function markMeetupAttendance(
+  meetupId: string, 
+  data: MarkAttendanceRequest
+): Promise<MarkAttendanceResponse> {
+  const response = await callApi<MarkAttendanceResponse>(`/meetups/${meetupId}/mark-attendance`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+  return response;
+}
+

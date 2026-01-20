@@ -97,6 +97,18 @@ export interface User {
   linkedIn?: string;
   github?: string;
   twitter?: string;
+  activities?: UserActivity[];
+}
+
+export interface UserActivity {
+  type: 'meetup_attended' | 'sprint_completed' | 'submission_approved' | 'badge_earned' | 'certification_earned';
+  meetupId?: string;
+  meetupTitle?: string;
+  sprintId?: string;
+  sprintTitle?: string;
+  points: number;
+  timestamp: string;
+  description?: string;
 }
 
 // Badge criteria types for auto-awarding
@@ -219,6 +231,7 @@ export interface Meetup {
   attendees: number;
   maxAttendees?: number;
   registeredUsers: string[];
+  attendedUsers?: string[]; // Users who actually attended (marked by admin)
   speakers: MeetupSpeaker[];
   hosts?: MeetupPerson[];
   volunteers?: MeetupPerson[];

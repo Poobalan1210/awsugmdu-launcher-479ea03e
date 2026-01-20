@@ -1408,6 +1408,245 @@ function MeetupPeopleManager({
   );
 }
 
+// Mark Attendance Dialog
+function MarkAttendanceDialog({ meetup, onSuccess }: { meetup: Meetup; onSuccess?: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [emailsText, setEmailsText] = useState('');
+  const [pointsPerAttendee, setPointsPerAttendee] = useState(50);
+  const [results, setResults] = useState<any>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setResults(null);
+    
+    try {
+      // Parse emails from textarea (one per line or comma-separated)
+      const emails = emailsText
+        .split(/[\n,]/)
+        .map(e => e.trim())
+        .filter(e => e.length > 0);
+      
+      if (emails.length === 0) {
+        toast.error('Please enter at least one email address');
+        setLoading(false);
+        return;
+      }
+
+      const { markMeetupAttendance } = await import('@/lib/meetups');
+      const response = await markMeetupAttendance(meetup.id, {
+        emails,
+        pointsPerAttendee
+      });
+      
+      setResults(response);
+      
+      if (response.summary.successful > 0) {
+        toast.success(`Attendance marked for ${response.summary.successful} attendees!`);
+        onSuccess?.();
+      } else {
+        toast.warning('No attendance was marked. Check the results below.');
+      }
+    } catch (error) {
+      console.error('Error marking attendance:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to mark attendance');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleClose = () => {
+    setOpen(false);
+    setEmailsText('');
+    setPointsPerAttendee(50);
+    setResults(null);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" className="gap-1">
+          <ClipboardCheck className="h-4 w-4" />
+          Mark Attendance
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Mark Attendance - {meetup.title}</DialogTitle>
+          <DialogDescription>
+            Enter email addresses of attendees (one per line or comma-separated). Points will be awarded to each attendee.
+          </DialogDescription>
+        </DialogHeader>
+        
+        {!results ? (
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label>Attendee Email Addresses *</Label>
+              <Textarea
+                placeholder="user1@example.com&#10;user2@example.com&#10;user3@example.com"
+                value={emailsText}
+                onChange={(e) => setEmailsText(e.target.value)}
+                rows={10}
+                required
+                className="font-mono text-sm"
+              />
+              <p className="text-xs text-muted-foreground">
+                Enter one email per line or separate with commas
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Points per Attendee</Label>
+              <Input
+                type="number"
+                value={pointsPerAttendee}
+                onChange={(e) => setPointsPerAttendee(Number(e.target.value))}
+                min={1}
+                max={500}
+                required
+              />
+              <p className="text-xs text-muted-foreground">
+                Each attendee will receive this many points
+              </p>
+            </div>
+
+            <div className="flex gap-2 pt-4 border-t">
+              <Button type="submit" className="flex-1" disabled={loading}>
+                {loading ? (
+                  <>
+                    <Clock className="h-4 w-4 mr-2 animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="h-4 w-4 mr-2" />
+                    Mark Attendance
+                  </>
+                )}
+              </Button>
+              <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <div className="space-y-4">
+            {/* Summary */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <Card className="border-green-500/20 bg-green-500/5">
+                <CardContent className="p-3 text-center">
+                  <div className="text-2xl font-bold text-green-600">{results.summary.successful}</div>
+                  <p className="text-xs text-muted-foreground">Success</p>
+                </CardContent>
+              </Card>
+              <Card className="border-amber-500/20 bg-amber-500/5">
+                <CardContent className="p-3 text-center">
+                  <div className="text-2xl font-bold text-amber-600">{results.summary.alreadyMarked}</div>
+                  <p className="text-xs text-muted-foreground">Already Marked</p>
+                </CardContent>
+              </Card>
+              <Card className="border-blue-500/20 bg-blue-500/5">
+                <CardContent className="p-3 text-center">
+                  <div className="text-2xl font-bold text-blue-600">{results.summary.notFound}</div>
+                  <p className="text-xs text-muted-foreground">Not Found</p>
+                </CardContent>
+              </Card>
+              <Card className="border-red-500/20 bg-red-500/5">
+                <CardContent className="p-3 text-center">
+                  <div className="text-2xl font-bold text-red-600">{results.summary.errors}</div>
+                  <p className="text-xs text-muted-foreground">Errors</p>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Successful */}
+            {results.results.success.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="font-semibold text-sm text-green-600 flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4" />
+                  Successfully Marked ({results.results.success.length})
+                </h4>
+                <div className="space-y-1 max-h-48 overflow-y-auto">
+                  {results.results.success.map((item: any, index: number) => (
+                    <div key={index} className="text-sm p-2 rounded bg-green-500/5 border border-green-500/20">
+                      <div className="flex justify-between items-center">
+                        <span className="font-medium">{item.name}</span>
+                        <Badge variant="outline" className="text-green-600">
+                          +{item.pointsAwarded} pts
+                        </Badge>
+                      </div>
+                      <div className="text-xs text-muted-foreground">{item.email}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Already Marked */}
+            {results.results.alreadyMarked.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="font-semibold text-sm text-amber-600 flex items-center gap-2">
+                  <Clock className="h-4 w-4" />
+                  Already Marked ({results.results.alreadyMarked.length})
+                </h4>
+                <div className="text-xs text-muted-foreground space-y-1 max-h-32 overflow-y-auto">
+                  {results.results.alreadyMarked.map((email: string, index: number) => (
+                    <div key={index} className="p-2 rounded bg-amber-500/5 border border-amber-500/20">
+                      {email}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Not Found */}
+            {results.results.notFound.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="font-semibold text-sm text-blue-600 flex items-center gap-2">
+                  <User className="h-4 w-4" />
+                  Users Not Found ({results.results.notFound.length})
+                </h4>
+                <div className="text-xs text-muted-foreground space-y-1 max-h-32 overflow-y-auto">
+                  {results.results.notFound.map((email: string, index: number) => (
+                    <div key={index} className="p-2 rounded bg-blue-500/5 border border-blue-500/20">
+                      {email}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Errors */}
+            {results.results.errors.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="font-semibold text-sm text-red-600 flex items-center gap-2">
+                  <XCircle className="h-4 w-4" />
+                  Errors ({results.results.errors.length})
+                </h4>
+                <div className="text-xs space-y-1 max-h-32 overflow-y-auto">
+                  {results.results.errors.map((item: any, index: number) => (
+                    <div key={index} className="p-2 rounded bg-red-500/5 border border-red-500/20">
+                      <div className="font-medium">{item.email}</div>
+                      <div className="text-red-600">{item.error}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-2 pt-4 border-t">
+              <Button onClick={() => { handleClose(); setOpen(false); }} className="flex-1">
+                Close
+              </Button>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => void; allUsers?: UserType[] }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -2336,6 +2575,9 @@ function MeetupsManagementTab({ allUsers = [] }: { allUsers?: UserType[] }) {
                         <XCircle className="h-4 w-4" />
                         Unpublish
                       </Button>
+                    )}
+                    {(meetup.status === 'completed' || meetup.status === 'upcoming') && (
+                      <MarkAttendanceDialog meetup={meetup} onSuccess={loadMeetups} />
                     )}
                     <SpeakerInviteDialog 
                       eventType="meetup" 

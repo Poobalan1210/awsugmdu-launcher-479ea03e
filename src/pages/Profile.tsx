@@ -192,7 +192,7 @@ export default function Profile() {
     totalPoints: user.points,
     submissions: userSubmissions.length,
     blogsWritten: userSubmissions.filter(s => s.blogUrl).length,
-    eventsAttended: userSprintsParticipated.length,
+    eventsAttended: (user.activities?.filter(a => a.type === 'meetup_attended').length || 0) + userSprintsParticipated.length,
   };
 
   // Generate activity history
@@ -243,10 +243,36 @@ export default function Profile() {
 
     // Meetup attendance - use backend data if available, otherwise fallback to mock
     const meetupsToCheck = allMeetups.length > 0 ? allMeetups : mockMeetups;
+    
+    // Show attended meetups from user activities (marked by admin)
+    if (user.activities) {
+      user.activities
+        .filter(a => a.type === 'meetup_attended')
+        .forEach(activity => {
+          const meetup = meetupsToCheck.find(m => m.id === activity.meetupId);
+          if (meetup) {
+            activities.push({
+              id: `meetup-attended-${activity.meetupId}-${activity.timestamp}`,
+              type: 'meetup_attended',
+              title: `Attended Event`,
+              description: activity.meetupTitle || meetup.title,
+              date: activity.timestamp,
+              link: `/meetups?id=${activity.meetupId}`,
+              icon: <CheckCircle className="h-4 w-4" />
+            });
+          }
+        });
+    }
+    
+    // Show registered meetups (not yet attended)
     meetupsToCheck.forEach(meetup => {
-      if (meetup.registeredUsers?.includes(user.id)) {
+      const alreadyMarkedAttended = user.activities?.some(
+        a => a.type === 'meetup_attended' && a.meetupId === meetup.id
+      );
+      
+      if (meetup.registeredUsers?.includes(user.id) && !alreadyMarkedAttended) {
         activities.push({
-          id: `meetup-attend-${meetup.id}`,
+          id: `meetup-register-${meetup.id}`,
           type: 'meetup_attended',
           title: `Registered for ${meetup.title}`,
           description: (meetup.description || '').substring(0, 80) + '...',

@@ -24,7 +24,7 @@ import { useAuth } from '@/contexts/AuthContext';
 
 export default function Profile() {
   const { userId } = useParams();
-  const { user: authUser } = useAuth();
+  const { user: authUser, isLoading: authLoading } = useAuth();
   const [profileUser, setProfileUser] = useState<UserType | null>(null);
   const [loading, setLoading] = useState(true);
   const [sprints, setSprints] = useState<any[]>([]);
@@ -107,7 +107,8 @@ export default function Profile() {
   const user = profileUser;
   const isOwnProfile = !userId || (authUser && userId === authUser.id);
   
-  if (loading) {
+  // Show loading state while auth is loading or profile is loading
+  if (loading || authLoading) {
     return (
       <div className="min-h-screen flex flex-col">
         <Header />

@@ -57,7 +57,6 @@ export function Leaderboard() {
     const fetchUsers = async () => {
       try {
         const allUsers = await getAllUsers();
-        console.log('Fetched users:', allUsers); // Debug log
         setUsers(Array.isArray(allUsers) ? allUsers : []);
       } catch (error) {
         console.error('Failed to fetch users:', error);

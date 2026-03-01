@@ -48,7 +48,6 @@ export default function SpeakerInvite() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Speaker details submitted:', formData);
     toast.success('Your session details have been submitted successfully!');
     setSubmitted(true);
   };

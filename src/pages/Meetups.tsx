@@ -15,7 +15,7 @@ import {
   ArrowLeft, ExternalLink, PlayCircle,
   Linkedin, Github, CheckCircle, Search, Rocket, Award, GraduationCap
 } from 'lucide-react';
-import { PersonCard } from '@/components/PersonCard';
+import { PersonCard } from '@/components/common/PersonCard';
 import { Meetup } from '@/data/mockData';
 import { format, parseISO, isPast } from 'date-fns';
 import { getMeetups, registerForMeetup, getMeetupParticipants, getMeetup } from '@/lib/meetups';

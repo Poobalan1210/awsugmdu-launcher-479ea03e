@@ -4,6 +4,24 @@ node_modules
 .env.local
 .env*.local
 
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Build outputs
+dist/
+build/
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# Temporary files
+*.tmp
+*.temp
+prompts_used_to_create_frontent.txt
+
 # Terraform
 infrastructure/terraform/.terraform/
 infrastructure/terraform/.terraform.lock.hcl

@@ -27,7 +27,6 @@ export async function callApi<T = any>(
     } catch (authError) {
       // If auth session fetch fails, continue without token
       // Some endpoints might not require auth (like user creation during signup)
-      console.warn('Could not fetch auth session, proceeding without token:', authError);
     }
 
     const url = `${API_ENDPOINT}${path}`;

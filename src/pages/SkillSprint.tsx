@@ -29,7 +29,7 @@ import { uploadFileToS3 } from '@/lib/s3Upload';
 import { format, parseISO, isPast } from 'date-fns';
 import { marked } from 'marked';
 import { useAuth } from '@/contexts/AuthContext';
-import { DiscussionForum } from '@/components/DiscussionForum';
+import { DiscussionForum } from '@/components/discussions/DiscussionForum';
 
 // Helper to parse markdown or HTML content
 function parseContent(content: string): string {

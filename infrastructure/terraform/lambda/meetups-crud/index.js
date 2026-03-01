@@ -250,7 +250,8 @@ async function createMeetup(event) {
     hosts,
     volunteers,
     sprintId,
-    certificationGroupId
+    certificationGroupId,
+    collegeId
   } = body;
   
   // Validation
@@ -271,6 +272,13 @@ async function createMeetup(event) {
   if (type === 'certification-circle' && !certificationGroupId) {
     return createResponse(400, { 
       error: 'Certification Group ID is required when type is certification-circle' 
+    });
+  }
+  
+  // Validate college selection if type is college-champ
+  if (type === 'college-champ' && !collegeId) {
+    return createResponse(400, { 
+      error: 'College ID is required when type is college-champ' 
     });
   }
   
@@ -303,6 +311,7 @@ async function createMeetup(event) {
     registeredUsers: [],
     ...(type === 'skill-sprint' && sprintId ? { sprintId } : {}),
     ...(type === 'certification-circle' && certificationGroupId ? { certificationGroupId } : {}),
+    ...(type === 'college-champ' && collegeId ? { collegeId } : {}),
     speakers: speakers || [],
     hosts: hosts || [],
     volunteers: volunteers || [],
@@ -314,6 +323,46 @@ async function createMeetup(event) {
     TableName: MEETUPS_TABLE,
     Item: meetup
   }));
+  
+  // If college-champ type, add event to college's hostedEvents
+  if (type === 'college-champ' && collegeId) {
+    try {
+      const COLLEGES_TABLE = process.env.COLLEGES_TABLE_NAME || 'awsug-colleges';
+      
+      // Get college
+      const college = await docClient.send(new GetCommand({
+        TableName: COLLEGES_TABLE,
+        Key: { id: collegeId }
+      }));
+      
+      if (college.Item) {
+        const hostedEvents = college.Item.hostedEvents || [];
+        hostedEvents.push({
+          id,
+          title,
+          description: description || '',
+          date,
+          type: 'meetup',
+          attendees: 0,
+          pointsAwarded: 0,
+          status: 'upcoming'
+        });
+        
+        await docClient.send(new UpdateCommand({
+          TableName: COLLEGES_TABLE,
+          Key: { id: collegeId },
+          UpdateExpression: 'SET hostedEvents = :events, updatedAt = :updatedAt',
+          ExpressionAttributeValues: {
+            ':events': hostedEvents,
+            ':updatedAt': now
+          }
+        }));
+      }
+    } catch (error) {
+      console.error('Error adding event to college:', error);
+      // Don't fail the meetup creation if college update fails
+    }
+  }
   
   return createResponse(201, { meetup });
 }

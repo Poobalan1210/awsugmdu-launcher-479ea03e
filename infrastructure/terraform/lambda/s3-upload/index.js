@@ -50,16 +50,34 @@ exports.handler = async (event) => {
     // Validate bucket type
     const bucketName = bucketType === 'profile-photos' 
       ? PROFILE_PHOTOS_BUCKET 
+      : bucketType === 'college-logos'
+      ? PROFILE_PHOTOS_BUCKET // Reuse profile photos bucket for college documents
       : MEETUP_POSTERS_BUCKET;
     
-    // Validate content type
-    const allowedTypes = [
+    // Validate content type - allow documents for college-logos bucket
+    const allowedImageTypes = [
       'image/jpeg',
       'image/jpg',
       'image/png',
       'image/gif',
       'image/webp'
     ];
+    
+    const allowedDocumentTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/zip',
+      'application/x-zip-compressed',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'text/plain',
+      'application/octet-stream'
+    ];
+    
+    const allowedTypes = bucketType === 'college-logos' 
+      ? [...allowedImageTypes, ...allowedDocumentTypes]
+      : allowedImageTypes;
     
     if (!allowedTypes.includes(contentType.toLowerCase())) {
       return createResponse(400, { 
@@ -72,6 +90,8 @@ exports.handler = async (event) => {
     const sanitizedFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
     const key = bucketType === 'profile-photos' 
       ? `profiles/${timestamp}-${sanitizedFileName}`
+      : bucketType === 'college-logos'
+      ? `college-documents/${timestamp}-${sanitizedFileName}`
       : `posters/${timestamp}-${sanitizedFileName}`;
     
     // Generate presigned URL (valid for 5 minutes)

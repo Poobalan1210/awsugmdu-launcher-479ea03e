@@ -175,14 +175,7 @@ export default function Profile() {
     userCommunityRoles.push('member');
   }
   
-  // Debug logging
-  console.log('Profile Debug:', {
-    userId: user.id,
-    userEmail: user.email,
-    authUserRole: authUser?.role,
-    userCommunityRoles,
-    isOwnProfile
-  });
+  // Profile data loaded
 
   const getRoleInfo = (role: CommunityRole) => {
     return communityRoles.find(r => r.value === role);

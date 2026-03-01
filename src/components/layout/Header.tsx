@@ -94,21 +94,21 @@ export function Header() {
                 </div>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
-                  <Link to="/profile" className="flex items-center gap-2 cursor-pointer">
-                    <User className="h-4 w-4" />
+                  <Link to="/profile" className="flex items-center cursor-pointer">
+                    <User className="h-4 w-4 mr-2" />
                     Profile
                   </Link>
                 </DropdownMenuItem>
                 {(isAdmin || isSpeaker) && (
                   <DropdownMenuItem asChild>
-                    <Link to="/admin" className="flex items-center gap-2 cursor-pointer">
-                      <Shield className="h-4 w-4" />
+                    <Link to="/admin" className="flex items-center cursor-pointer">
+                      <Shield className="h-4 w-4 mr-2" />
                       Admin Panel
                     </Link>
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleLogout} className="text-destructive cursor-pointer">
+                <DropdownMenuItem onClick={handleLogout} className="text-destructive cursor-pointer flex items-center">
                   <LogOut className="h-4 w-4 mr-2" />
                   Log out
                 </DropdownMenuItem>

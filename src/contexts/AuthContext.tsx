@@ -67,7 +67,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // If profile doesn't exist in DB (404), return a basic user object
       // This can happen if user just signed up but profile creation failed
       if (error.message?.includes('not found') || error.message?.includes('404')) {
-        console.log('Profile not found, returning basic user object');
         const role = isOrganiserEmail(email) ? 'organiser' : 'member';
         return {
           id: userId,
@@ -126,7 +125,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const profile = await fetchUserProfile(userId, email);
           setUser(profile);
         } catch (error) {
-          console.log('Profile not found during sign-in, will be created shortly');
           // Set a basic user object temporarily
           const role = isOrganiserEmail(email) ? 'organiser' : 'member';
           setUser({
@@ -218,9 +216,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           options: {
             contentType: file.type,
             onProgress: ({ transferredBytes, totalBytes }) => {
+              // Upload progress tracking
               if (totalBytes) {
                 const progress = (transferredBytes / totalBytes) * 100;
-                console.log(`Upload progress: ${progress.toFixed(0)}%`);
               }
             },
           },
@@ -233,7 +231,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return photoUrl;
       } catch (storageError: any) {
         // If Storage upload fails (no Identity Pool), convert to base64
-        console.warn('S3 upload failed, using base64:', storageError);
         return new Promise((resolve, reject) => {
           const reader = new FileReader();
           reader.onloadend = () => resolve(reader.result as string);

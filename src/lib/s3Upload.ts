@@ -10,7 +10,7 @@ export interface PresignedUrlResponse {
 export interface UploadFileParams {
   fileName: string;
   contentType: string;
-  bucketType?: 'meetup-posters' | 'profile-photos';
+  bucketType?: 'meetup-posters' | 'profile-photos' | 'college-logos';
 }
 
 export async function getPresignedUrl(params: UploadFileParams): Promise<PresignedUrlResponse> {
@@ -23,7 +23,7 @@ export async function getPresignedUrl(params: UploadFileParams): Promise<Presign
 
 export async function uploadFileToS3(
   file: File,
-  bucketType: 'meetup-posters' | 'profile-photos' = 'meetup-posters'
+  bucketType: 'meetup-posters' | 'profile-photos' | 'college-logos' = 'meetup-posters'
 ): Promise<string> {
   try {
     // Check if API endpoint is configured

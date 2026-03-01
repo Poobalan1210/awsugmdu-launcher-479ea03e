@@ -1366,7 +1366,8 @@ export interface CollegeTask {
   points: number;
   category: 'onboarding' | 'learning' | 'community' | 'event' | 'special';
   isPredefined: boolean;
-  order?: number;
+  isDefault?: boolean;
+  order: number;
 }
 
 export interface CollegeTaskCompletion {
@@ -1377,6 +1378,23 @@ export interface CollegeTaskCompletion {
   bonusPoints?: number;
 }
 
+export interface CollegeTaskSubmission {
+  id: string;
+  collegeId: string;
+  taskId: string;
+  submittedBy: string; // userId of captain
+  submittedByName: string;
+  comments: string;
+  fileUrl?: string;
+  fileName?: string;
+  submittedAt: string;
+  status: 'pending' | 'approved' | 'rejected' | 'needs_revision';
+  reviewedBy?: string;
+  reviewedAt?: string;
+  reviewComments?: string;
+  pointsAwarded?: number;
+}
+
 export interface CollegeEvent {
   id: string;
   title: string;
@@ -1385,7 +1403,7 @@ export interface CollegeEvent {
   type: 'workshop' | 'hackathon' | 'meetup' | 'webinar';
   attendees: number;
   pointsAwarded: number;
-  status: 'upcoming' | 'completed';
+  status: 'upcoming' | 'completed' | 'cancelled';
 }
 
 export interface College {
@@ -1405,18 +1423,7 @@ export interface College {
   color: string;
 }
 
-export const predefinedTasks: CollegeTask[] = [
-  { id: 'task1', title: 'Register as College Champ', description: 'Complete registration and verify your college email', points: 50, category: 'onboarding', isPredefined: true, order: 1 },
-  { id: 'task2', title: 'Form Core Team', description: 'Recruit at least 3 team members for your college chapter', points: 100, category: 'onboarding', isPredefined: true, order: 2 },
-  { id: 'task3', title: 'Complete AWS Basics Module', description: 'All core team members complete AWS Cloud Practitioner essentials', points: 150, category: 'learning', isPredefined: true, order: 3 },
-  { id: 'task4', title: 'Social Media Setup', description: 'Create official college chapter social media handles', points: 75, category: 'community', isPredefined: true, order: 4 },
-  { id: 'task5', title: 'Host Intro Session', description: 'Conduct an introductory session about AWS for your college', points: 200, category: 'event', isPredefined: true, order: 5 },
-  { id: 'task6', title: 'Get 25 Members', description: 'Grow your chapter to 25+ active members', points: 150, category: 'community', isPredefined: true, order: 6 },
-  { id: 'task7', title: 'First Workshop', description: 'Host a hands-on workshop on any AWS service', points: 250, category: 'event', isPredefined: true, order: 7 },
-  { id: 'task8', title: 'Certification Drive', description: 'Help at least 5 members get AWS certified', points: 300, category: 'learning', isPredefined: true, order: 8 },
-  { id: 'task9', title: 'Cross-College Collaboration', description: 'Collaborate with another college chapter for an event', points: 200, category: 'special', isPredefined: true, order: 9 },
-  { id: 'task10', title: 'Industry Connect', description: 'Invite an industry professional for a guest session', points: 250, category: 'special', isPredefined: true, order: 10 },
-];
+export const predefinedTasks: CollegeTask[] = [];
 
 export const mockColleges: College[] = [
   {

@@ -14,7 +14,6 @@ export function HeroSection() {
     const fetchUserCount = async () => {
       try {
         const users = await getAllUsers();
-        console.log('Fetched users for count:', users); // Debug log
         setUserCount(Array.isArray(users) ? users.length : 0);
       } catch (error) {
         console.error('Failed to fetch user count:', error);

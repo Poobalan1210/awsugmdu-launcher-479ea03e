@@ -15,19 +15,21 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Switch } from '@/components/ui/switch';
 import { 
   Plus, Calendar, Users, CheckCircle, XCircle, Clock,
   Rocket, ExternalLink, MessageSquare, Award, Link2,
   Copy, Mail, Edit, Trash2, Eye, FileText, User, Video,
   Upload, X, UserPlus, Check, ChevronDown, GraduationCap,
-  Trophy, ListTodo, ClipboardCheck, Target, Shield, UserCog, Medal, Github, ShoppingBag
+  Trophy, ListTodo, ClipboardCheck, Target, Shield, UserCog, Medal, Github, ShoppingBag, Loader2
 } from 'lucide-react';
-import { mockSprints, mockMeetups, currentUser, Submission, generateSpeakerInviteLink, Sprint, Session, SessionPerson, User as UserType, predefinedTasks, mockColleges, CollegeTask, College, getTaskById, getUserByIdAsync, communityRoles, mockUserRoles, CommunityRole, UserRoleAssignment, PointActivity, mockPointActivities, Meetup, mockBadges, Badge as BadgeType, BadgeAward, mockBadgeAwards, BadgeCriteriaType, criteriaTypeLabels, BadgeCriteria } from '@/data/mockData';
+import { mockSprints, mockMeetups, currentUser, Submission, generateSpeakerInviteLink, Sprint, Session, SessionPerson, User as UserType, predefinedTasks, mockColleges, getTaskById, getUserById, getUserByIdAsync, communityRoles, mockUserRoles, CommunityRole, UserRoleAssignment, PointActivity, mockPointActivities, Meetup, mockBadges, Badge as BadgeType, BadgeAward, mockBadgeAwards, BadgeCriteriaType, criteriaTypeLabels, BadgeCriteria, mockUsers } from '@/data/mockData';
 import { createMeetup, updateMeetup, publishMeetup, getMeetups, CreateMeetupData, UpdateMeetupData, deleteMeetup } from '@/lib/meetups';
 import { createSprint, addSession, getSprints, deleteSprint, deleteSession, CreateSprintData, CreateSessionData, reviewSubmission } from '@/lib/sprints';
 import { uploadFileToS3 } from '@/lib/s3Upload';
 import { getAllUsers } from '@/lib/userProfile';
 import { listCertificationGroups, CertificationGroup } from '@/lib/certifications';
+import { College, CollegeEvent, CollegeTask } from '@/lib/colleges';
 import { Progress } from '@/components/ui/progress';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
@@ -35,6 +37,7 @@ import { format, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 import StoreManagement from '@/components/admin/StoreManagement';
 import CertificationGroupsManagement from '@/components/admin/CertificationGroupsManagement';
+import { TaskSubmissionsPanel } from '@/components/college-champs/TaskSubmissionsPanel';
 
 // Get all submissions across sprints
 const allSubmissions = mockSprints.flatMap(s => 
@@ -775,7 +778,8 @@ function UserMultiSelect({
 
 function SessionPeopleManager({ 
   sessionData, 
-  onUpdate 
+  onUpdate,
+  allUsers = mockUsers
 }: { 
   sessionData: {
     hosts?: SessionPerson[];
@@ -787,6 +791,7 @@ function SessionPeopleManager({
     speakers?: SessionPerson[];
     volunteers?: SessionPerson[];
   }) => void;
+  allUsers?: UserType[];
 }) {
   const removeHost = (userId: string) => {
     const updated = (sessionData.hosts || []).filter(h => h.userId !== userId);
@@ -943,7 +948,7 @@ function SessionPeopleManager({
   );
 }
 
-function AddSessionDialog({ sprint, onSuccess }: { sprint: Sprint; onSuccess?: () => void }) {
+function AddSessionDialog({ sprint, onSuccess, allUsers = mockUsers }: { sprint: Sprint; onSuccess?: () => void; allUsers?: UserType[] }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -1210,6 +1215,7 @@ function AddSessionDialog({ sprint, onSuccess }: { sprint: Sprint; onSuccess?: (
             <SessionPeopleManager
               sessionData={peopleData}
               onUpdate={setPeopleData}
+              allUsers={allUsers}
             />
           </div>
 
@@ -1716,6 +1722,7 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [certificationGroups, setCertificationGroups] = useState<CertificationGroup[]>([]);
+  const [colleges, setColleges] = useState<College[]>([]);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -1730,7 +1737,8 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
     image: '',
     maxAttendees: '',
     sprintId: '',
-    certificationGroupId: ''
+    certificationGroupId: '',
+    collegeId: ''
   });
   
   const [peopleData, setPeopleData] = useState<{
@@ -1748,6 +1756,7 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
     if (open) {
       loadSprints();
       loadCertificationGroups();
+      loadColleges();
     }
   }, [open]);
 
@@ -1769,6 +1778,16 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
     }
   };
 
+  const loadColleges = async () => {
+    try {
+      const { getAllColleges } = await import('@/lib/colleges');
+      const allColleges = await getAllColleges();
+      setColleges(allColleges);
+    } catch (error) {
+      console.error('Error loading colleges:', error);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -1781,6 +1800,12 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
     // Validate certification group selection if type is certification-circle
     if (formData.type === 'certification-circle' && !formData.certificationGroupId) {
       toast.error('Please select a certification group for this session');
+      return;
+    }
+    
+    // Validate college selection if type is college-champ
+    if (formData.type === 'college-champ' && !formData.collegeId) {
+      toast.error('Please select a college for this session');
       return;
     }
     
@@ -1804,7 +1829,8 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
         hosts: peopleData.hosts,
         volunteers: peopleData.volunteers,
         sprintId: (formData.type === 'skill-sprint' && formData.sprintId) ? formData.sprintId : undefined,
-        certificationGroupId: (formData.type === 'certification-circle' && formData.certificationGroupId) ? formData.certificationGroupId : undefined
+        certificationGroupId: (formData.type === 'certification-circle' && formData.certificationGroupId) ? formData.certificationGroupId : undefined,
+        collegeId: (formData.type === 'college-champ' && formData.collegeId) ? formData.collegeId : undefined
       };
       
       await createMeetup(meetupData);
@@ -1827,7 +1853,8 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
         image: '',
         maxAttendees: '',
         sprintId: '',
-        certificationGroupId: ''
+        certificationGroupId: '',
+        collegeId: ''
       });
       setPeopleData({
         speakers: [],
@@ -1875,7 +1902,8 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
                   ...formData, 
                   type: value, 
                   sprintId: value !== 'skill-sprint' ? '' : formData.sprintId,
-                  certificationGroupId: value !== 'certification-circle' ? '' : formData.certificationGroupId
+                  certificationGroupId: value !== 'certification-circle' ? '' : formData.certificationGroupId,
+                  collegeId: value !== 'college-champ' ? '' : formData.collegeId
                 })
               }
             >
@@ -1956,6 +1984,38 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
               {certificationGroups.length === 0 && (
                 <p className="text-xs text-amber-600">
                   ⚠️ No certification groups found. Please create a certification group first.
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* College Selection - Only show if type is college-champ */}
+          {formData.type === 'college-champ' && (
+            <div className="space-y-2">
+              <Label>Select College *</Label>
+              <Select 
+                value={formData.collegeId}
+                onValueChange={(value) => setFormData({ ...formData, collegeId: value })}
+                required
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose a college..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {colleges.length === 0 ? (
+                    <SelectItem value="none" disabled>No colleges available</SelectItem>
+                  ) : (
+                    colleges.map((college) => (
+                      <SelectItem key={college.id} value={college.id}>
+                        {college.name} ({college.shortName})
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+              {colleges.length === 0 && (
+                <p className="text-xs text-amber-600">
+                  ⚠️ No colleges found. Please register a college first.
                 </p>
               )}
             </div>
@@ -2679,21 +2739,44 @@ function MeetupsManagementTab({ allUsers = [] }: { allUsers?: UserType[] }) {
 // ================== COLLEGE CHAMPS MANAGEMENT ==================
 
 // Create/Edit Task Dialog
-function CreateTaskDialog({ task, onClose }: { task?: CollegeTask; onClose?: () => void }) {
+function CreateTaskDialog({ task, onClose, onSuccess }: { task?: CollegeTask; onClose?: () => void; onSuccess?: () => void }) {
   const [open, setOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     title: task?.title || '',
     description: task?.description || '',
     points: task?.points || 100,
     category: task?.category || 'learning' as CollegeTask['category'],
-    order: task?.order || predefinedTasks.length + 1
+    order: task?.order || 1,
+    isDefault: task?.isDefault || false
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    toast.success(task ? 'Task updated successfully!' : 'Task created successfully!');
-    setOpen(false);
-    onClose?.();
+    setIsSubmitting(true);
+    
+    try {
+      if (task) {
+        // Update existing task
+        const { updateCollegeTask } = await import('@/lib/colleges');
+        await updateCollegeTask(task.id, formData);
+        toast.success('Task updated successfully!');
+      } else {
+        // Create new task
+        const { createCollegeTask } = await import('@/lib/colleges');
+        await createCollegeTask(formData);
+        toast.success('Task created successfully!');
+      }
+      
+      setOpen(false);
+      onClose?.();
+      onSuccess?.();
+    } catch (error) {
+      console.error('Error saving task:', error);
+      toast.error('Failed to save task');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const categoryOptions: { value: CollegeTask['category']; label: string; color: string }[] = [
@@ -2718,7 +2801,7 @@ function CreateTaskDialog({ task, onClose }: { task?: CollegeTask; onClose?: () 
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{task ? 'Edit Task' : 'Create New Task'}</DialogTitle>
           <DialogDescription>
@@ -2789,8 +2872,22 @@ function CreateTaskDialog({ task, onClose }: { task?: CollegeTask; onClose?: () 
               </SelectContent>
             </Select>
           </div>
-          <Button type="submit" className="w-full">
-            {task ? 'Update Task' : 'Create Task'}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label>Default Task</Label>
+                <p className="text-xs text-muted-foreground">
+                  Available to all colleges automatically
+                </p>
+              </div>
+              <Switch
+                checked={formData.isDefault}
+                onCheckedChange={(checked) => setFormData({ ...formData, isDefault: checked })}
+              />
+            </div>
+          </div>
+          <Button type="submit" className="w-full" disabled={isSubmitting}>
+            {isSubmitting ? 'Saving...' : task ? 'Update Task' : 'Create Task'}
           </Button>
         </form>
       </DialogContent>
@@ -2798,19 +2895,197 @@ function CreateTaskDialog({ task, onClose }: { task?: CollegeTask; onClose?: () 
   );
 }
 
+// Assign Tasks to College Dialog
+function AssignTasksDialog({ college, onSuccess }: { college: College; onSuccess: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [selectedTasks, setSelectedTasks] = useState<string[]>(college.assignedTaskIds || []);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [allTasks, setAllTasks] = useState<CollegeTask[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Fetch tasks when dialog opens
+  useEffect(() => {
+    if (open) {
+      fetchTasks();
+    }
+  }, [open]);
+
+  const fetchTasks = async () => {
+    setIsLoading(true);
+    try {
+      const { getAllCollegeTasks } = await import('@/lib/colleges');
+      const tasks = await getAllCollegeTasks();
+      setAllTasks(tasks);
+      
+      // Filter out any assigned task IDs that no longer exist or are now default
+      const validAssignedTasks = (college.assignedTaskIds || []).filter(taskId => {
+        const task = tasks.find(t => t.id === taskId);
+        return task && !task.isDefault;
+      });
+      setSelectedTasks(validAssignedTasks);
+    } catch (error) {
+      console.error('Error fetching tasks:', error);
+      toast.error('Failed to load tasks');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Get non-default tasks that can be assigned
+  const assignableTasks = allTasks.filter(task => !task.isDefault);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    
+    try {
+      const { assignTasksToCollege } = await import('@/lib/colleges');
+      await assignTasksToCollege(college.id, selectedTasks);
+      
+      toast.success(`Tasks assigned to ${college.name}!`);
+      setOpen(false);
+      onSuccess();
+    } catch (error) {
+      console.error('Error assigning tasks:', error);
+      toast.error('Failed to assign tasks');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const toggleTask = (taskId: string) => {
+    setSelectedTasks(prev => 
+      prev.includes(taskId) 
+        ? prev.filter(id => id !== taskId)
+        : [...prev, taskId]
+    );
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" className="gap-1">
+          <ListTodo className="h-4 w-4" />
+          Assign Tasks
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Assign Tasks to {college.shortName}</DialogTitle>
+          <DialogDescription>
+            Select additional tasks for this college. Default tasks are automatically available to all colleges.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {isLoading ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <p>Loading tasks...</p>
+            </div>
+          ) : assignableTasks.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <Target className="h-12 w-12 mx-auto mb-2 opacity-50" />
+              <p>No assignable tasks available.</p>
+              <p className="text-sm">All tasks are marked as default.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Label>Available Tasks ({assignableTasks.length})</Label>
+              <div className="space-y-2 max-h-96 overflow-y-auto border rounded-lg p-3">
+                {assignableTasks.map(task => (
+                  <label
+                    key={task.id}
+                    className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                      selectedTasks.includes(task.id)
+                        ? 'bg-primary/5 border-primary'
+                        : 'hover:bg-muted'
+                    }`}
+                  >
+                    <div className="flex items-center h-5">
+                      <input
+                        type="checkbox"
+                        checked={selectedTasks.includes(task.id)}
+                        onChange={() => toggleTask(task.id)}
+                        className="h-4 w-4 rounded border-gray-300"
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-medium">{task.title}</span>
+                        <Badge variant="outline" className="text-xs capitalize">
+                          {task.category}
+                        </Badge>
+                        {task.isDefault && (
+                          <Badge variant="secondary" className="text-xs">
+                            Default
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-sm text-muted-foreground">{task.description}</p>
+                    </div>
+                    <Badge className="flex-shrink-0">{task.points} pts</Badge>
+                  </label>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {selectedTasks.length} task(s) selected
+              </p>
+            </div>
+          )}
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setOpen(false)}
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={isSubmitting || assignableTasks.length === 0}
+              className="flex-1"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Assigning...
+                </>
+              ) : (
+                'Assign Tasks'
+              )}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // Verify Task Completion Dialog
-function VerifyTaskDialog({ college, taskId }: { college: College; taskId: string }) {
+function VerifyTaskDialog({ college, taskId, onSuccess }: { college: College; taskId: string; onSuccess: () => void }) {
   const [open, setOpen] = useState(false);
   const [bonusPoints, setBonusPoints] = useState(0);
-  const [feedback, setFeedback] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const task = getTaskById(taskId);
   const completion = college.completedTasks.find(t => t.taskId === taskId);
 
   if (!task) return null;
 
-  const handleVerify = () => {
-    toast.success(`Task verified for ${college.name}! ${task.points + bonusPoints} points awarded.`);
-    setOpen(false);
+  const handleVerify = async () => {
+    setIsSubmitting(true);
+    try {
+      const { completeTask } = await import('@/lib/colleges');
+      await completeTask(college.id, taskId, bonusPoints, task.points);
+      
+      toast.success(`Task verified for ${college.name}! ${task.points + bonusPoints} points awarded.`);
+      setOpen(false);
+      onSuccess();
+    } catch (error) {
+      console.error('Error verifying task:', error);
+      toast.error('Failed to verify task');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -2818,14 +3093,14 @@ function VerifyTaskDialog({ college, taskId }: { college: College; taskId: strin
       <DialogTrigger asChild>
         <Button size="sm" variant="outline" className="gap-1">
           <ClipboardCheck className="h-4 w-4" />
-          Verify
+          Mark Complete
         </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Verify Task Completion</DialogTitle>
+          <DialogTitle>Mark Task as Complete</DialogTitle>
           <DialogDescription>
-            Verify "{task.title}" completion for {college.name}
+            Mark "{task.title}" as completed for {college.name}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -2836,21 +3111,6 @@ function VerifyTaskDialog({ college, taskId }: { college: College; taskId: strin
             </div>
             <p className="text-sm text-muted-foreground">{task.description}</p>
           </div>
-          
-          {completion?.proof && (
-            <div className="space-y-2">
-              <Label>Submitted Proof</Label>
-              <a 
-                href={completion.proof} 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="text-primary hover:underline flex items-center gap-1 text-sm"
-              >
-                <ExternalLink className="h-3 w-3" />
-                View Proof
-              </a>
-            </div>
-          )}
 
           <div className="space-y-2">
             <Label>Bonus Points (Optional)</Label>
@@ -2867,26 +3127,19 @@ function VerifyTaskDialog({ college, taskId }: { college: College; taskId: strin
             </p>
           </div>
 
-          <div className="space-y-2">
-            <Label>Feedback (Optional)</Label>
-            <Textarea
-              rows={2}
-              value={feedback}
-              onChange={(e) => setFeedback(e.target.value)}
-              placeholder="Add feedback for the college..."
-            />
-          </div>
-
-          <div className="flex gap-2">
-            <Button onClick={handleVerify} className="flex-1 gap-1">
-              <CheckCircle className="h-4 w-4" />
-              Verify & Award Points
-            </Button>
-            <Button variant="destructive" className="gap-1">
-              <XCircle className="h-4 w-4" />
-              Reject
-            </Button>
-          </div>
+          <Button onClick={handleVerify} className="w-full gap-1" disabled={isSubmitting}>
+            {isSubmitting ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Marking Complete...
+              </>
+            ) : (
+              <>
+                <CheckCircle className="h-4 w-4" />
+                Mark Complete & Award Points
+              </>
+            )}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>
@@ -2894,19 +3147,44 @@ function VerifyTaskDialog({ college, taskId }: { college: College; taskId: strin
 }
 
 // Award Adhoc Points Dialog
-function AwardPointsDialog({ college }: { college: College }) {
+function AwardPointsDialog({ college, onSuccess }: { college: College; onSuccess: () => void }) {
   const [open, setOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     reason: '',
     points: 50,
     category: 'special' as CollegeTask['category']
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    toast.success(`${formData.points} points awarded to ${college.name}!`);
-    setOpen(false);
-    setFormData({ reason: '', points: 50, category: 'special' });
+    
+    if (!formData.reason || formData.points <= 0) {
+      toast.error('Please fill in all fields');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const { updateCollege } = await import('@/lib/colleges');
+      
+      // Update college with new total points
+      const newTotalPoints = college.totalPoints + formData.points;
+      
+      await updateCollege(college.id, {
+        totalPoints: newTotalPoints
+      });
+
+      toast.success(`${formData.points} points awarded to ${college.name}!`);
+      setOpen(false);
+      setFormData({ reason: '', points: 50, category: 'special' });
+      onSuccess();
+    } catch (error) {
+      console.error('Error awarding points:', error);
+      toast.error('Failed to award points');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -2963,9 +3241,18 @@ function AwardPointsDialog({ college }: { college: College }) {
               </Select>
             </div>
           </div>
-          <Button type="submit" className="w-full gap-1">
-            <Award className="h-4 w-4" />
-            Award {formData.points} Points
+          <Button type="submit" className="w-full gap-1" disabled={isSubmitting}>
+            {isSubmitting ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Awarding...
+              </>
+            ) : (
+              <>
+                <Award className="h-4 w-4" />
+                Award {formData.points} Points
+              </>
+            )}
           </Button>
         </form>
       </DialogContent>
@@ -2973,8 +3260,459 @@ function AwardPointsDialog({ college }: { college: College }) {
   );
 }
 
+// Create College Dialog
+function CreateCollegeDialog({ isOpen, onOpenChange, onSuccess, allUsers = [] }: { 
+  isOpen: boolean; 
+  onOpenChange: (open: boolean) => void;
+  onSuccess: () => void;
+  allUsers?: UserType[];
+}) {
+  const [formData, setFormData] = useState({
+    id: '',
+    name: '',
+    shortName: '',
+    location: '',
+    champsLeadId: '',
+    logo: '',
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please upload an image file');
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Image size must be less than 5MB');
+      return;
+    }
+
+    setUploadingLogo(true);
+    try {
+      const logoUrl = await uploadFileToS3(file, 'college-logos');
+      setFormData({ ...formData, logo: logoUrl });
+      toast.success('Logo uploaded successfully');
+    } catch (error) {
+      console.error('Error uploading logo:', error);
+      toast.error('Failed to upload logo');
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!formData.name || !formData.shortName || !formData.location || !formData.champsLeadId) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const { createCollege } = await import('@/lib/colleges');
+      
+      // Get the selected user's name
+      const selectedUser = allUsers.find(u => u.id === formData.champsLeadId);
+      if (!selectedUser) {
+        toast.error('Selected champs lead not found');
+        return;
+      }
+      
+      // Generate ID from short name if not provided
+      const collegeId = formData.id || `college-${formData.shortName.toLowerCase().replace(/\s+/g, '-')}`;
+      
+      await createCollege({
+        id: collegeId,
+        name: formData.name,
+        shortName: formData.shortName,
+        location: formData.location,
+        champsLead: selectedUser.name,
+        champsLeadId: formData.champsLeadId,
+        logo: formData.logo || undefined,
+      });
+
+      toast.success(`${formData.name} has been created`);
+
+      // Reset form
+      setFormData({
+        id: '',
+        name: '',
+        shortName: '',
+        location: '',
+        champsLeadId: '',
+        logo: '',
+      });
+      
+      onOpenChange(false);
+      onSuccess();
+    } catch (error) {
+      console.error('Error creating college:', error);
+      toast.error('Failed to create college');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <DialogTrigger asChild>
+        <Button className="gap-2">
+          <Plus className="h-4 w-4" />
+          Add College
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Add New College</DialogTitle>
+          <DialogDescription>
+            Create a new college in the Champs program
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="name">College Name *</Label>
+            <Input
+              id="name"
+              placeholder="e.g., Indian Institute of Technology Delhi"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              required
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="shortName">Short Name *</Label>
+            <Input
+              id="shortName"
+              placeholder="e.g., IIT Delhi"
+              value={formData.shortName}
+              onChange={(e) => setFormData({ ...formData, shortName: e.target.value })}
+              required
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="location">Location *</Label>
+            <Input
+              id="location"
+              placeholder="e.g., New Delhi"
+              value={formData.location}
+              onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+              required
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="champsLead">Champs Lead *</Label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  className="w-full justify-between"
+                >
+                  {formData.champsLeadId ? (
+                    <div className="flex items-center gap-2">
+                      <Avatar className="h-6 w-6">
+                        <AvatarImage src={allUsers.find(u => u.id === formData.champsLeadId)?.avatar} />
+                        <AvatarFallback>
+                          {allUsers.find(u => u.id === formData.champsLeadId)?.name.charAt(0)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span>{allUsers.find(u => u.id === formData.champsLeadId)?.name}</span>
+                    </div>
+                  ) : (
+                    "Select a champs lead"
+                  )}
+                  <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-full p-0" align="start">
+                <Command>
+                  <CommandInput placeholder="Search users..." />
+                  <CommandList>
+                    <CommandEmpty>No user found.</CommandEmpty>
+                    <CommandGroup>
+                      {allUsers.map((user) => (
+                        <CommandItem
+                          key={user.id}
+                          value={`${user.name} ${user.email}`}
+                          onSelect={() => {
+                            setFormData({ ...formData, champsLeadId: user.id });
+                          }}
+                        >
+                          <div className="flex items-center gap-2 w-full">
+                            <Avatar className="h-8 w-8">
+                              <AvatarImage src={user.avatar} />
+                              <AvatarFallback>{user.name.charAt(0)}</AvatarFallback>
+                            </Avatar>
+                            <div className="flex-1">
+                              <div className="font-medium">{user.name}</div>
+                              <div className="text-xs text-muted-foreground">{user.email}</div>
+                            </div>
+                            {formData.champsLeadId === user.id && (
+                              <Check className="h-4 w-4" />
+                            )}
+                          </div>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
+            <p className="text-xs text-muted-foreground">
+              The selected user will be automatically added as a member
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="logo">College Logo</Label>
+            <div className="flex items-center gap-2">
+              {formData.logo && (
+                <img 
+                  src={formData.logo} 
+                  alt="College logo preview" 
+                  className="h-16 w-16 rounded-lg object-cover border"
+                />
+              )}
+              <div className="flex-1">
+                <Input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleLogoUpload}
+                  disabled={uploadingLogo}
+                  className="hidden"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadingLogo}
+                  className="w-full"
+                >
+                  {uploadingLogo ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Uploading...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="mr-2 h-4 w-4" />
+                      {formData.logo ? 'Change Logo' : 'Upload Logo'}
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Upload a college logo (max 5MB, JPG/PNG)
+            </p>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={isSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={isSubmitting || uploadingLogo}>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Creating...
+                </>
+              ) : (
+                'Create College'
+              )}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Change Champs Lead Dialog
+function ChangeLeadDialog({ college, allUsers, onSuccess }: { 
+  college: College; 
+  allUsers: UserType[];
+  onSuccess: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>(
+    college.champsLeadId ? [college.champsLeadId] : []
+  );
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const toggleUser = (userId: string) => {
+    setSelectedUserIds(prev => 
+      prev.includes(userId) 
+        ? prev.filter(id => id !== userId)
+        : [...prev, userId]
+    );
+  };
+
+  const filteredUsers = allUsers.filter(user => 
+    user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    user.email.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const handleChangeLead = async () => {
+    if (selectedUserIds.length === 0) {
+      toast.error('Please select at least one user');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const { updateCollege } = await import('@/lib/colleges');
+      const selectedUsers = allUsers.filter(u => selectedUserIds.includes(u.id));
+      
+      if (selectedUsers.length === 0) {
+        toast.error('Selected users not found');
+        return;
+      }
+
+      // Use the first selected user as the primary lead
+      const primaryLead = selectedUsers[0];
+      const leadNames = selectedUsers.map(u => u.name).join(', ');
+
+      await updateCollege(college.id, {
+        champsLeadId: primaryLead.id,
+        champsLead: leadNames
+      });
+      
+      toast.success(`Champs lead${selectedUsers.length > 1 ? 's' : ''} updated for ${college.name}`);
+      setOpen(false);
+      onSuccess();
+    } catch (error) {
+      console.error('Error changing lead:', error);
+      toast.error('Failed to change champs lead');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline" className="gap-1">
+          <UserCog className="h-4 w-4" />
+          Change Lead
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Change Champs Lead</DialogTitle>
+          <DialogDescription>
+            Select one or more champs leads for {college.name}
+          </DialogDescription>
+        </DialogHeader>
+        
+        <div className="space-y-4">
+          {/* Current Lead */}
+          <div className="p-3 rounded-lg bg-muted/30">
+            <Label className="text-xs text-muted-foreground mb-2 block">Current Lead(s)</Label>
+            <p className="text-sm font-medium">{college.champsLead}</p>
+          </div>
+
+          {/* Select New Leads */}
+          <div className="space-y-2">
+            <Label>Select Lead(s) ({selectedUserIds.length} selected)</Label>
+            
+            {/* Search Input */}
+            <Input
+              placeholder="Search users..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="mb-2"
+            />
+
+            {/* User List */}
+            <div className="border rounded-lg max-h-[300px] overflow-y-auto">
+              {filteredUsers.length === 0 ? (
+                <div className="p-4 text-center text-sm text-muted-foreground">
+                  No users found
+                </div>
+              ) : (
+                filteredUsers.map((user) => {
+                  const isSelected = selectedUserIds.includes(user.id);
+                  return (
+                    <div
+                      key={user.id}
+                      onClick={() => toggleUser(user.id)}
+                      className={`flex items-center gap-3 p-3 cursor-pointer hover:bg-muted/50 transition-colors ${
+                        isSelected ? 'bg-primary/10' : ''
+                      }`}
+                    >
+                      <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
+                        isSelected ? 'bg-primary border-primary' : 'border-muted-foreground'
+                      }`}>
+                        {isSelected && <Check className="h-3 w-3 text-primary-foreground" />}
+                      </div>
+                      <Avatar className="h-8 w-8">
+                        <AvatarImage src={user.avatar} />
+                        <AvatarFallback>{user.name.charAt(0)}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1">
+                        <div className="font-medium text-sm">{user.name}</div>
+                        <div className="text-xs text-muted-foreground">{user.email}</div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setOpen(false)}
+              disabled={isSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleChangeLead} disabled={isSubmitting || selectedUserIds.length === 0}>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Updating...
+                </>
+              ) : (
+                `Update Lead${selectedUserIds.length > 1 ? 's' : ''}`
+              )}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // College Management Card
-function CollegeManagementCard({ college }: { college: College }) {
+function CollegeManagementCard({ college, onDelete, onUpdate, allUsers }: { 
+  college: College;
+  onDelete: () => void;
+  onUpdate: () => void;
+  allUsers: UserType[];
+}) {
   const [expanded, setExpanded] = useState(false);
   const completedTaskIds = college.completedTasks.map(t => t.taskId);
   const pendingTasks = predefinedTasks.filter(t => !completedTaskIds.includes(t.id));
@@ -3004,12 +3742,19 @@ function CollegeManagementCard({ college }: { college: College }) {
         <CardContent className="p-4">
           {/* Header */}
           <div className="flex items-center gap-4 mb-4">
-            <div 
-              className="w-12 h-12 rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-lg"
-              style={{ backgroundColor: college.color }}
-            >
-              #{college.rank}
-            </div>
+            {college.logo ? (
+              <img 
+                src={college.logo} 
+                alt={`${college.name} logo`}
+                className="w-12 h-12 rounded-xl object-cover shadow-lg"
+              />
+            ) : (
+              <div 
+                className="w-12 h-12 rounded-xl flex items-center justify-center bg-gradient-to-br from-primary to-primary/70 text-white font-bold text-lg shadow-lg"
+              >
+                #{college.rank}
+              </div>
+            )}
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-1">
                 <h3 className="font-semibold">{college.name}</h3>
@@ -3031,7 +3776,17 @@ function CollegeManagementCard({ college }: { college: College }) {
               </div>
             </div>
             <div className="flex gap-2">
-              <AwardPointsDialog college={college} />
+              <AssignTasksDialog college={college} onSuccess={onUpdate} />
+              <AwardPointsDialog college={college} onSuccess={onUpdate} />
+              <ChangeLeadDialog college={college} allUsers={allUsers} onSuccess={onUpdate} />
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={onDelete}
+                className="text-destructive hover:text-destructive"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
               <Button 
                 variant="ghost" 
                 size="sm"
@@ -3040,15 +3795,6 @@ function CollegeManagementCard({ college }: { college: College }) {
                 <ChevronDown className={`h-4 w-4 transition-transform ${expanded ? 'rotate-180' : ''}`} />
               </Button>
             </div>
-          </div>
-
-          {/* Progress Bar */}
-          <div className="mb-4">
-            <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-              <span>Task Progress</span>
-              <span>{Math.round(progressPercent)}%</span>
-            </div>
-            <Progress value={progressPercent} className="h-2" />
           </div>
 
           {/* Lead Info */}
@@ -3097,7 +3843,7 @@ function CollegeManagementCard({ college }: { college: College }) {
                             </div>
                           </div>
                         </div>
-                        <VerifyTaskDialog college={college} taskId={task.id} />
+                        <VerifyTaskDialog college={college} taskId={task.id} onSuccess={onUpdate} />
                       </div>
                     ))}
                     {pendingTasks.length > 3 && (
@@ -3140,11 +3886,9 @@ function CollegeManagementCard({ college }: { college: College }) {
                               </div>
                             </div>
                           </div>
-                          {completion?.verifiedBy && (
-                            <Badge variant="secondary" className="text-xs">
-                              Verified
-                            </Badge>
-                          )}
+                          <Badge variant="secondary" className="text-xs">
+                            Completed
+                          </Badge>
                         </div>
                       );
                     })}
@@ -3185,18 +3929,120 @@ function CollegeManagementCard({ college }: { college: College }) {
 // College Champs Tab Content
 function CollegeChampsTab() {
   const [searchQuery, setSearchQuery] = useState('');
-  const sortedColleges = [...mockColleges].sort((a, b) => a.rank - b.rank);
+  const [colleges, setColleges] = useState<College[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [allUsers, setAllUsers] = useState<UserType[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [allTasks, setAllTasks] = useState<CollegeTask[]>([]);
+  const [loadingTasks, setLoadingTasks] = useState(true);
+
+  // Fetch colleges from API
+  useEffect(() => {
+    fetchColleges();
+    fetchUsers();
+    fetchTasks();
+  }, []);
+
+  const fetchUsers = async () => {
+    setLoadingUsers(true);
+    try {
+      const fetchedUsers = await getAllUsers();
+      setAllUsers(fetchedUsers);
+    } catch (error) {
+      console.error('Error fetching users:', error);
+      setAllUsers(mockUsers);
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
+  const fetchTasks = async () => {
+    try {
+      setLoadingTasks(true);
+      const { getAllCollegeTasks } = await import('@/lib/colleges');
+      const tasks = await getAllCollegeTasks();
+      setAllTasks(tasks);
+    } catch (error) {
+      console.error('Error fetching tasks:', error);
+      toast.error('Failed to load tasks');
+    } finally {
+      setLoadingTasks(false);
+    }
+  };
+
+  const fetchColleges = async () => {
+    try {
+      setIsLoading(true);
+      const { getAllColleges } = await import('@/lib/colleges');
+      const data = await getAllColleges();
+      setColleges(data);
+    } catch (error) {
+      console.error('Error fetching colleges:', error);
+      toast.error('Failed to load colleges');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDeleteCollege = async (collegeId: string, collegeName: string) => {
+    if (!confirm(`Are you sure you want to delete ${collegeName}? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const { deleteCollege } = await import('@/lib/colleges');
+      await deleteCollege(collegeId);
+      toast.success(`${collegeName} has been deleted`);
+      fetchColleges();
+    } catch (error) {
+      console.error('Error deleting college:', error);
+      toast.error('Failed to delete college');
+    }
+  };
+
+  const handleDeleteTask = async (taskId: string, taskTitle: string) => {
+    if (!confirm(`Are you sure you want to delete "${taskTitle}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const { deleteCollegeTask } = await import('@/lib/colleges');
+      await deleteCollegeTask(taskId);
+      toast.success('Task deleted successfully');
+      fetchTasks();
+    } catch (error) {
+      console.error('Error deleting task:', error);
+      toast.error('Failed to delete task');
+    }
+  };
+
+  const sortedColleges = [...colleges].sort((a, b) => a.rank - b.rank);
   const filteredColleges = sortedColleges.filter(c => 
-    c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    c.shortName.toLowerCase().includes(searchQuery.toLowerCase())
+    c.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    c.shortName?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const totalColleges = mockColleges.length;
-  const totalPoints = mockColleges.reduce((sum, c) => sum + c.totalPoints, 0);
-  const totalCompletedTasks = mockColleges.reduce((sum, c) => sum + c.completedTasks.length, 0);
+  const totalColleges = colleges.length;
+  const totalPoints = colleges.reduce((sum, c) => sum + (c.totalPoints || 0), 0);
+  const totalCompletedTasks = colleges.reduce((sum, c) => sum + (c.completedTasks?.length || 0), 0);
 
   return (
     <div className="space-y-6">
+      {/* Task Submissions Review */}
+      <Card className="glass-card">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Upload className="h-5 w-5 text-primary" />
+            Task Submissions
+          </CardTitle>
+          <CardDescription>Review and approve task submissions from college captains</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <TaskSubmissionsPanel onSubmissionReviewed={fetchColleges} />
+        </CardContent>
+      </Card>
+
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card className="glass-card">
@@ -3207,7 +4053,7 @@ function CollegeChampsTab() {
         </Card>
         <Card className="glass-card">
           <CardContent className="p-4 text-center">
-            <div className="text-3xl font-bold text-amber-500">{predefinedTasks.length}</div>
+            <div className="text-3xl font-bold text-amber-500">{allTasks.length}</div>
             <p className="text-sm text-muted-foreground">Predefined Tasks</p>
           </CardContent>
         </Card>
@@ -3236,12 +4082,23 @@ function CollegeChampsTab() {
               </CardTitle>
               <CardDescription>Manage tasks that colleges need to complete</CardDescription>
             </div>
-            <CreateTaskDialog />
+            <CreateTaskDialog onSuccess={fetchTasks} />
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {predefinedTasks.sort((a, b) => (a.order || 0) - (b.order || 0)).map(task => (
+          {loadingTasks ? (
+            <div className="text-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
+              <p className="text-sm text-muted-foreground mt-2">Loading tasks...</p>
+            </div>
+          ) : allTasks.length === 0 ? (
+            <div className="text-center py-8">
+              <ListTodo className="h-12 w-12 mx-auto text-muted-foreground/50" />
+              <p className="text-sm text-muted-foreground mt-2">No tasks found</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {allTasks.sort((a, b) => (a.order || 0) - (b.order || 0)).map(task => (
               <div key={task.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-sm font-medium text-primary">
@@ -3256,14 +4113,20 @@ function CollegeChampsTab() {
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
-                  <CreateTaskDialog task={task} />
-                  <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">
+                  <CreateTaskDialog task={task} onSuccess={fetchTasks} />
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => handleDeleteTask(task.id, task.title)}
+                  >
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
               </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -3276,20 +4139,46 @@ function CollegeChampsTab() {
                 <GraduationCap className="h-5 w-5 text-primary" />
                 College Management
               </CardTitle>
-              <CardDescription>Track progress and verify task completions</CardDescription>
+              <CardDescription>Track progress and manage colleges</CardDescription>
             </div>
-            <Input
-              placeholder="Search colleges..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="max-w-xs"
-            />
+            <div className="flex items-center gap-2">
+              <Input
+                placeholder="Search colleges..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="max-w-xs"
+              />
+              <CreateCollegeDialog 
+                isOpen={isCreateDialogOpen}
+                onOpenChange={setIsCreateDialogOpen}
+                onSuccess={fetchColleges}
+                allUsers={allUsers}
+              />
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {filteredColleges.map(college => (
-            <CollegeManagementCard key={college.id} college={college} />
-          ))}
+          {isLoading ? (
+            <div className="text-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
+              <p className="text-sm text-muted-foreground mt-2">Loading colleges...</p>
+            </div>
+          ) : filteredColleges.length === 0 ? (
+            <div className="text-center py-8">
+              <GraduationCap className="h-12 w-12 mx-auto text-muted-foreground/50" />
+              <p className="text-sm text-muted-foreground mt-2">No colleges found</p>
+            </div>
+          ) : (
+            filteredColleges.map(college => (
+              <CollegeManagementCard 
+                key={college.id} 
+                college={college}
+                allUsers={allUsers}
+                onDelete={() => handleDeleteCollege(college.id, college.name)}
+                onUpdate={fetchColleges}
+              />
+            ))
+          )}
         </CardContent>
       </Card>
     </div>

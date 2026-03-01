@@ -68,7 +68,7 @@ export default function Signup() {
   const [meetupError, setMeetupError] = useState<string | null>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { signUp, confirmSignUp, resendConfirmationCode, signIn, signOut } = useAuth();
+  const { signUp, confirmSignUp, resendConfirmationCode, signIn, signOut, refreshUser } = useAuth();
   const [userId, setUserId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -325,6 +325,9 @@ export default function Signup() {
 
         // Wait for DynamoDB eventual consistency
         await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Refresh user data in auth context to include the avatar
+        await refreshUser();
         
       } catch (profileError: any) {
         console.error('Profile creation failed:', profileError);

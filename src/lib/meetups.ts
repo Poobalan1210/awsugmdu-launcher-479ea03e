@@ -21,6 +21,7 @@ export interface CreateMeetupData {
   volunteers?: any[];
   sprintId?: string;
   certificationGroupId?: string;
+  collegeId?: string;
 }
 
 export interface UpdateMeetupData extends Partial<CreateMeetupData> {

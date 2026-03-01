@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
@@ -9,13 +9,18 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { 
   GraduationCap, Users, Calendar, Award, ArrowRight, Trophy, Medal, 
   CheckCircle2, Circle, MapPin, Star, Zap, Target, PartyPopper,
-  ChevronRight, Clock, ExternalLink
+  ChevronRight, Clock, ExternalLink, Loader2, Search, X, Upload
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { mockColleges, predefinedTasks, getTaskById, getUserById, College, CollegeTask } from '@/data/mockData';
+import { predefinedTasks, getTaskById, getUserById, CollegeTask } from '@/data/mockData';
+import { College } from '@/lib/colleges';
+import { toast } from 'sonner';
+import { useAuth } from '@/contexts/AuthContext';
+import { SubmitTaskDialog } from '@/components/college-champs/SubmitTaskDialog';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -59,7 +64,16 @@ const getCategoryColor = (category: CollegeTask['category']) => {
   }
 };
 
-function CollegeLeaderboard({ colleges, onSelectCollege }: { colleges: College[], onSelectCollege: (college: College) => void }) {
+function CollegeLeaderboard({ colleges, onSelectCollege }: { colleges: College[], onSelectCollege: (college: College, rank: number) => void }) {
+  // Helper to calculate available tasks for a college
+  const getAvailableTasks = (college: College) => {
+    const defaultTasks = predefinedTasks.filter(task => task.isDefault);
+    const assignedTasks = predefinedTasks.filter(task => 
+      college.assignedTaskIds?.includes(task.id)
+    );
+    return [...defaultTasks, ...assignedTasks];
+  };
+
   return (
     <motion.div
       variants={containerVariants}
@@ -67,362 +81,640 @@ function CollegeLeaderboard({ colleges, onSelectCollege }: { colleges: College[]
       animate="visible"
       className="space-y-3"
     >
-      {colleges.map((college, index) => (
-        <motion.div
-          key={college.id}
-          variants={itemVariants}
-          whileHover={{ scale: 1.01, x: 5 }}
-          className="cursor-pointer"
-          onClick={() => onSelectCollege(college)}
-        >
-          <Card className={`glass-card overflow-hidden transition-all hover:shadow-lg ${index < 3 ? 'border-2' : ''} ${
-            index === 0 ? 'border-yellow-500/50 bg-gradient-to-r from-yellow-500/5 to-transparent' :
-            index === 1 ? 'border-gray-400/50 bg-gradient-to-r from-gray-400/5 to-transparent' :
-            index === 2 ? 'border-amber-600/50 bg-gradient-to-r from-amber-600/5 to-transparent' : ''
-          }`}>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-4">
-                <div className="flex-shrink-0 w-12 flex justify-center">
-                  {getRankIcon(college.rank)}
-                </div>
-                
-                <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${college.color} flex items-center justify-center text-white font-bold text-lg shadow-lg`}>
-                  {college.shortName.substring(0, 2)}
-                </div>
-                
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <h3 className="font-semibold truncate">{college.shortName}</h3>
-                    <Badge variant="outline" className="text-xs hidden sm:inline-flex">
-                      <MapPin className="h-3 w-3 mr-1" />
-                      {college.location.split(',')[0]}
-                    </Badge>
+      {colleges.map((college, index) => {
+        const displayRank = index + 1;
+        const availableTasks = getAvailableTasks(college);
+        const taskProgress = availableTasks.length > 0 
+          ? ((college.completedTasks?.length || 0) / availableTasks.length) * 100 
+          : 0;
+        
+        return (
+          <motion.div
+            key={college.id}
+            variants={itemVariants}
+            whileHover={{ scale: 1.01, x: 5 }}
+            className="cursor-pointer focus:outline-none"
+            onClick={() => onSelectCollege(college, displayRank)}
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onSelectCollege(college, displayRank);
+              }
+            }}
+          >
+            <Card className={`glass-card overflow-hidden transition-all hover:shadow-lg ${index < 3 ? 'border-2' : ''} ${
+              index === 0 ? 'border-yellow-500/50 bg-gradient-to-r from-yellow-500/5 to-transparent' :
+              index === 1 ? 'border-gray-400/50 bg-gradient-to-r from-gray-400/5 to-transparent' :
+              index === 2 ? 'border-amber-600/50 bg-gradient-to-r from-amber-600/5 to-transparent' : ''
+            }`}>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-4">
+                  <div className="flex-shrink-0 w-12 flex justify-center">
+                    {getRankIcon(displayRank)}
                   </div>
-                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                    <span className="flex items-center gap-1">
-                      <CheckCircle2 className="h-3 w-3 text-green-500" />
-                      {college.completedTasks.length}/{predefinedTasks.length} tasks
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Calendar className="h-3 w-3" />
-                      {college.hostedEvents.filter(e => e.status === 'completed').length} events
-                    </span>
+                  
+                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-lg ${
+                    college.logo 
+                      ? '' 
+                      : 'bg-gradient-to-br from-primary to-primary/70 text-white font-bold text-lg'
+                  }`}>
+                    {college.logo ? (
+                      <img src={college.logo} alt={college.shortName} className="w-full h-full rounded-xl object-cover" />
+                    ) : (
+                      college.shortName?.substring(0, 2) || 'NA'
+                    )}
                   </div>
-                  <Progress 
-                    value={(college.completedTasks.length / predefinedTasks.length) * 100} 
-                    className="h-1.5 mt-2"
-                  />
-                </div>
-                
-                <div className="text-right flex-shrink-0">
-                  <div className="flex items-center gap-1 text-xl font-bold">
-                    <Zap className="h-5 w-5 text-amber-500" />
-                    {college.totalPoints.toLocaleString()}
+                  
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="font-semibold truncate">{college.shortName}</h3>
+                      <Badge variant="outline" className="text-xs hidden sm:inline-flex">
+                        <MapPin className="h-3 w-3 mr-1" />
+                        {college.location?.split(',')[0] || 'Unknown'}
+                      </Badge>
+                    </div>
                   </div>
-                  <p className="text-xs text-muted-foreground">points</p>
+                  
+                  <div className="text-right flex-shrink-0">
+                    <div className="flex items-center gap-1 text-xl font-bold">
+                      <Zap className="h-5 w-5 text-amber-500" />
+                      {(college.totalPoints || 0).toLocaleString()}
+                    </div>
+                    <p className="text-xs text-muted-foreground">points</p>
+                  </div>
+                  
+                  <ChevronRight className="h-5 w-5 text-muted-foreground" />
                 </div>
-                
-                <ChevronRight className="h-5 w-5 text-muted-foreground" />
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-      ))}
+              </CardContent>
+            </Card>
+          </motion.div>
+        );
+      })}
     </motion.div>
   );
 }
 
-function CollegeDetailView({ college, onClose }: { college: College, onClose: () => void }) {
-  const progressPercentage = (college.completedTasks.length / predefinedTasks.length) * 100;
+function CollegeDetailView({ college, rank }: { college: College, rank: number }) {
+  const { user } = useAuth();
+  const [memberDetails, setMemberDetails] = useState<any[]>([]);
+  const [champsLead, setChampsLead] = useState<any>(null);
+  const [submitDialogOpen, setSubmitDialogOpen] = useState(false);
+  const [selectedTask, setSelectedTask] = useState<CollegeTask | null>(null);
+  const [allTasks, setAllTasks] = useState<CollegeTask[]>([]);
+  const [loadingTasks, setLoadingTasks] = useState(true);
+  
+  // Check if current user is the captain of this college
+  const isCaptain = user?.id === college.champsLeadId;
+  const [loadingMembers, setLoadingMembers] = useState(true);
+  const [memberSearchQuery, setMemberSearchQuery] = useState('');
+  const [activeTab, setActiveTab] = useState('completed');
 
-  // Get member details
-  const memberDetails = college.members.map(memberId => getUserById(memberId)).filter(Boolean);
-  const champsLead = college.champsLeadId ? getUserById(college.champsLeadId) : null;
+  // Fetch tasks from API
+  useEffect(() => {
+    const fetchTasks = async () => {
+      try {
+        setLoadingTasks(true);
+        const { getAllCollegeTasks } = await import('@/lib/colleges');
+        const tasks = await getAllCollegeTasks();
+        setAllTasks(tasks);
+      } catch (error) {
+        console.error('Error fetching tasks:', error);
+        toast.error('Failed to load tasks');
+      } finally {
+        setLoadingTasks(false);
+      }
+    };
+
+    fetchTasks();
+  }, []);
+
+  // Get college-specific tasks (default tasks + assigned tasks)
+  const collegeCompletedTaskIds = college.completedTasks?.map(ct => ct.taskId) || [];
+  
+  // Get all tasks available to this college:
+  // 1. Default tasks (isDefault: true) - available to all colleges
+  // 2. College-specific assigned tasks (assignedTaskIds)
+  const defaultTasks = allTasks.filter(task => task.isDefault);
+  const assignedTasks = allTasks.filter(task => 
+    college.assignedTaskIds?.includes(task.id)
+  );
+  const allAvailableTasks = [...defaultTasks, ...assignedTasks];
+  
+  const completedTasks = allAvailableTasks.filter(task => collegeCompletedTaskIds.includes(task.id));
+  const pendingTasks = allAvailableTasks.filter(task => !collegeCompletedTaskIds.includes(task.id));
+  
+  const progressPercentage = allAvailableTasks.length > 0 
+    ? (completedTasks.length / allAvailableTasks.length) * 100 
+    : 0;
+
+  // Fetch member details from API
+  useEffect(() => {
+    const fetchMembers = async () => {
+      try {
+        setLoadingMembers(true);
+        const { getAllUsers } = await import('@/lib/userProfile');
+        const allUsers = await getAllUsers();
+
+        // Filter to get only members of this college
+        const members = allUsers.filter(user => college.members.includes(user.id));
+        setMemberDetails(members);
+
+        // Find the champs lead
+        if (college.champsLeadId) {
+          const lead = allUsers.find(user => user.id === college.champsLeadId);
+          setChampsLead(lead || null);
+        }
+      } catch (error) {
+        console.error('Error fetching members:', error);
+        toast.error('Failed to load members');
+      } finally {
+        setLoadingMembers(false);
+      }
+    };
+
+    fetchMembers();
+  }, [college.members, college.champsLeadId]);
+
+  // Filter members based on search query
+  const filteredMembers = useMemo(() => {
+    if (!memberSearchQuery.trim()) return memberDetails;
+
+    const query = memberSearchQuery.toLowerCase();
+    return memberDetails.filter(member =>
+      member.name.toLowerCase().includes(query) ||
+      member.designation?.toLowerCase().includes(query) ||
+      member.company?.toLowerCase().includes(query)
+    );
+  }, [memberDetails, memberSearchQuery]);
+
+  // Separate past and upcoming events
+  const now = new Date();
+  const pastEvents = college.hostedEvents.filter(event => new Date(event.date) < now || event.status === 'completed');
+  const upcomingEvents = college.hostedEvents.filter(event => new Date(event.date) >= now && event.status === 'upcoming');
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -20 }}
-    >
-      {/* College Header */}
-      <div className={`bg-gradient-to-br ${college.color} p-6 rounded-2xl text-white mb-6`}>
-        <div className="flex items-start justify-between">
-          <div>
-            <div className="flex items-center gap-3 mb-2">
-              {getRankIcon(college.rank)}
-              <h2 className="text-2xl font-bold">{college.name}</h2>
+    <div className="space-y-6">
+      {/* College Header - Redesigned */}
+      <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-primary via-primary/90 to-primary/80 p-6 text-white">
+        <div className="relative z-10">
+          <div className="flex items-start justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center justify-center w-12 h-12 rounded-lg bg-white/20 backdrop-blur-sm">
+                {getRankIcon(rank)}
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold">{college.name}</h2>
+                <div className="flex items-center gap-3 text-white/90 text-sm mt-1">
+                  <span className="flex items-center gap-1">
+                    <MapPin className="h-3 w-3" />
+                    {college.location}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Users className="h-3 w-3" />
+                    {college.members.length} members
+                  </span>
+                </div>
+              </div>
             </div>
-            <div className="flex items-center gap-4 text-white/80">
-              <span className="flex items-center gap-1">
-                <MapPin className="h-4 w-4" />
-                {college.location}
-              </span>
-              <span className="flex items-center gap-1">
-                <Users className="h-4 w-4" />
-                {college.members.length} members
-              </span>
+            <div className="text-right">
+              <div className="text-3xl font-bold flex items-center gap-2">
+                <Zap className="h-7 w-7" />
+                {college.totalPoints.toLocaleString()}
+              </div>
+              <p className="text-white/80 text-sm">total points</p>
             </div>
-          </div>
-          <div className="text-right">
-            <div className="text-3xl font-bold flex items-center gap-2">
-              <Zap className="h-8 w-8" />
-              {college.totalPoints.toLocaleString()}
-            </div>
-            <p className="text-white/80">total points</p>
           </div>
         </div>
-        
-        <div className="mt-6">
-          <div className="flex justify-between text-sm mb-2">
-            <span>Task Progress</span>
-            <span>{college.completedTasks.length}/{predefinedTasks.length} completed</span>
-          </div>
-          <div className="h-3 bg-white/20 rounded-full overflow-hidden">
-            <motion.div
-              className="h-full bg-white rounded-full"
-              initial={{ width: 0 }}
-              animate={{ width: `${progressPercentage}%` }}
-              transition={{ duration: 1, ease: "easeOut" }}
-            />
-          </div>
-        </div>
+        <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -mr-32 -mt-32" />
+        <div className="absolute bottom-0 left-0 w-48 h-48 bg-white/5 rounded-full -ml-24 -mb-24" />
       </div>
 
-      {/* Lead Info */}
-      <Card className="glass-card mb-6">
-        <CardContent className="p-4">
-          <div className="flex items-center gap-4">
-            <Avatar className="h-12 w-12">
-              {champsLead?.avatar ? (
-                <AvatarImage src={champsLead.avatar} alt={college.champsLead} />
-              ) : null}
-              <AvatarFallback className={`bg-gradient-to-br ${college.color} text-white`}>
-                {college.champsLead.split(' ').map(n => n[0]).join('')}
-              </AvatarFallback>
-            </Avatar>
-            <div>
-              <p className="text-sm text-muted-foreground">Champs Lead</p>
-              <p className="font-semibold">{college.champsLead}</p>
-              {champsLead?.designation && (
-                <p className="text-xs text-muted-foreground">{champsLead.designation}</p>
-              )}
+      {/* Lead Info - Redesigned */}
+      {champsLead && (
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-4">
+              <Avatar className="h-14 w-14 border-2 border-primary/20">
+                {champsLead?.avatar ? (
+                  <AvatarImage src={champsLead.avatar} alt={college.champsLead} />
+                ) : null}
+                <AvatarFallback className="bg-gradient-to-br from-primary to-primary/70 text-white font-semibold">
+                  {college.champsLead.split(' ').map(n => n[0]).join('')}
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex-1">
+                <p className="text-xs text-muted-foreground mb-0.5">Champs Lead</p>
+                <p className="font-semibold text-lg">{college.champsLead}</p>
+                {champsLead?.designation && (
+                  <p className="text-sm text-muted-foreground">{champsLead.designation}</p>
+                )}
+              </div>
+              <Badge variant="secondary" className="bg-amber-500/10 text-amber-600 border-amber-500/30">
+                <Award className="h-3 w-3 mr-1" />
+                Lead
+              </Badge>
             </div>
-            <Badge variant="secondary" className="ml-auto">
-              <Award className="h-3 w-3 mr-1" />
-              Lead
-            </Badge>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
-      <Tabs defaultValue="completed" className="space-y-4">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="completed">Completed ({college.completedTasks.length})</TabsTrigger>
-          <TabsTrigger value="events">Events ({college.hostedEvents.length})</TabsTrigger>
-          <TabsTrigger value="members">Members ({college.members.length})</TabsTrigger>
+          <TabsTrigger value="completed">
+            Tasks ({completedTasks.length}/{allAvailableTasks.length})
+          </TabsTrigger>
+          <TabsTrigger value="events">
+            Events ({college.hostedEvents.length})
+          </TabsTrigger>
+          <TabsTrigger value="members">
+            Members ({college.members.length})
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="completed" className="space-y-4">
-          {college.completedTasks.length === 0 ? (
-            <Card className="glass-card">
+          {loadingTasks ? (
+            <Card>
               <CardContent className="p-8 text-center">
-                <CheckCircle2 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <h3 className="font-semibold mb-2">No Completed Tasks Yet</h3>
+                <div className="flex items-center justify-center gap-2">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                  <span className="text-muted-foreground">Loading tasks...</span>
+                </div>
+              </CardContent>
+            </Card>
+          ) : completedTasks.length === 0 && pendingTasks.length === 0 ? (
+            <Card>
+              <CardContent className="p-8 text-center">
+                <Target className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <h3 className="font-semibold mb-2">No Tasks Available</h3>
                 <p className="text-sm text-muted-foreground">
-                  This college is just getting started. Tasks will appear here once completed.
+                  Tasks will appear here once they are assigned to this college.
                 </p>
               </CardContent>
             </Card>
           ) : (
-            <div className="space-y-2">
-              {college.completedTasks.map((completion) => {
-                const task = getTaskById(completion.taskId);
-                if (!task) return null;
-                
-                return (
-                  <motion.div
-                    key={completion.taskId}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    className="p-4 rounded-lg border bg-green-500/5 border-green-500/30"
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="mt-0.5 text-green-500">
-                        <CheckCircle2 className="h-5 w-5" />
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-medium text-green-700 dark:text-green-400">
-                            {task.title}
-                          </span>
-                          <Badge variant="outline" className={getCategoryColor(task.category)}>
-                            {getCategoryIcon(task.category)}
-                            <span className="ml-1 capitalize">{task.category}</span>
-                          </Badge>
-                        </div>
-                        <p className="text-sm text-muted-foreground">{task.description}</p>
-                        <p className="text-xs text-green-600 dark:text-green-400 mt-1 flex items-center gap-1">
-                          <Clock className="h-3 w-3" />
-                          Completed on {new Date(completion.completedAt).toLocaleDateString()}
-                          {completion.bonusPoints && (
-                            <Badge variant="secondary" className="ml-2 text-xs">
-                              +{completion.bonusPoints} bonus
+            <>
+              {/* Completed Tasks */}
+              {completedTasks.length > 0 && (
+                <div className="space-y-3">
+                  <h3 className="font-semibold text-sm text-muted-foreground flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-green-500" />
+                    Completed Tasks ({completedTasks.length})
+                  </h3>
+                  {completedTasks.map((task) => {
+                    const completion = college.completedTasks.find(ct => ct.taskId === task.id);
+                    return (
+                      <Card key={task.id} className="border-green-500/30 bg-green-500/5">
+                        <CardContent className="p-4">
+                          <div className="flex items-start gap-3">
+                            <CheckCircle2 className="h-5 w-5 text-green-500 mt-0.5 flex-shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                <span className="font-medium">{task.title}</span>
+                                <Badge variant="outline" className={getCategoryColor(task.category)}>
+                                  {getCategoryIcon(task.category)}
+                                  <span className="ml-1 capitalize">{task.category}</span>
+                                </Badge>
+                              </div>
+                              <p className="text-sm text-muted-foreground mb-2">{task.description}</p>
+                              <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                                <span className="flex items-center gap-1">
+                                  <Clock className="h-3 w-3" />
+                                  {completion && new Date(completion.completedAt).toLocaleDateString()}
+                                </span>
+                                {completion?.bonusPoints && (
+                                  <Badge variant="secondary" className="text-xs">
+                                    +{completion.bonusPoints} bonus
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+                            <Badge className="bg-green-500 flex-shrink-0">
+                              {task.points} pts
                             </Badge>
-                          )}
-                        </p>
-                      </div>
-                      <Badge className="bg-green-500">
-                        {task.points} pts
-                      </Badge>
-                    </div>
-                  </motion.div>
-                );
-              })}
-            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Pending Tasks */}
+              {pendingTasks.length > 0 && (
+                <div className="space-y-3">
+                  <h3 className="font-semibold text-sm text-muted-foreground flex items-center gap-2">
+                    <Circle className="h-4 w-4" />
+                    Pending Tasks ({pendingTasks.length})
+                  </h3>
+                  {pendingTasks.map((task) => (
+                    <Card key={task.id} className="border-muted">
+                      <CardContent className="p-4">
+                        <div className="flex items-start gap-3">
+                          <Circle className="h-5 w-5 text-muted-foreground mt-0.5 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                              <span className="font-medium">{task.title}</span>
+                              <Badge variant="outline" className={getCategoryColor(task.category)}>
+                                {getCategoryIcon(task.category)}
+                                <span className="ml-1 capitalize">{task.category}</span>
+                              </Badge>
+                            </div>
+                            <p className="text-sm text-muted-foreground">{task.description}</p>
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <Badge variant="outline">
+                              {task.points} pts
+                            </Badge>
+                            {isCaptain && (
+                              <Button
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedTask(task);
+                                  setSubmitDialogOpen(true);
+                                }}
+                              >
+                                <Upload className="h-4 w-4 mr-1" />
+                                Submit
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </TabsContent>
 
         <TabsContent value="events" className="space-y-4">
           {college.hostedEvents.length === 0 ? (
-            <Card className="glass-card">
+            <Card>
               <CardContent className="p-8 text-center">
                 <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                 <h3 className="font-semibold mb-2">No Events Yet</h3>
                 <p className="text-sm text-muted-foreground">
-                  This college hasn't hosted any events yet. Events will appear here once hosted.
+                  This college hasn't hosted any events yet.
                 </p>
               </CardContent>
             </Card>
           ) : (
-            <div className="space-y-3">
-              {college.hostedEvents.map((event) => (
-                <motion.div
-                  key={event.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                >
-                  <Card className="glass-card hover:shadow-md transition-shadow">
-                    <CardContent className="p-4">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h4 className="font-semibold">{event.title}</h4>
-                            <Badge variant={event.status === 'upcoming' ? 'default' : 'secondary'}>
-                              {event.status === 'upcoming' ? 'Upcoming' : 'Completed'}
-                            </Badge>
+            <>
+              {/* Upcoming Events */}
+              {upcomingEvents.length > 0 && (
+                <div className="space-y-3">
+                  <h3 className="font-semibold text-sm text-muted-foreground flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-blue-500" />
+                    Upcoming Events ({upcomingEvents.length})
+                  </h3>
+                  {upcomingEvents.map((event) => (
+                    <Link key={event.id} to={`/meetups?id=${event.id}`}>
+                      <Card className="border-blue-500/30 bg-blue-500/5 hover:shadow-md transition-all cursor-pointer">
+                        <CardContent className="p-4">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                <h4 className="font-semibold">{event.title}</h4>
+                                <Badge variant="default" className="bg-blue-500">Upcoming</Badge>
+                              </div>
+                              <p className="text-sm text-muted-foreground mb-2">{event.description}</p>
+                              <div className="flex items-center gap-3 text-sm text-muted-foreground flex-wrap">
+                                <span className="flex items-center gap-1">
+                                  <Calendar className="h-3 w-3" />
+                                  {new Date(event.date).toLocaleDateString()}
+                                </span>
+                                <Badge variant="outline" className="capitalize">{event.type}</Badge>
+                              </div>
+                            </div>
+                            <ChevronRight className="h-5 w-5 text-muted-foreground flex-shrink-0" />
                           </div>
-                          <p className="text-sm text-muted-foreground mb-2">{event.description}</p>
-                          <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                            <span className="flex items-center gap-1">
-                              <Calendar className="h-3 w-3" />
-                              {new Date(event.date).toLocaleDateString()}
-                            </span>
-                            <Badge variant="outline" className="capitalize">{event.type}</Badge>
-                            {event.status === 'completed' && (
-                              <span className="flex items-center gap-1">
-                                <Users className="h-3 w-3" />
-                                {event.attendees} attendees
-                              </span>
-                            )}
+                        </CardContent>
+                      </Card>
+                    </Link>
+                  ))}
+                </div>
+              )}
+
+              {/* Past Events */}
+              {pastEvents.length > 0 && (
+                <div className="space-y-3">
+                  <h3 className="font-semibold text-sm text-muted-foreground flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-green-500" />
+                    Past Events ({pastEvents.length})
+                  </h3>
+                  {pastEvents.map((event) => (
+                    <Link key={event.id} to={`/meetups?id=${event.id}`}>
+                      <Card className="hover:shadow-md transition-all cursor-pointer">
+                        <CardContent className="p-4">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                <h4 className="font-semibold">{event.title}</h4>
+                                <Badge variant="secondary">Completed</Badge>
+                              </div>
+                              <p className="text-sm text-muted-foreground mb-2">{event.description}</p>
+                              <div className="flex items-center gap-3 text-sm text-muted-foreground flex-wrap">
+                                <span className="flex items-center gap-1">
+                                  <Calendar className="h-3 w-3" />
+                                  {new Date(event.date).toLocaleDateString()}
+                                </span>
+                                <Badge variant="outline" className="capitalize">{event.type}</Badge>
+                                {event.attendees > 0 && (
+                                  <span className="flex items-center gap-1">
+                                    <Users className="h-3 w-3" />
+                                    {event.attendees} attendees
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              {event.pointsAwarded > 0 && (
+                                <Badge className="bg-amber-500 text-white">
+                                  +{event.pointsAwarded} pts
+                                </Badge>
+                              )}
+                              <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                            </div>
                           </div>
-                        </div>
-                        {event.pointsAwarded > 0 && (
-                          <Badge className="bg-amber-500 text-white">
-                            +{event.pointsAwarded} pts
-                          </Badge>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                </motion.div>
-              ))}
-            </div>
+                        </CardContent>
+                      </Card>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </TabsContent>
 
         <TabsContent value="members" className="space-y-4">
-          {memberDetails.length === 0 ? (
-            <Card className="glass-card">
+          {/* Search Bar */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search members by name, role, or company..."
+              value={memberSearchQuery}
+              onChange={(e) => setMemberSearchQuery(e.target.value)}
+              className="pl-9 pr-9"
+            />
+            {memberSearchQuery && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0"
+                onClick={() => setMemberSearchQuery('')}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+
+          {loadingMembers ? (
+            <Card>
+              <CardContent className="p-8 text-center">
+                <Loader2 className="h-12 w-12 text-primary animate-spin mx-auto mb-4" />
+                <h3 className="font-semibold mb-2">Loading Members...</h3>
+              </CardContent>
+            </Card>
+          ) : filteredMembers.length === 0 ? (
+            <Card>
               <CardContent className="p-8 text-center">
                 <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <h3 className="font-semibold mb-2">No Members Yet</h3>
+                <h3 className="font-semibold mb-2">
+                  {memberSearchQuery ? 'No Members Found' : 'No Members Yet'}
+                </h3>
                 <p className="text-sm text-muted-foreground">
-                  Members will appear here once they join the college chapter.
+                  {memberSearchQuery
+                    ? 'Try adjusting your search query.'
+                    : 'Members will appear here once they join the college chapter.'}
                 </p>
               </CardContent>
             </Card>
           ) : (
-            <div className="space-y-3">
-              {memberDetails.map((member) => {
+            <div className="space-y-2">
+              {filteredMembers.map((member) => {
                 if (!member) return null;
                 const isLead = member.id === college.champsLeadId;
-                
+
                 return (
-                  <motion.div
-                    key={member.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                  >
-                    <Card className={`glass-card hover:shadow-md transition-shadow ${isLead ? 'border-2 border-amber-500/50' : ''}`}>
-                      <CardContent className="p-4">
-                        <div className="flex items-center gap-4">
-                          <Avatar className="h-12 w-12">
-                            <AvatarImage src={member.avatar} alt={member.name} />
-                            <AvatarFallback className={`bg-gradient-to-br ${college.color} text-white`}>
-                              {member.name.split(' ').map(n => n[0]).join('')}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                              <Link 
-                                to={`/profile/${member.id}`}
-                                className="font-semibold hover:text-primary transition-colors"
-                              >
-                                {member.name}
-                              </Link>
-                              {isLead && (
-                                <Badge variant="secondary" className="bg-amber-500/10 text-amber-600 border-amber-500/30">
-                                  <Award className="h-3 w-3 mr-1" />
-                                  Lead
-                                </Badge>
-                              )}
-                            </div>
-                            {member.designation && (
-                              <p className="text-sm text-muted-foreground">{member.designation}</p>
-                            )}
-                            {member.company && (
-                              <p className="text-xs text-muted-foreground">{member.company}</p>
+                  <Card key={member.id} className={isLead ? 'border-amber-500/50 bg-amber-500/5' : ''}>
+                    <CardContent className="p-4">
+                      <div className="flex items-center gap-4">
+                        <Avatar className="h-12 w-12">
+                          <AvatarImage src={member.avatar} alt={member.name} />
+                          <AvatarFallback className="bg-gradient-to-br from-primary to-primary/70 text-white">
+                            {member.name.split(' ').map(n => n[0]).join('')}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Link
+                              to={`/profile/${member.id}`}
+                              className="font-semibold hover:text-primary transition-colors"
+                            >
+                              {member.name}
+                            </Link>
+                            {isLead && (
+                              <Badge variant="secondary" className="bg-amber-500/10 text-amber-600 border-amber-500/30">
+                                <Award className="h-3 w-3 mr-1" />
+                                Lead
+                              </Badge>
                             )}
                           </div>
-                          <div className="text-right">
-                            <div className="flex items-center gap-1 text-sm font-medium">
-                              <Zap className="h-4 w-4 text-amber-500" />
-                              {member.points}
-                            </div>
-                            <p className="text-xs text-muted-foreground">points</p>
-                          </div>
+                          {member.designation && (
+                            <p className="text-sm text-muted-foreground truncate">{member.designation}</p>
+                          )}
+                          {member.company && (
+                            <p className="text-xs text-muted-foreground truncate">{member.company}</p>
+                          )}
                         </div>
-                      </CardContent>
-                    </Card>
-                  </motion.div>
+                        <div className="text-right flex-shrink-0">
+                          <div className="flex items-center gap-1 text-sm font-medium">
+                            <Zap className="h-4 w-4 text-amber-500" />
+                            {member.points || 0}
+                          </div>
+                          <p className="text-xs text-muted-foreground">points</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
                 );
               })}
             </div>
           )}
         </TabsContent>
       </Tabs>
-    </motion.div>
+
+      {/* Submit Task Dialog */}
+      {selectedTask && (
+        <SubmitTaskDialog
+          open={submitDialogOpen}
+          onOpenChange={setSubmitDialogOpen}
+          task={selectedTask}
+          collegeId={college.id}
+          onSuccess={() => {
+            toast.success('Task submitted successfully!');
+            setSubmitDialogOpen(false);
+          }}
+        />
+      )}
+    </div>
   );
 }
 
 export default function CollegeChamps() {
-  const [selectedCollege, setSelectedCollege] = useState<College | null>(null);
-  const sortedColleges = [...mockColleges].sort((a, b) => a.rank - b.rank);
+  const [selectedCollege, setSelectedCollege] = useState<{ college: College; rank: number } | null>(null);
+  const [colleges, setColleges] = useState<College[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+
+  useEffect(() => {
+    fetchColleges();
+  }, []);
+
+  const fetchColleges = async () => {
+    try {
+      setIsLoading(true);
+      const { getAllColleges } = await import('@/lib/colleges');
+      const data = await getAllColleges();
+      setColleges(data);
+    } catch (error) {
+      console.error('Error fetching colleges:', error);
+      toast.error('Failed to load colleges');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSelectCollege = async (college: College, rank: number) => {
+    // Fetch fresh college data before opening
+    try {
+      const { getCollege } = await import('@/lib/colleges');
+      const freshCollege = await getCollege(college.id);
+      setSelectedCollege({ college: freshCollege, rank });
+      setIsDialogOpen(true);
+    } catch (error) {
+      console.error('Error fetching college details:', error);
+      // Fallback to cached data
+      setSelectedCollege({ college, rank });
+      setIsDialogOpen(true);
+    }
+  };
+
+  const handleCloseDialog = () => {
+    setIsDialogOpen(false);
+    // Delay clearing the selected college to allow exit animation
+    setTimeout(() => setSelectedCollege(null), 200);
+    // Refresh colleges list when closing
+    fetchColleges();
+  };
+
+  const sortedColleges = [...colleges].sort((a, b) => b.totalPoints - a.totalPoints);
   
-  const totalPoints = mockColleges.reduce((sum, c) => sum + c.totalPoints, 0);
-  const totalEvents = mockColleges.reduce((sum, c) => sum + c.hostedEvents.filter(e => e.status === 'completed').length, 0);
-  const totalMembers = mockColleges.reduce((sum, c) => sum + c.members.length, 0);
+  const totalPoints = colleges.reduce((sum, c) => sum + (c.totalPoints || 0), 0);
+  const totalEvents = colleges.reduce((sum, c) => sum + (c.hostedEvents?.filter(e => e.status === 'completed').length || 0), 0);
+  const totalMembers = colleges.reduce((sum, c) => sum + (c.members?.length || 0), 0);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -458,7 +750,7 @@ export default function CollegeChamps() {
                 className="glass-card rounded-xl p-4"
                 whileHover={{ scale: 1.05 }}
               >
-                <div className="text-2xl font-bold text-primary">{mockColleges.length}</div>
+                <div className="text-2xl font-bold text-primary">{colleges.length}</div>
                 <div className="text-sm text-muted-foreground">Colleges</div>
               </motion.div>
               <motion.div 
@@ -499,77 +791,83 @@ export default function CollegeChamps() {
                   </h2>
                   <p className="text-muted-foreground">Ranked by total points earned</p>
                 </div>
-                <Badge variant="outline" className="text-sm">
-                  Season 2024-25
-                </Badge>
               </div>
               
-              <CollegeLeaderboard 
-                colleges={sortedColleges} 
-                onSelectCollege={setSelectedCollege}
-              />
+              {isLoading ? (
+                <div className="text-center py-12">
+                  <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary mb-4" />
+                  <p className="text-muted-foreground">Loading colleges...</p>
+                </div>
+              ) : colleges.length === 0 ? (
+                <Card className="glass-card">
+                  <CardContent className="p-12 text-center">
+                    <GraduationCap className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
+                    <h3 className="text-lg font-semibold mb-2">No Colleges Yet</h3>
+                    <p className="text-muted-foreground">
+                      Be the first to register your college in the Champs program!
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <CollegeLeaderboard 
+                  colleges={sortedColleges} 
+                  onSelectCollege={handleSelectCollege}
+                />
+              )}
             </div>
 
-            {/* Task Overview / Selected College */}
+            {/* Info Card */}
             <div className="lg:col-span-1">
-              <AnimatePresence mode="wait">
-                {selectedCollege ? (
+              <Card className="glass-card sticky top-24">
+                <CardContent className="p-8 text-center">
                   <motion.div
-                    key={selectedCollege.id}
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -20 }}
+                    initial={{ scale: 0.8, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    transition={{ delay: 0.2 }}
                   >
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="font-semibold">College Details</h3>
-                      <Button variant="ghost" size="sm" onClick={() => setSelectedCollege(null)}>
-                        Close
-                      </Button>
+                    <GraduationCap className="h-16 w-16 text-primary mx-auto mb-4" />
+                  </motion.div>
+                  <h3 className="text-lg font-semibold mb-2">Select a College</h3>
+                  <p className="text-sm text-muted-foreground mb-6">
+                    Click on any college from the leaderboard to view their completed tasks, hosted events, and team members.
+                  </p>
+                  <div className="space-y-3 text-left">
+                    <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+                      <CheckCircle2 className="h-5 w-5 text-green-500" />
+                      <span className="text-sm">View completed tasks & points earned</span>
                     </div>
-                    <CollegeDetailView college={selectedCollege} onClose={() => setSelectedCollege(null)} />
-                  </motion.div>
-                ) : (
-                  <motion.div
-                    key="welcome-message"
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -20 }}
-                  >
-                    <Card className="glass-card sticky top-24">
-                      <CardContent className="p-8 text-center">
-                        <motion.div
-                          initial={{ scale: 0.8, opacity: 0 }}
-                          animate={{ scale: 1, opacity: 1 }}
-                          transition={{ delay: 0.2 }}
-                        >
-                          <GraduationCap className="h-16 w-16 text-primary mx-auto mb-4" />
-                        </motion.div>
-                        <h3 className="text-lg font-semibold mb-2">Select a College</h3>
-                        <p className="text-sm text-muted-foreground mb-6">
-                          Click on any college from the leaderboard to view their completed tasks, hosted events, and team members.
-                        </p>
-                        <div className="space-y-3 text-left">
-                          <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
-                            <CheckCircle2 className="h-5 w-5 text-green-500" />
-                            <span className="text-sm">View completed tasks & points earned</span>
-                          </div>
-                          <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
-                            <Calendar className="h-5 w-5 text-blue-500" />
-                            <span className="text-sm">See hosted events & workshops</span>
-                          </div>
-                          <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
-                            <Users className="h-5 w-5 text-purple-500" />
-                            <span className="text-sm">Meet the team members</span>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                    <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+                      <Calendar className="h-5 w-5 text-blue-500" />
+                      <span className="text-sm">See hosted events & workshops</span>
+                    </div>
+                    <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+                      <Users className="h-5 w-5 text-purple-500" />
+                      <span className="text-sm">Meet the team members</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           </div>
         </section>
+
+        {/* College Details Modal */}
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-0 w-[95vw] sm:w-full focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0">
+            <DialogHeader className="sr-only">
+              <DialogTitle>College Details</DialogTitle>
+            </DialogHeader>
+            {selectedCollege && (
+              <div className="p-4 sm:p-6">
+                <CollegeDetailView 
+                  college={selectedCollege.college} 
+                  rank={selectedCollege.rank} 
+                  onClose={handleCloseDialog} 
+                />
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
 
         {/* Join CTA */}
         <section className="py-16 container mx-auto px-4">
@@ -594,7 +892,7 @@ export default function CollegeChamps() {
                       Register Your College
                       <ArrowRight className="ml-2 h-5 w-5" />
                     </Button>
-                    <Button size="lg" variant="outline" className="border-white text-white hover:bg-white/10">
+                    <Button size="lg" variant="outline" className="border-white/50 text-white hover:bg-white/10 hover:border-white bg-transparent">
                       Learn More
                       <ExternalLink className="ml-2 h-4 w-4" />
                     </Button>

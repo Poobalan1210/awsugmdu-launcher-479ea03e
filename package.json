@@ -12,6 +12,9 @@
   },
   "dependencies": {
     "@aws-amplify/ui-react": "^6.13.2",
+    "@aws-sdk/client-cognito-identity-provider": "^3.1000.0",
+    "@aws-sdk/client-dynamodb": "^3.1000.0",
+    "@aws-sdk/lib-dynamodb": "^3.1000.0",
     "@hookform/resolvers": "^3.10.0",
     "@radix-ui/react-accordion": "^1.2.11",
     "@radix-ui/react-alert-dialog": "^1.1.14",

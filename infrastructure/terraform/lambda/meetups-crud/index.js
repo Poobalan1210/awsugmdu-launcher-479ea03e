@@ -292,6 +292,39 @@ async function createMeetup(event) {
   // Determine initial status
   let status = 'draft'; // Always start as draft
   
+  // Auto-register organizers, speakers, and volunteers
+  const autoRegisteredUsers = new Set();
+  
+  // Add speakers
+  if (speakers && Array.isArray(speakers)) {
+    speakers.forEach(speaker => {
+      if (speaker.userId) {
+        autoRegisteredUsers.add(speaker.userId);
+      }
+    });
+  }
+  
+  // Add hosts (organizers)
+  if (hosts && Array.isArray(hosts)) {
+    hosts.forEach(host => {
+      if (host.userId) {
+        autoRegisteredUsers.add(host.userId);
+      }
+    });
+  }
+  
+  // Add volunteers
+  if (volunteers && Array.isArray(volunteers)) {
+    volunteers.forEach(volunteer => {
+      if (volunteer.userId) {
+        autoRegisteredUsers.add(volunteer.userId);
+      }
+    });
+  }
+  
+  const registeredUsers = Array.from(autoRegisteredUsers);
+  const attendees = registeredUsers.length;
+
   const meetup = {
     id,
     title,
@@ -306,9 +339,9 @@ async function createMeetup(event) {
     meetupUrl: meetupUrl || undefined,
     image: image || undefined,
     status,
-    attendees: 0,
+    attendees,
     maxAttendees: maxAttendees ? parseInt(maxAttendees) : undefined,
-    registeredUsers: [],
+    registeredUsers,
     ...(type === 'skill-sprint' && sprintId ? { sprintId } : {}),
     ...(type === 'certification-circle' && certificationGroupId ? { certificationGroupId } : {}),
     ...(type === 'college-champ' && collegeId ? { collegeId } : {}),
@@ -399,6 +432,66 @@ async function updateMeetup(id, event) {
       expressionAttributeValues[`:${field}`] = body[field];
     }
   });
+  
+  // Auto-register organizers, speakers, and volunteers when they are updated
+  if (body.speakers || body.hosts || body.volunteers) {
+    const autoRegisteredUsers = new Set(existing.Item.registeredUsers || []);
+    
+    // Add speakers
+    if (body.speakers && Array.isArray(body.speakers)) {
+      body.speakers.forEach(speaker => {
+        if (speaker.userId) {
+          autoRegisteredUsers.add(speaker.userId);
+        }
+      });
+    } else if (existing.Item.speakers) {
+      // Keep existing speakers registered
+      existing.Item.speakers.forEach(speaker => {
+        if (speaker.userId) {
+          autoRegisteredUsers.add(speaker.userId);
+        }
+      });
+    }
+    
+    // Add hosts (organizers)
+    if (body.hosts && Array.isArray(body.hosts)) {
+      body.hosts.forEach(host => {
+        if (host.userId) {
+          autoRegisteredUsers.add(host.userId);
+        }
+      });
+    } else if (existing.Item.hosts) {
+      // Keep existing hosts registered
+      existing.Item.hosts.forEach(host => {
+        if (host.userId) {
+          autoRegisteredUsers.add(host.userId);
+        }
+      });
+    }
+    
+    // Add volunteers
+    if (body.volunteers && Array.isArray(body.volunteers)) {
+      body.volunteers.forEach(volunteer => {
+        if (volunteer.userId) {
+          autoRegisteredUsers.add(volunteer.userId);
+        }
+      });
+    } else if (existing.Item.volunteers) {
+      // Keep existing volunteers registered
+      existing.Item.volunteers.forEach(volunteer => {
+        if (volunteer.userId) {
+          autoRegisteredUsers.add(volunteer.userId);
+        }
+      });
+    }
+    
+    const registeredUsers = Array.from(autoRegisteredUsers);
+    updateExpressions.push('registeredUsers = :registeredUsers');
+    expressionAttributeValues[':registeredUsers'] = registeredUsers;
+    
+    updateExpressions.push('attendees = :attendees');
+    expressionAttributeValues[':attendees'] = registeredUsers.length;
+  }
   
   // Handle sprintId - add it if provided, remove it if explicitly set to null
   if (body.sprintId === null) {
@@ -637,7 +730,14 @@ async function deleteMeetup(id) {
 // Mark attendance for meetup
 async function markAttendance(id, event) {
   const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
-  const { emails, pointsPerAttendee = 50 } = body;
+  const { 
+    emails, 
+    pointsPerAttendee = 50,
+    awardVolunteerPoints = true,
+    volunteerPoints = 75,
+    awardSpeakerPoints = true,
+    speakerPoints = 100
+  } = body;
   
   if (!emails || !Array.isArray(emails) || emails.length === 0) {
     return createResponse(400, { error: 'Missing required field: emails (array)' });
@@ -655,13 +755,19 @@ async function markAttendance(id, event) {
   
   const meetup = meetupResult.Item;
   
+  // Get volunteer and speaker user IDs
+  const volunteerIds = new Set((meetup.volunteers || []).map(v => v.userId).filter(Boolean));
+  const speakerIds = new Set((meetup.speakers || []).map(s => s.userId).filter(Boolean));
+  
   // Fetch users by email
   const USERS_TABLE = process.env.USERS_TABLE_NAME || 'awsug-users';
   const results = {
     success: [],
     notFound: [],
     alreadyMarked: [],
-    errors: []
+    errors: [],
+    volunteersAwarded: [],
+    speakersAwarded: []
   };
   
   // Get current attendedUsers list
@@ -720,16 +826,41 @@ async function markAttendance(id, event) {
       attendedUsers.push(userId);
       attendedEmails.add(normalizedEmail);
       
+      // Determine points based on role
+      let pointsToAward = pointsPerAttendee;
+      let role = 'attendee';
+      
+      if (speakerIds.has(userId) && awardSpeakerPoints) {
+        pointsToAward = speakerPoints;
+        role = 'speaker';
+      } else if (volunteerIds.has(userId) && awardVolunteerPoints) {
+        pointsToAward = volunteerPoints;
+        role = 'volunteer';
+      }
+      
       // Award points to user
       const currentPoints = user.points || 0;
-      const newPoints = currentPoints + pointsPerAttendee;
+      const newPoints = currentPoints + pointsToAward;
+      
+      // Create point activity
+      const pointActivity = {
+        id: `pa-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        userId,
+        points: pointsToAward,
+        reason: `Attended ${meetup.title} as ${role}`,
+        type: 'event',
+        awardedAt: new Date().toISOString()
+      };
+      
+      const pointActivities = user.pointActivities || [];
+      pointActivities.push(pointActivity);
       
       // Update user's points and add activity
       const activity = {
         type: 'meetup_attended',
         meetupId: id,
         meetupTitle: meetup.title,
-        points: pointsPerAttendee,
+        points: pointsToAward,
         timestamp: new Date().toISOString()
       };
       
@@ -739,21 +870,31 @@ async function markAttendance(id, event) {
       await docClient.send(new UpdateCommand({
         TableName: USERS_TABLE,
         Key: { userId },
-        UpdateExpression: 'SET points = :points, activities = :activities, updatedAt = :updatedAt',
+        UpdateExpression: 'SET points = :points, activities = :activities, pointActivities = :pointActivities, updatedAt = :updatedAt',
         ExpressionAttributeValues: {
           ':points': newPoints,
           ':activities': userActivities,
+          ':pointActivities': pointActivities,
           ':updatedAt': new Date().toISOString()
         }
       }));
       
-      results.success.push({
+      const result = {
         email,
         userId,
         name: user.name,
-        pointsAwarded: pointsPerAttendee,
+        role,
+        pointsAwarded: pointsToAward,
         newTotal: newPoints
-      });
+      };
+      
+      results.success.push(result);
+      
+      if (role === 'volunteer') {
+        results.volunteersAwarded.push(result);
+      } else if (role === 'speaker') {
+        results.speakersAwarded.push(result);
+      }
     } catch (error) {
       console.error(`Error processing email ${email}:`, error);
       results.errors.push({
@@ -780,6 +921,9 @@ async function markAttendance(id, event) {
     summary: {
       total: emails.length,
       successful: results.success.length,
+      attendees: results.success.length - results.volunteersAwarded.length - results.speakersAwarded.length,
+      volunteers: results.volunteersAwarded.length,
+      speakers: results.speakersAwarded.length,
       notFound: results.notFound.length,
       alreadyMarked: results.alreadyMarked.length,
       errors: results.errors.length

@@ -1420,8 +1420,10 @@ function MarkAttendanceDialog({ meetup, onSuccess }: { meetup: Meetup; onSuccess
   const [loading, setLoading] = useState(false);
   const [emailsText, setEmailsText] = useState('');
   const [pointsPerAttendee, setPointsPerAttendee] = useState(50);
-  const [results, setResults] = useState<any>(null);
+  const [volunteerPoints, setVolunteerPoints] = useState(75);
+  const [speakerPoints, setSpeakerPoints] = useState(100);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const [results, setResults] = useState<any>(null);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1469,7 +1471,9 @@ function MarkAttendanceDialog({ meetup, onSuccess }: { meetup: Meetup; onSuccess
       const { markMeetupAttendance } = await import('@/lib/meetups');
       const response = await markMeetupAttendance(meetup.id, {
         emails,
-        pointsPerAttendee
+        pointsPerAttendee,
+        volunteerPoints,
+        speakerPoints
       });
       
       setResults(response);
@@ -1492,6 +1496,8 @@ function MarkAttendanceDialog({ meetup, onSuccess }: { meetup: Meetup; onSuccess
     setOpen(false);
     setEmailsText('');
     setPointsPerAttendee(50);
+    setVolunteerPoints(75);
+    setSpeakerPoints(100);
     setResults(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -1576,6 +1582,36 @@ function MarkAttendanceDialog({ meetup, onSuccess }: { meetup: Meetup; onSuccess
               />
               <p className="text-xs text-muted-foreground">
                 Each attendee will receive this many points
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Points per Volunteer</Label>
+              <Input
+                type="number"
+                value={volunteerPoints}
+                onChange={(e) => setVolunteerPoints(Number(e.target.value))}
+                min={1}
+                max={500}
+                required
+              />
+              <p className="text-xs text-muted-foreground">
+                Each volunteer will receive this many points
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Points per Speaker</Label>
+              <Input
+                type="number"
+                value={speakerPoints}
+                onChange={(e) => setSpeakerPoints(Number(e.target.value))}
+                min={1}
+                max={500}
+                required
+              />
+              <p className="text-xs text-muted-foreground">
+                Each speaker will receive this many points
               </p>
             </div>
 

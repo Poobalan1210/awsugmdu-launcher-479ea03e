@@ -227,6 +227,12 @@ function MeetupDetail({ meetup: initialMeetup, onBack }: { meetup: Meetup; onBac
 
   // Check if user is registered
   const isRegistered = user && meetup.registeredUsers?.includes(user.id);
+  
+  // Check if user is organizer, speaker, or volunteer (auto-registered)
+  const isOrganizer = user && meetup.hosts?.some(h => h.userId === user.id);
+  const isSpeaker = user && meetup.speakers?.some(s => s.userId === user.id);
+  const isVolunteer = user && meetup.volunteers?.some(v => v.userId === user.id);
+  const isAutoRegistered = isOrganizer || isSpeaker || isVolunteer;
 
   const handleRegister = async () => {
     if (!isAuthenticated || !user) {
@@ -323,7 +329,7 @@ function MeetupDetail({ meetup: initialMeetup, onBack }: { meetup: Meetup; onBac
                   // In-person events: only meetup links
                   <>
                     {isUpcoming ? (
-                      meetup.meetupUrl && (
+                      meetup.meetupUrl && !isAutoRegistered && (
                         <Button 
                           size="lg" 
                           className="gap-2"
@@ -364,7 +370,7 @@ function MeetupDetail({ meetup: initialMeetup, onBack }: { meetup: Meetup; onBac
                   <>
                     {isUpcoming ? (
                       <>
-                        {meetup.meetupUrl && (
+                        {meetup.meetupUrl && !isAutoRegistered && (
                           <Button 
                             size="lg" 
                             className="gap-2"

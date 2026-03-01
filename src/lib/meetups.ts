@@ -133,6 +133,8 @@ export async function getMeetupsByCertificationGroup(certificationGroupId: strin
 export interface MarkAttendanceRequest {
   emails: string[];
   pointsPerAttendee?: number;
+  volunteerPoints?: number;
+  speakerPoints?: number;
 }
 
 export interface MarkAttendanceResult {
@@ -172,3 +174,19 @@ export async function markMeetupAttendance(
   return response;
 }
 
+
+export interface MarkAttendanceData {
+  attendedUserIds: string[];
+  awardPoints?: boolean;
+  attendeePoints?: number;
+  volunteerPoints?: number;
+  speakerPoints?: number;
+}
+
+export async function markAttendance(meetupId: string, data: MarkAttendanceData): Promise<Meetup> {
+  const response = await callApi<MeetupResponse>(`/meetups/${meetupId}/attendance`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+  return response.meetup;
+}

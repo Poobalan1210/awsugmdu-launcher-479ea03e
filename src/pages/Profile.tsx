@@ -14,9 +14,10 @@ import {
   Linkedin, Github, Twitter, ExternalLink, Building, User,
   Mic, BookOpen, CheckCircle, Clock, Award, Shield
 } from 'lucide-react';
-import { mockSprints, mockBadges, getUserByIdAsync, mockUsers, mockMeetups, mockColleges, mockUserRoles, communityRoles, CommunityRole, User as UserType } from '@/data/mockData';
+import { mockSprints, mockBadges, getUserByIdAsync, mockUsers, mockMeetups, mockColleges, communityRoles, CommunityRole, User as UserType } from '@/data/mockData';
 import { getSprints } from '@/lib/sprints';
 import { getUserProfile } from '@/lib/userProfile';
+import { getUserRoles } from '@/lib/userRoles';
 import { format, parseISO } from 'date-fns';
 import { getMeetups } from '@/lib/meetups';
 import { useQuery } from '@tanstack/react-query';
@@ -29,6 +30,10 @@ export default function Profile() {
   const [loading, setLoading] = useState(true);
   const [sprints, setSprints] = useState<any[]>([]);
   const [loadingSprints, setLoadingSprints] = useState(true);
+  const [userCommunityRoles, setUserCommunityRoles] = useState<CommunityRole[]>([]);
+  const [loadingRoles, setLoadingRoles] = useState(true);
+  const [pointActivities, setPointActivities] = useState<any[]>([]);
+  const [loadingPointActivities, setLoadingPointActivities] = useState(true);
   
   // Fetch meetups from backend
   const { data: allMeetups = [] } = useQuery({
@@ -104,6 +109,62 @@ export default function Profile() {
     fetchUser();
   }, [userId, authUser?.id]); // Depend on authUser.id to refetch when it changes
   
+  // Fetch user roles from API
+  useEffect(() => {
+    const fetchRoles = async () => {
+      if (!profileUser) return;
+      
+      setLoadingRoles(true);
+      try {
+        const roles = await getUserRoles(profileUser.id);
+        const roleValues = roles.map(r => r.role);
+        
+        // For authenticated users, check if they're an organiser
+        if (authUser && profileUser.id === authUser.id && authUser.role === 'organiser') {
+          if (!roleValues.includes('organiser')) {
+            roleValues.push('organiser');
+          }
+        }
+        
+        // Always ensure member role is present
+        if (!roleValues.includes('member')) {
+          roleValues.push('member');
+        }
+        
+        setUserCommunityRoles(roleValues);
+      } catch (error) {
+        console.error('Failed to fetch user roles:', error);
+        // Fallback to member role
+        setUserCommunityRoles(['member']);
+      } finally {
+        setLoadingRoles(false);
+      }
+    };
+    
+    fetchRoles();
+  }, [profileUser?.id, authUser?.id, authUser?.role]);
+
+  // Fetch point activities from API
+  useEffect(() => {
+    const fetchPointActivities = async () => {
+      if (!profileUser) return;
+      
+      setLoadingPointActivities(true);
+      try {
+        const { getUserPointActivities } = await import('@/lib/points');
+        const activities = await getUserPointActivities(profileUser.id);
+        setPointActivities(activities);
+      } catch (error) {
+        console.error('Failed to fetch point activities:', error);
+        setPointActivities([]);
+      } finally {
+        setLoadingPointActivities(false);
+      }
+    };
+    
+    fetchPointActivities();
+  }, [profileUser?.id]);
+  
   const user = profileUser;
   const isOwnProfile = !userId || (authUser && userId === authUser.id);
   
@@ -157,26 +218,6 @@ export default function Profile() {
   const isChampCaptain = mockColleges.some(college => college.champsLeadId === user.id);
   const champCollege = mockColleges.find(college => college.champsLeadId === user.id);
 
-  // Get user's community roles
-  const userCommunityRoles = mockUserRoles
-    .filter(ur => ur.userId === user.id)
-    .map(ur => ur.role);
-  
-  // For real authenticated users, check if they're an organiser by email
-  if (authUser && user.id === authUser.id && authUser.role === 'organiser') {
-    // Add organiser role if not already in the list
-    if (!userCommunityRoles.includes('organiser')) {
-      userCommunityRoles.push('organiser');
-    }
-  }
-  
-  // Always ensure member role is present (but it won't be displayed)
-  if (!userCommunityRoles.includes('member')) {
-    userCommunityRoles.push('member');
-  }
-  
-  // Profile data loaded
-
   const getRoleInfo = (role: CommunityRole) => {
     return communityRoles.find(r => r.value === role);
   };
@@ -190,7 +231,7 @@ export default function Profile() {
   };
 
   // Generate activity history
-  type ActivityType = 'sprint_attended' | 'sprint_spoke' | 'meetup_attended' | 'meetup_spoke' | 'blog_submitted' | 'submission_approved' | 'badge_earned';
+  type ActivityType = 'sprint_attended' | 'sprint_spoke' | 'meetup_attended' | 'meetup_spoke' | 'blog_submitted' | 'submission_approved' | 'badge_earned' | 'points_awarded';
   
   interface ActivityHistoryItem {
     id: string;
@@ -333,6 +374,18 @@ export default function Profile() {
         description: badge.description,
         date: badge.earnedDate,
         icon: <Medal className="h-4 w-4" />
+      });
+    });
+
+    // Point activities (adhoc awards, etc.)
+    pointActivities.forEach(activity => {
+      activities.push({
+        id: `points-${activity.id}`,
+        type: 'points_awarded',
+        title: `Earned ${activity.points} points`,
+        description: activity.reason,
+        date: activity.awardedAt,
+        icon: <Zap className="h-4 w-4" />
       });
     });
 
@@ -687,6 +740,8 @@ export default function Profile() {
                               return <Badge variant="default" className="gap-1"><Trophy className="h-3 w-3" /> Approved</Badge>;
                             case 'badge_earned':
                               return <Badge variant="default" className="gap-1"><Medal className="h-3 w-3" /> Badge</Badge>;
+                            case 'points_awarded':
+                              return <Badge variant="default" className="gap-1 bg-amber-500 hover:bg-amber-600"><Zap className="h-3 w-3" /> Points</Badge>;
                             default:
                               return null;
                           }

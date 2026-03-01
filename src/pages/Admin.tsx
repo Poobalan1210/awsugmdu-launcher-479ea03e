@@ -4234,6 +4234,21 @@ function MembersTab({ allUsers }: { allUsers: UserType[] }) {
   const [isAwardDialogOpen, setIsAwardDialogOpen] = useState(false);
   const [awardForm, setAwardForm] = useState({ points: '', reason: '' });
 
+  // Load roles from API on mount
+  useEffect(() => {
+    const loadRoles = async () => {
+      try {
+        const { getAllUserRoles } = await import('@/lib/userRoles');
+        const roles = await getAllUserRoles();
+        setUserRoles(roles);
+      } catch (error) {
+        console.error('Error loading roles:', error);
+        // Keep using mock data as fallback
+      }
+    };
+    loadRoles();
+  }, []);
+
   const filteredUsers = allUsers.filter(user => 
     user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     user.email.toLowerCase().includes(searchQuery.toLowerCase())
@@ -4249,7 +4264,7 @@ function MembersTab({ allUsers }: { allUsers: UserType[] }) {
     );
   };
 
-  const handleToggleRole = (userId: string, role: CommunityRole) => {
+  const handleToggleRole = async (userId: string, role: CommunityRole) => {
     // Don't allow removing the member role
     if (role === 'member') {
       toast.error("Member role cannot be removed");
@@ -4258,21 +4273,27 @@ function MembersTab({ allUsers }: { allUsers: UserType[] }) {
     
     const existingRoleAssignment = userRoles.find(ur => ur.userId === userId && ur.role === role);
     
-    if (existingRoleAssignment) {
-      // Remove role
-      setUserRoles(prev => prev.filter(ur => !(ur.userId === userId && ur.role === role)));
-      toast.success(`Removed ${role} role`);
-    } else {
-      // Add role
-      const newAssignment: UserRoleAssignment = {
-        id: `ur-${Date.now()}`,
-        userId,
-        role,
-        assignedAt: new Date().toISOString().split('T')[0],
-        assignedBy: currentUser.id
-      };
-      setUserRoles(prev => [...prev, newAssignment]);
-      toast.success(`Assigned ${role} role`);
+    try {
+      if (existingRoleAssignment) {
+        // Remove role
+        const { removeRole } = await import('@/lib/userRoles');
+        await removeRole(existingRoleAssignment.id);
+        setUserRoles(prev => prev.filter(ur => !(ur.userId === userId && ur.role === role)));
+        toast.success(`Removed ${role} role`);
+      } else {
+        // Add role
+        const { assignRole } = await import('@/lib/userRoles');
+        const newAssignment = await assignRole({
+          userId,
+          role,
+          assignedBy: currentUser.id
+        });
+        setUserRoles(prev => [...prev, newAssignment]);
+        toast.success(`Assigned ${role} role`);
+      }
+    } catch (error) {
+      console.error('Error toggling role:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to update role');
     }
   };
 

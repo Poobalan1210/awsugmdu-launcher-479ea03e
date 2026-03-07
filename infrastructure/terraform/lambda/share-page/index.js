@@ -6,7 +6,7 @@
  * Real users get redirected to the SPA.
  */
 
-const SITE_URL = process.env.SITE_URL || 'https://awsugmdu.in';
+const SITE_URL = process.env.SITE_URL || 'https://awsugmdu-launcher-479ea03e.vercel.app';
 const DEFAULT_OG_IMAGE = `${SITE_URL}/og-image.png`;
 
 function escapeHtml(str) {

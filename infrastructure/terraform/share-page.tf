@@ -18,7 +18,7 @@ resource "aws_lambda_function" "share_page" {
 
   environment {
     variables = {
-      SITE_URL = "https://awsugmdu.in"
+      SITE_URL = "https://awsugmdu-launcher-479ea03e.vercel.app"
     }
   }
 

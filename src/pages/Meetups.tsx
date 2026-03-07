@@ -208,11 +208,17 @@ function MeetupDetail({ meetup: initialMeetup, onBack }: { meetup: Meetup; onBac
 
   // Combine all people and filter by search query
   const allPeople = useMemo(() => {
-    const people = [
+    const roledPeople = [
       ...(meetup.speakers?.map(s => ({ ...s, role: 'Speaker' })) || []),
       ...(meetup.hosts?.map((h, i) => ({ ...h, id: `host-${i}`, role: 'Organizer' })) || []),
       ...(meetup.volunteers?.map((v, i) => ({ ...v, id: `volunteer-${i}`, role: 'Volunteer' })) || []),
-      ...participants.map(p => ({ ...p, userId: p.id, photo: p.avatar, role: null }))
+    ];
+    const roledUserIds = new Set(roledPeople.map(p => p.userId).filter(Boolean));
+    const people = [
+      ...roledPeople,
+      ...participants
+        .filter(p => !roledUserIds.has(p.id))
+        .map(p => ({ ...p, userId: p.id, photo: p.avatar, role: null }))
     ];
 
     if (!searchQuery.trim()) return people;

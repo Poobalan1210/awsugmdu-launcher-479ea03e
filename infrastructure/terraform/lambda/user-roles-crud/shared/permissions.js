@@ -39,6 +39,19 @@ const PERMISSIONS = {
     meetups: ['read'],
     users: ['read'],
   },
+  
+  // Default member role - basic read access
+  member: {
+    colleges: ['read'],
+    tasks: ['read'],
+    submissions: ['read'],
+    events: ['read'],
+    members: ['read'],
+    roles: [],
+    points: ['read'],
+    meetups: ['read'],
+    users: ['read'],
+  },
 };
 
 // Resource to permission mapping

@@ -135,15 +135,11 @@ async function authorize(event, usersTableName) {
     }
     
     // Get user roles
-    const userRoles = await getUserRoles(userId, usersTableName);
+    let userRoles = await getUserRoles(userId, usersTableName);
     
     if (userRoles.length === 0) {
-      return {
-        authorized: false,
-        userId,
-        roles: [],
-        error: 'User has no roles assigned',
-      };
+      // Default to 'member' role if no roles assigned
+      userRoles = ['member'];
     }
     
     // Get required permission for this route

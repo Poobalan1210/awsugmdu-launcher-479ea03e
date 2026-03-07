@@ -3504,9 +3504,7 @@ function ChangeLeadDialog({ college, allUsers, onSuccess }: {
 
   const toggleUser = (userId: string) => {
     setSelectedUserIds(prev => 
-      prev.includes(userId) 
-        ? prev.filter(id => id !== userId)
-        : [...prev, userId]
+      prev.includes(userId) ? [] : [userId]
     );
   };
 
@@ -3517,7 +3515,7 @@ function ChangeLeadDialog({ college, allUsers, onSuccess }: {
 
   const handleChangeLead = async () => {
     if (selectedUserIds.length === 0) {
-      toast.error('Please select at least one user');
+      toast.error('Please select a lead');
       return;
     }
 
@@ -3540,7 +3538,7 @@ function ChangeLeadDialog({ college, allUsers, onSuccess }: {
         champsLead: leadNames
       });
       
-      toast.success(`Champs lead${selectedUsers.length > 1 ? 's' : ''} updated for ${college.name}`);
+      toast.success(`Champs lead updated for ${college.name}`);
       setOpen(false);
       onSuccess();
     } catch (error) {
@@ -3563,20 +3561,20 @@ function ChangeLeadDialog({ college, allUsers, onSuccess }: {
         <DialogHeader>
           <DialogTitle>Change Champs Lead</DialogTitle>
           <DialogDescription>
-            Select one or more champs leads for {college.name}
+            Select a champs lead for {college.name}
           </DialogDescription>
         </DialogHeader>
         
         <div className="space-y-4">
           {/* Current Lead */}
           <div className="p-3 rounded-lg bg-muted/30">
-            <Label className="text-xs text-muted-foreground mb-2 block">Current Lead(s)</Label>
+            <Label className="text-xs text-muted-foreground mb-2 block">Current Lead</Label>
             <p className="text-sm font-medium">{college.champsLead}</p>
           </div>
 
           {/* Select New Leads */}
           <div className="space-y-2">
-            <Label>Select Lead(s) ({selectedUserIds.length} selected)</Label>
+            <Label>Select Lead</Label>
             
             {/* Search Input */}
             <Input
@@ -3603,10 +3601,10 @@ function ChangeLeadDialog({ college, allUsers, onSuccess }: {
                         isSelected ? 'bg-primary/10' : ''
                       }`}
                     >
-                      <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
-                        isSelected ? 'bg-primary border-primary' : 'border-muted-foreground'
+                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                        isSelected ? 'border-primary' : 'border-muted-foreground'
                       }`}>
-                        {isSelected && <Check className="h-3 w-3 text-primary-foreground" />}
+                        {isSelected && <div className="w-2.5 h-2.5 rounded-full bg-primary" />}
                       </div>
                       <Avatar className="h-8 w-8">
                         <AvatarImage src={user.avatar} />

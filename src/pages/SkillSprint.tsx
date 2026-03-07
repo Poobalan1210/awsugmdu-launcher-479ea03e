@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
-import { mockForumPosts, Sprint, Session, currentUser, getUserByIdAsync, Meetup, User as UserType } from '@/data/mockData';
+import { mockForumPosts, Sprint, Session, Meetup, User as UserType } from '@/data/mockData';
 import { getSprints, getSprint, registerForSprint, registerForSession, submitWork } from '@/lib/sprints';
 import { getMeetupsBySprint, registerForMeetup } from '@/lib/meetups';
 import { getAllUsers } from '@/lib/userProfile';

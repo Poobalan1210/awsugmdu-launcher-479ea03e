@@ -2,30 +2,38 @@ import { Link } from 'react-router-dom';
 import { motion, Variants } from 'framer-motion';
 import { ArrowRight, Rocket, Users, Calendar, Award } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { mockSprints, mockEvents } from '@/data/mockData';
+import { Sprint } from '@/data/mockData';
 import { useState, useEffect } from 'react';
 import { getAllUsers } from '@/lib/userProfile';
+import { getSprints } from '@/lib/sprints';
+import { getMeetups } from '@/lib/meetups';
 
 export function HeroSection() {
   const [userCount, setUserCount] = useState(0);
-  const activeSprint = mockSprints.find((s) => s.status === 'active');
+  const [activeSprint, setActiveSprint] = useState<Sprint | null>(null);
+  const [meetupCount, setMeetupCount] = useState(0);
 
   useEffect(() => {
-    const fetchUserCount = async () => {
+    const fetchStats = async () => {
       try {
-        const users = await getAllUsers();
+        const [users, sprints, meetups] = await Promise.all([
+          getAllUsers(),
+          getSprints(),
+          getMeetups(),
+        ]);
         setUserCount(Array.isArray(users) ? users.length : 0);
+        setActiveSprint(sprints.find((s) => s.status === 'active') || null);
+        setMeetupCount(Array.isArray(meetups) ? meetups.length : 0);
       } catch (error) {
-        console.error('Failed to fetch user count:', error);
-        setUserCount(0);
+        console.error('Failed to fetch stats:', error);
       }
     };
-    fetchUserCount();
+    fetchStats();
   }, []);
 
   const stats = [
     { label: 'Active Members', value: userCount || 4, icon: Users },
-    { label: 'Events Hosted', value: mockEvents.length * 5, icon: Calendar },
+    { label: 'Events Hosted', value: meetupCount || 0, icon: Calendar },
     { label: 'Badges Awarded', value: 150, icon: Award },
   ];
 

@@ -16,7 +16,7 @@ import {
   ChevronDown, Crown, ArrowLeft, Link2, Trash2
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { mockCertificationGroups, CertificationGroup, currentUser, getUserById } from '@/data/mockData';
+import { CertificationGroup } from '@/data/mockData';
 import { format, parseISO } from 'date-fns';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useAuth } from '@/contexts/AuthContext';
@@ -211,7 +211,7 @@ function GroupDetail({ group: initialGroup, onBack }: { group: CertificationGrou
       await postGroupMessage(group.id, {
         userId: user.id,
         userName: user.name || 'Unknown User',
-        userAvatar: user.avatar || user.profilePicture || '',
+        userAvatar: user.avatar || '',
         content: newMessage,
       });
       
@@ -238,7 +238,7 @@ function GroupDetail({ group: initialGroup, onBack }: { group: CertificationGrou
       await addMessageReply(group.id, messageId, {
         userId: user.id,
         userName: user.name || 'Unknown User',
-        userAvatar: user.avatar || user.profilePicture || '',
+        userAvatar: user.avatar || '',
         content: replyContent,
       });
       

@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -18,7 +18,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { getCurrentUser } from 'aws-amplify/auth';
 import logo from '@/assets/logo.png';
-import { mockColleges } from '@/data/mockData';
+import { getAllColleges, College } from '@/lib/colleges';
 import { submitMeetupVerification, normalizeMeetupProfileUrl, getMeetupGroupUrl } from '@/lib/meetup';
 import { createUserProfile } from '@/lib/userProfile';
 
@@ -72,6 +72,19 @@ export default function Signup() {
   const [userId, setUserId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [colleges, setColleges] = useState<College[]>([]);
+
+  useEffect(() => {
+    const fetchColleges = async () => {
+      try {
+        const data = await getAllColleges();
+        setColleges(data);
+      } catch (error) {
+        console.error('Failed to fetch colleges:', error);
+      }
+    };
+    fetchColleges();
+  }, []);
 
   const [formData, setFormData] = useState<OnboardingData>({
     name: '',
@@ -923,7 +936,7 @@ export default function Signup() {
                               <SelectValue placeholder="Select your college" />
                             </SelectTrigger>
                             <SelectContent>
-                              {mockColleges.map((college) => (
+                              {colleges.map((college) => (
                                 <SelectItem key={college.id} value={college.id}>
                                   {college.name} ({college.shortName})
                                 </SelectItem>

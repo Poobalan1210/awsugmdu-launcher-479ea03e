@@ -23,7 +23,7 @@ import {
   Upload, X, UserPlus, Check, ChevronDown, GraduationCap,
   Trophy, ListTodo, ClipboardCheck, Target, Shield, UserCog, Medal, Github, ShoppingBag, Loader2
 } from 'lucide-react';
-import { mockSprints, mockMeetups, currentUser, Submission, generateSpeakerInviteLink, Sprint, Session, SessionPerson, User as UserType, predefinedTasks, mockColleges, getTaskById, getUserById, getUserByIdAsync, communityRoles, mockUserRoles, CommunityRole, UserRoleAssignment, PointActivity, mockPointActivities, Meetup, mockBadges, Badge as BadgeType, BadgeAward, mockBadgeAwards, BadgeCriteriaType, criteriaTypeLabels, BadgeCriteria, mockUsers } from '@/data/mockData';
+import { mockSprints, mockMeetups, Submission, Sprint, Session, SessionPerson, User as UserType, predefinedTasks, mockColleges, getTaskById, communityRoles, mockUserRoles, CommunityRole, UserRoleAssignment, PointActivity, mockPointActivities, Meetup, mockBadges, Badge as BadgeType, BadgeAward, mockBadgeAwards, BadgeCriteriaType, criteriaTypeLabels, BadgeCriteria, mockUsers } from '@/data/mockData';
 import { createMeetup, updateMeetup, publishMeetup, getMeetups, CreateMeetupData, UpdateMeetupData, deleteMeetup } from '@/lib/meetups';
 import { createSprint, addSession, getSprints, deleteSprint, deleteSession, CreateSprintData, CreateSessionData, reviewSubmission } from '@/lib/sprints';
 import { uploadFileToS3 } from '@/lib/s3Upload';
@@ -35,6 +35,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { format, parseISO } from 'date-fns';
 import { toast } from 'sonner';
+import { useAuth } from '@/contexts/AuthContext';
 import StoreManagement from '@/components/admin/StoreManagement';
 import CertificationGroupsManagement from '@/components/admin/CertificationGroupsManagement';
 import { TaskSubmissionsPanel } from '@/components/college-champs/TaskSubmissionsPanel';
@@ -212,11 +213,7 @@ function ViewParticipantsDialog({ sprint }: { sprint: Sprint }) {
                 const user = await getUserProfile(userId);
                 return user;
               } catch (error) {
-                // Fallback to mock data
-                const mockUser = getUserById(userId);
-                if (mockUser) {
-                  return mockUser;
-                }
+                // User not found in API
                 return null;
               }
             })
@@ -229,9 +226,7 @@ function ViewParticipantsDialog({ sprint }: { sprint: Sprint }) {
           console.error('Error fetching participants:', error);
           // Fallback to prop data if fetch fails
           const registeredUserIds = sprint.registeredUsers || [];
-          const participantsList = registeredUserIds
-            .map(userId => getUserById(userId))
-            .filter((user): user is UserType => user !== undefined);
+          const participantsList: UserType[] = [];
           setParticipants(participantsList);
         } finally {
           setLoading(false);
@@ -313,89 +308,6 @@ function ViewParticipantsDialog({ sprint }: { sprint: Sprint }) {
                 </Card>
               ))}
             </div>
-          )}
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function SpeakerInviteDialog({ eventType, eventId, eventTitle }: {
-  eventType: 'sprint' | 'meetup';
-  eventId: string;
-  eventTitle: string;
-}) {
-  const [email, setEmail] = useState('');
-  const [inviteLink, setInviteLink] = useState('');
-
-  const generateInvite = () => {
-    const link = generateSpeakerInviteLink(eventType, eventId);
-    const fullLink = `${window.location.origin}/speaker-invite/${link}`;
-    setInviteLink(fullLink);
-  };
-
-  const copyLink = () => {
-    navigator.clipboard.writeText(inviteLink);
-    toast.success('Link copied to clipboard!');
-  };
-
-  const sendEmail = () => {
-    if (!email) {
-      toast.error('Please enter an email address');
-      return;
-    }
-    toast.success(`Invitation sent to ${email}`);
-    setEmail('');
-  };
-
-  return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-1">
-          <Link2 className="h-4 w-4" />
-          Invite Speaker
-        </Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Invite Speaker</DialogTitle>
-          <DialogDescription>
-            Generate a unique link for speakers to submit their session details for {eventTitle}.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4">
-          {!inviteLink ? (
-            <Button onClick={generateInvite} className="w-full">
-              <Link2 className="h-4 w-4 mr-2" />
-              Generate Speaker Invite Link
-            </Button>
-          ) : (
-            <>
-              <div className="space-y-2">
-                <Label>Speaker Invite Link</Label>
-                <div className="flex gap-2">
-                  <Input value={inviteLink} readOnly className="text-xs" />
-                  <Button size="icon" variant="outline" onClick={copyLink}>
-                    <Copy className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-              <div className="border-t pt-4">
-                <Label>Or send via email</Label>
-                <div className="flex gap-2 mt-2">
-                  <Input 
-                    type="email" 
-                    placeholder="speaker@example.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                  />
-                  <Button onClick={sendEmail}>
-                    <Mail className="h-4 w-4 mr-2" />
-                    Send
-                  </Button>
-                </div>
-              </div>
-            </>
           )}
         </div>
       </DialogContent>
@@ -2737,11 +2649,6 @@ function MeetupsManagementTab({ allUsers = [] }: { allUsers?: UserType[] }) {
                     {(meetup.status === 'completed' || meetup.status === 'upcoming') && (
                       <MarkAttendanceDialog meetup={meetup} onSuccess={loadMeetups} />
                     )}
-                    <SpeakerInviteDialog 
-                      eventType="meetup" 
-                      eventId={meetup.id} 
-                      eventTitle={meetup.title}
-                    />
                     <EditMeetupDialog meetup={meetup} onSuccess={loadMeetups} allUsers={allUsers} />
                     <Button 
                       variant="outline" 
@@ -3755,7 +3662,7 @@ function CollegeManagementCard({ college, onDelete, onUpdate, allUsers }: {
   const completedTasks = predefinedTasks.filter(t => completedTaskIds.includes(t.id));
   const progressPercent = (completedTasks.length / predefinedTasks.length) * 100;
   
-  const lead = college.champsLeadId ? getUserById(college.champsLeadId) : null;
+  const lead = college.champsLeadId ? allUsers.find(u => u.id === college.champsLeadId) || null : null;
 
   const getCategoryColor = (category: string) => {
     switch (category) {
@@ -4223,6 +4130,7 @@ function CollegeChampsTab() {
 
 // Members Tab Component with integrated role management and points awarding
 function MembersTab({ allUsers }: { allUsers: UserType[] }) {
+  const { user: authUser } = useAuth();
   const [userRoles, setUserRoles] = useState<UserRoleAssignment[]>(mockUserRoles);
   const [pointActivities, setPointActivities] = useState<PointActivity[]>(mockPointActivities);
   const [userPoints, setUserPoints] = useState<Record<string, number>>(
@@ -4286,7 +4194,7 @@ function MembersTab({ allUsers }: { allUsers: UserType[] }) {
         const newAssignment = await assignRole({
           userId,
           role,
-          assignedBy: currentUser.id
+          assignedBy: authUser?.id || ''
         });
         setUserRoles(prev => [...prev, newAssignment]);
         toast.success(`Assigned ${role} role`);
@@ -4316,7 +4224,7 @@ function MembersTab({ allUsers }: { allUsers: UserType[] }) {
       points: pointsNum,
       reason: awardForm.reason,
       type: 'adhoc',
-      awardedBy: currentUser.id,
+      awardedBy: authUser?.id || '',
       awardedAt: new Date().toISOString().split('T')[0]
     };
 
@@ -4570,6 +4478,7 @@ function MembersTab({ allUsers }: { allUsers: UserType[] }) {
 
 // Badge Management Tab Component
 function BadgesTab({ allUsers }: { allUsers: UserType[] }) {
+  const { user: authUser } = useAuth();
   const [badges, setBadges] = useState<BadgeType[]>(mockBadges);
   const [badgeAwards, setBadgeAwards] = useState<BadgeAward[]>(mockBadgeAwards);
   const [searchQuery, setSearchQuery] = useState('');
@@ -4636,7 +4545,7 @@ function BadgesTab({ allUsers }: { allUsers: UserType[] }) {
       badgeId: selectedBadge.id,
       userId: selectedUserId,
       awardedAt: new Date().toISOString().split('T')[0],
-      awardedBy: currentUser.id,
+      awardedBy: authUser?.id || '',
       reason: awardReason || 'Adhoc badge award',
       isAdhoc: true
     };
@@ -4977,6 +4886,7 @@ function BadgesTab({ allUsers }: { allUsers: UserType[] }) {
 }
 
 export default function Admin() {
+  const { user: authUser } = useAuth();
   const [activeTab, setActiveTab] = useState('submissions');
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [loadingSprints, setLoadingSprints] = useState(false);
@@ -4984,8 +4894,8 @@ export default function Admin() {
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [allSubmissions, setAllSubmissions] = useState<Array<Submission & { sprintTitle: string; sprintId: string }>>([]);
   const [loadingSubmissions, setLoadingSubmissions] = useState(false);
-  const isAdmin = currentUser.role === 'organiser';
-  const isSpeaker = currentUser.role === 'speaker';
+  const isAdmin = authUser?.role === 'organiser';
+  const isSpeaker = authUser?.role === 'speaker';
 
   const pendingSubmissions = allSubmissions.filter(s => s.status === 'pending');
   const reviewedSubmissions = allSubmissions.filter(s => s.status !== 'pending');
@@ -5089,7 +4999,7 @@ export default function Admin() {
         status: action === 'approve' ? 'approved' : 'rejected',
         points: action === 'approve' ? points : 0,
         feedback,
-        reviewedBy: currentUser.id
+        reviewedBy: authUser?.id || ''
       });
       
       toast.success(`Submission ${action}d${points ? ` with ${points} points` : ''}`);

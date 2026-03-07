@@ -197,6 +197,8 @@ export interface Submission {
   userAvatar?: string;
   blogUrl?: string;
   githubUrl?: string;
+  repoUrl?: string;
+  description?: string;
   comments?: string;
   supportingDocuments?: string[];
   submittedAt: string;
@@ -214,7 +216,7 @@ export interface AgendaItem {
   speakerId?: string;
 }
 
-export type MeetupType = 'virtual' | 'in-person' | 'skill-sprint' | 'certification-circle' | 'college-champ';
+export type MeetupType = 'virtual' | 'in-person' | 'hybrid' | 'skill-sprint' | 'certification-circle' | 'college-champ';
 
 export interface Meetup {
   id: string;
@@ -270,7 +272,7 @@ export interface Event {
   description: string;
   date: string;
   time?: string;
-  type: 'virtual' | 'in-person' | 'hybrid';
+  type: MeetupType;
   category: 'sprint' | 'workshop' | 'meetup' | 'certification' | 'champs';
   attendees: number;
   image?: string;
@@ -335,6 +337,7 @@ export interface GroupMessage {
   createdAt: string;
   replies: GroupReply[];
   likes: number;
+  likedBy?: string[];
   isPinned?: boolean;
 }
 
@@ -347,18 +350,9 @@ export interface GroupReply {
   content: string;
   createdAt: string;
   likes: number;
+  likedBy?: string[];
 }
 
-export interface SpeakerInvite {
-  id: string;
-  eventType: 'sprint' | 'meetup';
-  eventId: string;
-  uniqueLink: string;
-  email?: string;
-  status: 'pending' | 'accepted' | 'expired';
-  createdAt: string;
-  expiresAt: string;
-}
 
 // Mock Users with roles - 5 users with rich profiles
 export const mockUsers: User[] = [
@@ -1206,19 +1200,6 @@ export const mockMeetups: Meetup[] = [
   }
 ];
 
-// Mock Speaker Invites
-export const mockSpeakerInvites: SpeakerInvite[] = [
-  {
-    id: 'inv1',
-    eventType: 'sprint',
-    eventId: 's2',
-    uniqueLink: 'speaker-invite-abc123',
-    email: 'speaker@example.com',
-    status: 'pending',
-    createdAt: '2025-01-15',
-    expiresAt: '2025-02-01'
-  }
-];
 
 // Note: mockEvents is generated after mockColleges is defined (see end of file)
 
@@ -1710,11 +1691,6 @@ export const getEventLink = (event: Event): string => {
   }
 };
 
-// Generate unique speaker invite link
-export const generateSpeakerInviteLink = (eventType: 'sprint' | 'meetup', eventId: string): string => {
-  const uniqueId = Math.random().toString(36).substring(2, 15);
-  return `speaker-invite-${eventType}-${eventId}-${uniqueId}`;
-};
 
 // Helper function to generate unified events from all sources
 // NOTE: This must be defined AFTER mockColleges to avoid circular dependency

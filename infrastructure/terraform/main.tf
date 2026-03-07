@@ -1889,8 +1889,6 @@ resource "aws_api_gateway_deployment" "api" {
       aws_api_gateway_integration.users_id_roles_get_lambda.id,
       aws_api_gateway_integration.users_points_activities_get_lambda.id,
       aws_api_gateway_integration.users_id_points_activities_get_lambda.id,
-      aws_lambda_function.share_page.source_code_hash,
-      aws_api_gateway_integration.share_get_lambda.id,
     ]))
   }
 
@@ -1984,9 +1982,6 @@ resource "aws_api_gateway_deployment" "api" {
     aws_api_gateway_integration.users_id_points_options_lambda,
     aws_api_gateway_integration.users_id_points_activities_get_lambda,
     aws_api_gateway_integration.users_id_points_activities_options_lambda,
-    # Share page integrations
-    aws_api_gateway_integration.share_get_lambda,
-    aws_api_gateway_integration.share_options_lambda,
   ]
 
   rest_api_id = aws_api_gateway_rest_api.api.id

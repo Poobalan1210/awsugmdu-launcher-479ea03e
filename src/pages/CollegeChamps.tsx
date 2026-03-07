@@ -16,8 +16,7 @@ import {
   ChevronRight, Clock, ExternalLink, Loader2, Search, X, Upload, Share2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { predefinedTasks, getTaskById, getUserById, CollegeTask } from '@/data/mockData';
-import { College } from '@/lib/colleges';
+import { CollegeTask, College, getAllCollegeTasks } from '@/lib/colleges';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { SubmitTaskDialog } from '@/components/college-champs/SubmitTaskDialog';
@@ -66,11 +65,11 @@ const getCategoryColor = (category: CollegeTask['category']) => {
   }
 };
 
-function CollegeLeaderboard({ colleges, onSelectCollege }: { colleges: College[], onSelectCollege: (college: College, rank: number) => void }) {
+function CollegeLeaderboard({ colleges, onSelectCollege, tasks }: { colleges: College[], onSelectCollege: (college: College, rank: number) => void, tasks: CollegeTask[] }) {
   // Helper to calculate available tasks for a college
   const getAvailableTasks = (college: College) => {
-    const defaultTasks = predefinedTasks.filter(task => task.isDefault);
-    const assignedTasks = predefinedTasks.filter(task => 
+    const defaultTasks = tasks.filter(task => task.isDefault);
+    const assignedTasks = tasks.filter(task => 
       college.assignedTaskIds?.includes(task.id)
     );
     return [...defaultTasks, ...assignedTasks];
@@ -678,10 +677,21 @@ export default function CollegeChamps() {
   const [colleges, setColleges] = useState<College[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [allTasks, setAllTasks] = useState<CollegeTask[]>([]);
 
   useEffect(() => {
     fetchColleges();
+    fetchTasks();
   }, []);
+
+  const fetchTasks = async () => {
+    try {
+      const tasks = await getAllCollegeTasks();
+      setAllTasks(tasks);
+    } catch (error) {
+      console.error('Error fetching college tasks:', error);
+    }
+  };
 
   const fetchColleges = async () => {
     try {
@@ -822,6 +832,7 @@ export default function CollegeChamps() {
                 <CollegeLeaderboard 
                   colleges={sortedColleges} 
                   onSelectCollege={handleSelectCollege}
+                  tasks={allTasks}
                 />
               )}
             </div>

@@ -14,9 +14,10 @@ import {
   Linkedin, Github, Twitter, ExternalLink, Building, User,
   Mic, BookOpen, CheckCircle, Clock, Award, Shield
 } from 'lucide-react';
-import { mockSprints, mockBadges, getUserByIdAsync, mockUsers, mockMeetups, mockColleges, communityRoles, CommunityRole, User as UserType } from '@/data/mockData';
+import { mockBadges, communityRoles, CommunityRole, User as UserType } from '@/data/mockData';
 import { getSprints } from '@/lib/sprints';
 import { getUserProfile } from '@/lib/userProfile';
+import { getAllColleges, College } from '@/lib/colleges';
 import { getUserRoles } from '@/lib/userRoles';
 import { format, parseISO } from 'date-fns';
 import { getMeetups } from '@/lib/meetups';
@@ -36,6 +37,7 @@ export default function Profile() {
   const [loadingRoles, setLoadingRoles] = useState(true);
   const [pointActivities, setPointActivities] = useState<any[]>([]);
   const [loadingPointActivities, setLoadingPointActivities] = useState(true);
+  const [colleges, setColleges] = useState<College[]>([]);
   
   // Fetch meetups from backend
   const { data: allMeetups = [] } = useQuery({
@@ -52,7 +54,7 @@ export default function Profile() {
         setSprints(fetchedSprints);
       } catch (error) {
         console.error('Failed to fetch sprints:', error);
-        setSprints(mockSprints);
+        setSprints([]);
       } finally {
         setLoadingSprints(false);
       }
@@ -69,20 +71,15 @@ export default function Profile() {
           // Fetch specific user by ID from API
           try {
             const apiUser = await getUserProfile(userId);
-            // Merge with mock data to fill in missing fields
-            const mockUser = await getUserByIdAsync(userId);
             setProfileUser({
-              ...mockUser,
               ...apiUser,
               id: (apiUser as any).userId || apiUser.id || userId,
-              points: apiUser.points ?? mockUser?.points ?? 0,
-              badges: apiUser.badges || mockUser?.badges || [],
+              points: apiUser.points ?? 0,
+              badges: apiUser.badges || [],
             });
           } catch (apiError) {
-            console.error('Failed to fetch user from API, falling back to mock:', apiError);
-            // Fallback to mock data
-            const user = await getUserByIdAsync(userId);
-            setProfileUser(user || null);
+            console.error('Failed to fetch user from API:', apiError);
+            setProfileUser(null);
           }
         } else if (authUser) {
           // Fetch authenticated user from API to get latest data
@@ -166,6 +163,19 @@ export default function Profile() {
     
     fetchPointActivities();
   }, [profileUser?.id]);
+
+  // Fetch colleges for champ captain check
+  useEffect(() => {
+    const fetchColleges = async () => {
+      try {
+        const data = await getAllColleges();
+        setColleges(data);
+      } catch (error) {
+        console.error('Failed to fetch colleges:', error);
+      }
+    };
+    fetchColleges();
+  }, []);
   
   const user = profileUser;
   const isOwnProfile = !userId || (authUser && userId === authUser.id);
@@ -217,8 +227,8 @@ export default function Profile() {
   );
 
   // Check if user is a Champ Captain (college lead)
-  const isChampCaptain = mockColleges.some(college => college.champsLeadId === user.id);
-  const champCollege = mockColleges.find(college => college.champsLeadId === user.id);
+  const isChampCaptain = colleges.some(college => college.champsLeadId === user.id);
+  const champCollege = colleges.find(college => college.champsLeadId === user.id);
 
   const getRoleInfo = (role: CommunityRole) => {
     return communityRoles.find(r => r.value === role);
@@ -278,8 +288,8 @@ export default function Profile() {
       });
     });
 
-    // Meetup attendance - use backend data if available, otherwise fallback to mock
-    const meetupsToCheck = allMeetups.length > 0 ? allMeetups : mockMeetups;
+    // Meetup attendance - use backend data
+    const meetupsToCheck = allMeetups;
     
     // Show attended meetups from user activities (marked by admin)
     if (user.activities) {

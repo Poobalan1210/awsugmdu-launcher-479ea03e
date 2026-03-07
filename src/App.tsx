@@ -16,7 +16,6 @@ import Store from "./pages/Store";
 import Meetups from "./pages/Meetups";
 import Leaderboard from "./pages/Leaderboard";
 import Admin from "./pages/Admin";
-import SpeakerInvite from "./pages/SpeakerInvite";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -77,11 +76,6 @@ const App = () => (
             <Route path="/admin" element={
               <ProtectedRoute>
                 <Admin />
-              </ProtectedRoute>
-            } />
-            <Route path="/speaker-invite/:inviteId" element={
-              <ProtectedRoute>
-                <SpeakerInvite />
               </ProtectedRoute>
             } />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

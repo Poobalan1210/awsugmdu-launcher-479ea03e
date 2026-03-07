@@ -497,7 +497,6 @@ function MeetupDetail({ meetup: initialMeetup, onBack }: { meetup: Meetup; onBac
                       userId={person.userId}
                       name={person.name}
                       photo={person.photo}
-                      avatar={person.avatar}
                       designation={person.designation}
                       company={person.company}
                       role={person.role}

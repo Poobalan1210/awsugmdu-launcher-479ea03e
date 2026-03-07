@@ -45,7 +45,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       // Transform DynamoDB profile to User interface
       return {
-        id: profile.userId,
+        id: (profile as any).userId || profile.id,
         email: profile.email,
         name: profile.name,
         avatar: profile.avatar || '',
@@ -56,7 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         role,
         bio: profile.bio,
         designation: profile.designation,
-        company: profile.companyName,
+        company: (profile as any).companyName || profile.company,
         linkedIn: profile.linkedIn,
         github: profile.github,
         twitter: profile.twitter,

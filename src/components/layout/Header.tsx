@@ -32,7 +32,7 @@ export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, isAuthenticated, signOut } = useAuth();
+  const { user, isAuthenticated, isLoading, signOut } = useAuth();
   
   const handleLogout = async () => {
     try {
@@ -66,7 +66,9 @@ export function Header() {
 
         {/* Auth Section */}
         <div className="flex items-center gap-4">
-          {isAuthenticated && user ? (
+          {isLoading ? (
+            <div className="h-10 w-10 rounded-full bg-muted animate-pulse" />
+          ) : isAuthenticated && user ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-10 w-10 rounded-full">
@@ -142,7 +144,7 @@ export function Header() {
                 <Shield className="h-4 w-4" />
                 Admin Panel
               </Link>}
-            {!isAuthenticated && (
+            {!isAuthenticated && !isLoading && (
               <div className="flex flex-col gap-2 pt-4 border-t border-border mt-2">
                 <Button variant="outline" asChild>
                   <Link to="/login" onClick={() => setMobileMenuOpen(false)}>

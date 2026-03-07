@@ -543,8 +543,9 @@ resource "aws_lambda_function" "users_crud" {
 
   environment {
     variables = {
-      USERS_TABLE_NAME = aws_dynamodb_table.users.name
-      ADMIN_EMAILS     = var.admin_emails
+      USERS_TABLE_NAME   = aws_dynamodb_table.users.name
+      COLLEGES_TABLE_NAME = aws_dynamodb_table.colleges.name
+      ADMIN_EMAILS       = var.admin_emails
     }
   }
 

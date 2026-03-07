@@ -5,6 +5,7 @@ const client = new DynamoDBClient({ region: process.env.AWS_REGION });
 const docClient = DynamoDBDocumentClient.from(client);
 
 const USERS_TABLE = process.env.USERS_TABLE_NAME || 'awsug-users';
+const COLLEGES_TABLE = process.env.COLLEGES_TABLE_NAME || 'awsug-colleges';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -165,6 +166,35 @@ async function createUser(requestBody) {
       TableName: USERS_TABLE,
       Item: userProfile,
     }));
+    
+    // If user selected College Champ, add them to the college's members list
+    if (profileData.isCollegeChamp && profileData.champCollegeId) {
+      try {
+        const college = await docClient.send(new GetCommand({
+          TableName: COLLEGES_TABLE,
+          Key: { id: profileData.champCollegeId },
+        }));
+        
+        if (college.Item) {
+          const members = college.Item.members || [];
+          if (!members.includes(userId)) {
+            members.push(userId);
+            await docClient.send(new UpdateCommand({
+              TableName: COLLEGES_TABLE,
+              Key: { id: profileData.champCollegeId },
+              UpdateExpression: 'SET members = :members, updatedAt = :updatedAt',
+              ExpressionAttributeValues: {
+                ':members': members,
+                ':updatedAt': new Date().toISOString(),
+              },
+            }));
+          }
+        }
+      } catch (collegeError) {
+        console.error('Failed to add user to college:', collegeError);
+        // Non-blocking - profile was created successfully
+      }
+    }
     
     return {
       statusCode: 201,

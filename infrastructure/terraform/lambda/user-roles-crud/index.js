@@ -40,17 +40,20 @@ exports.handler = async (event) => {
     };
   }
   
-  // Authorize request
-  const authResult = await authorize(event, USERS_TABLE);
-  if (!authResult.authorized) {
-    return createUnauthorizedResponse(authResult.error, getCorsHeaders());
+  // Skip authorization for GET requests (read-only operations)
+  if (event.httpMethod !== 'GET') {
+    // Authorize request
+    const authResult = await authorize(event, USERS_TABLE);
+    if (!authResult.authorized) {
+      return createUnauthorizedResponse(authResult.error, getCorsHeaders());
+    }
+    
+    // Add user context to event
+    event.userContext = {
+      userId: authResult.userId,
+      roles: authResult.roles,
+    };
   }
-  
-  // Add user context to event
-  event.userContext = {
-    userId: authResult.userId,
-    roles: authResult.roles,
-  };
   
   try {
     const method = event.httpMethod;

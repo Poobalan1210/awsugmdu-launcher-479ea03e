@@ -151,38 +151,39 @@ async function getUserPoints(userId) {
 async function awardPoints(event) {
   const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
   const { userId, points, reason, type, awardedBy } = body;
-  
+
   if (!userId || !points || !reason || !type || !awardedBy) {
     return createResponse(400, { error: 'Missing required fields: userId, points, reason, type, awardedBy' });
   }
-  
+
   // Validate type
   const validTypes = ['adhoc', 'submission', 'badge', 'event'];
   if (!validTypes.includes(type)) {
     return createResponse(400, { error: 'Invalid type. Must be one of: adhoc, submission, badge, event' });
   }
-  
+
   // Validate points is a positive number
   const pointsNum = parseInt(points);
   if (isNaN(pointsNum) || pointsNum <= 0) {
     return createResponse(400, { error: 'Points must be a positive number' });
   }
-  
+
   // Get user
   const userResult = await docClient.send(new GetCommand({
     TableName: USERS_TABLE,
     Key: { userId }
   }));
-  
+
   if (!userResult.Item) {
     return createResponse(404, { error: 'User not found' });
   }
-  
+
   const user = userResult.Item;
   const currentPoints = user.points || 0;
   const pointActivities = user.pointActivities || [];
-  
-  // Create new activity
+  const activities = user.activities || [];
+
+  // Create new point activity
   const newActivity = {
     id: `pa-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     userId,
@@ -192,20 +193,32 @@ async function awardPoints(event) {
     awardedBy,
     awardedAt: new Date().toISOString()
   };
-  
+
   pointActivities.push(newActivity);
-  
-  // Update user with new points and activity
+
+  // Create general activity entry
+  activities.push({
+    type: 'points_awarded',
+    points: pointsNum,
+    reason,
+    pointType: type,
+    awardedBy,
+    timestamp: new Date().toISOString()
+  });
+
+  // Update user with new points, point activity, and activity
   await docClient.send(new UpdateCommand({
     TableName: USERS_TABLE,
     Key: { userId },
-    UpdateExpression: 'SET points = :points, pointActivities = :activities, updatedAt = :updatedAt',
+    UpdateExpression: 'SET points = :points, pointActivities = :pointActivities, activities = :activities, updatedAt = :updatedAt',
     ExpressionAttributeValues: {
       ':points': currentPoints + pointsNum,
-      ':activities': pointActivities,
+      ':pointActivities': pointActivities,
+      ':activities': activities,
       ':updatedAt': new Date().toISOString()
     }
   }));
-  
+
   return createResponse(201, { activity: newActivity });
 }
+

@@ -867,6 +867,7 @@ async function markAttendance(id, event) {
         points: pointsToAward,
         reason: `Attended ${meetup.title} as ${role}`,
         type: 'event',
+        awardedBy: event.userContext?.userId || 'system',
         awardedAt: new Date().toISOString()
       };
       

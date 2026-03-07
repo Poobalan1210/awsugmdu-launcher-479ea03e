@@ -1219,13 +1219,70 @@ async function reviewSubmission(submissionId, requestBody) {
     
     // If approved, mark task as completed and award points
     if (status === 'approved') {
-      const { collegeId, taskId } = submission.Item;
+      const { collegeId, taskId, submittedBy } = submission.Item;
       const points = pointsAwarded || 0;
       
+      // Award points to the college
       await completeTask(collegeId, JSON.stringify({ 
         taskId, 
         taskPoints: points 
       }));
+      
+      // Award points to the submitting user's profile
+      if (submittedBy && points > 0) {
+        try {
+          const userResult = await docClient.send(new GetCommand({
+            TableName: USERS_TABLE,
+            Key: { userId: submittedBy }
+          }));
+          
+          if (userResult.Item) {
+            const user = userResult.Item;
+            const currentPoints = user.points || 0;
+            const pointActivities = user.pointActivities || [];
+            const activities = user.activities || [];
+            
+            // Create point activity record
+            const pointActivity = {
+              id: `pa-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              userId: submittedBy,
+              points,
+              reason: `College task approved: ${taskId} for college ${collegeId}`,
+              type: 'submission',
+              awardedBy: reviewedBy || 'admin',
+              awardedAt: new Date().toISOString()
+            };
+            pointActivities.push(pointActivity);
+            
+            // Create general activity entry
+            activities.push({
+              type: 'college_task_approved',
+              collegeId,
+              taskId,
+              points,
+              reviewedBy: reviewedBy || 'admin',
+              timestamp: new Date().toISOString()
+            });
+            
+            await docClient.send(new UpdateCommand({
+              TableName: USERS_TABLE,
+              Key: { userId: submittedBy },
+              UpdateExpression: 'SET points = :points, pointActivities = :pointActivities, activities = :activities, updatedAt = :updatedAt',
+              ExpressionAttributeValues: {
+                ':points': currentPoints + points,
+                ':pointActivities': pointActivities,
+                ':activities': activities,
+                ':updatedAt': new Date().toISOString()
+              }
+            }));
+            
+            console.log(`Awarded ${points} points to user ${submittedBy} for college task ${taskId}`);
+          }
+        } catch (error) {
+          console.error('Error awarding points to user:', error);
+          // Don't fail the review if user points update fails
+        }
+      }
     }
     
     const { type, ...responseSubmission } = updatedSubmission;

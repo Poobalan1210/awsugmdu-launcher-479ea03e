@@ -775,43 +775,43 @@ async function submitWork(id, event) {
 // Review submission
 async function reviewSubmission(sprintId, submissionId, event) {
   const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
-  
+
   const {
     status,
     points,
     feedback,
     reviewedBy
   } = body;
-  
+
   if (!status || !reviewedBy) {
     return createResponse(400, { error: 'Missing required fields: status, reviewedBy' });
   }
-  
+
   if (!['approved', 'rejected'].includes(status)) {
     return createResponse(400, { error: 'Status must be either "approved" or "rejected"' });
   }
-  
+
   // Check if sprint exists
   const existing = await docClient.send(new GetCommand({
     TableName: SPRINTS_TABLE,
     Key: { id: sprintId }
   }));
-  
+
   if (!existing.Item) {
     return createResponse(404, { error: 'Sprint not found' });
   }
-  
+
   const sprint = existing.Item;
   const submissions = sprint.submissions || [];
-  
+
   // Find submission
   const submissionIndex = submissions.findIndex(s => s.id === submissionId);
   if (submissionIndex === -1) {
     return createResponse(404, { error: 'Submission not found' });
   }
-  
+
   const submission = submissions[submissionIndex];
-  
+
   // Update submission
   const updatedSubmission = {
     ...submission,
@@ -821,9 +821,9 @@ async function reviewSubmission(sprintId, submissionId, event) {
     reviewedBy,
     reviewedAt: new Date().toISOString()
   };
-  
+
   submissions[submissionIndex] = updatedSubmission;
-  
+
   await docClient.send(new UpdateCommand({
     TableName: SPRINTS_TABLE,
     Key: { id: sprintId },
@@ -833,34 +833,61 @@ async function reviewSubmission(sprintId, submissionId, event) {
       ':updatedAt': new Date().toISOString()
     }
   }));
-  
-  // If approved, update user's points
+
+  // If approved, update user's points, pointActivities, and activities
   if (status === 'approved' && points > 0) {
     const USERS_TABLE = process.env.USERS_TABLE_NAME || 'awsug-users';
-    
+
     try {
-      // Get user by userId (the primary key in users table)
       const userResult = await docClient.send(new GetCommand({
         TableName: USERS_TABLE,
         Key: { userId: submission.userId }
       }));
-      
+
       if (userResult.Item) {
-        const currentPoints = userResult.Item.points || 0;
+        const user = userResult.Item;
+        const currentPoints = user.points || 0;
         const newPoints = currentPoints + points;
-        
-        // Update user's points
+        const pointActivities = user.pointActivities || [];
+        const activities = user.activities || [];
+
+        // Create point activity record
+        const pointActivity = {
+          id: `pa-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          userId: submission.userId,
+          points,
+          reason: `Sprint submission approved: ${sprint.title || sprintId}`,
+          type: 'submission',
+          awardedBy: reviewedBy,
+          awardedAt: new Date().toISOString()
+        };
+        pointActivities.push(pointActivity);
+
+        // Create general activity entry
+        activities.push({
+          type: 'submission_approved',
+          sprintId,
+          sprintTitle: sprint.title || sprintId,
+          submissionId,
+          points,
+          reviewedBy,
+          timestamp: new Date().toISOString()
+        });
+
+        // Update user with points, pointActivities, and activities
         await docClient.send(new UpdateCommand({
           TableName: USERS_TABLE,
-          Key: { userId: userResult.Item.userId },
-          UpdateExpression: 'SET points = :points, updatedAt = :updatedAt',
+          Key: { userId: user.userId },
+          UpdateExpression: 'SET points = :points, pointActivities = :pointActivities, activities = :activities, updatedAt = :updatedAt',
           ExpressionAttributeValues: {
             ':points': newPoints,
+            ':pointActivities': pointActivities,
+            ':activities': activities,
             ':updatedAt': new Date().toISOString()
           }
         }));
-        
-        console.log(`Updated user ${userResult.Item.userId} points from ${currentPoints} to ${newPoints}`);
+
+        console.log(`Updated user ${user.userId} points from ${currentPoints} to ${newPoints}`);
       } else {
         console.log(`User not found with userId: ${submission.userId}`);
       }
@@ -869,15 +896,16 @@ async function reviewSubmission(sprintId, submissionId, event) {
       // Don't fail the whole operation if points update fails
     }
   }
-  
+
   // Fetch updated sprint
   const updated = await docClient.send(new GetCommand({
     TableName: SPRINTS_TABLE,
     Key: { id: sprintId }
   }));
-  
+
   return createResponse(200, { sprint: updated.Item, submission: updatedSubmission });
 }
+
 
 // Create forum post
 async function createForumPost(id, event) {

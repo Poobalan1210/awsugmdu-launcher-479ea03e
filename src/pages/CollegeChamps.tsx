@@ -604,10 +604,9 @@ function CollegeDetailView({ college, rank }: { college: College, rank: number }
             <div className="space-y-2">
               {filteredMembers.map((member) => {
                 if (!member) return null;
-                const isLead = member.id === college.champsLeadId;
 
                 return (
-                  <Card key={member.id} className={isLead ? 'border-amber-500/50 bg-amber-500/5' : ''}>
+                  <Card key={member.id}>
                     <CardContent className="p-4">
                       <div className="flex items-center gap-4">
                         <Avatar className="h-12 w-12">
@@ -624,12 +623,6 @@ function CollegeDetailView({ college, rank }: { college: College, rank: number }
                             >
                               {member.name}
                             </Link>
-                            {isLead && (
-                              <Badge variant="secondary" className="bg-amber-500/10 text-amber-600 border-amber-500/30">
-                                <Award className="h-3 w-3 mr-1" />
-                                Lead
-                              </Badge>
-                            )}
                           </div>
                           {member.designation && (
                             <p className="text-sm text-muted-foreground truncate">{member.designation}</p>

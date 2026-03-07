@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import { 
   GraduationCap, Users, Calendar, Award, ArrowRight, Trophy, Medal, 
   CheckCircle2, Circle, MapPin, Star, Zap, Target, PartyPopper,
-  ChevronRight, Clock, ExternalLink, Loader2, Search, X, Upload
+  ChevronRight, Clock, ExternalLink, Loader2, Search, X, Upload, Share2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { predefinedTasks, getTaskById, getUserById, CollegeTask } from '@/data/mockData';
@@ -21,6 +21,8 @@ import { College } from '@/lib/colleges';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { SubmitTaskDialog } from '@/components/college-champs/SubmitTaskDialog';
+import { ShareButton } from '@/components/common/ShareButton';
+import { generateCollegeRankShare } from '@/lib/sharing';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -277,12 +279,20 @@ function CollegeDetailView({ college, rank }: { college: College, rank: number }
                 </div>
               </div>
             </div>
-            <div className="text-right">
-              <div className="text-3xl font-bold flex items-center gap-2">
-                <Zap className="h-7 w-7" />
-                {college.totalPoints.toLocaleString()}
+            <div className="flex items-start gap-3">
+              <div className="text-right">
+                <div className="text-3xl font-bold flex items-center gap-2">
+                  <Zap className="h-7 w-7" />
+                  {college.totalPoints.toLocaleString()}
+                </div>
+                <p className="text-white/80 text-sm">total points</p>
               </div>
-              <p className="text-white/80 text-sm">total points</p>
+              <ShareButton
+                data={generateCollegeRankShare(college.name, rank, college.totalPoints)}
+                variant="ghost"
+                size="sm"
+                className="text-white hover:bg-white/20"
+              />
             </div>
           </div>
         </div>
@@ -862,7 +872,6 @@ export default function CollegeChamps() {
                 <CollegeDetailView 
                   college={selectedCollege.college} 
                   rank={selectedCollege.rank} 
-                  onClose={handleCloseDialog} 
                 />
               </div>
             )}

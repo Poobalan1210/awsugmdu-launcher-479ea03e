@@ -9,6 +9,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { CheckCircle, XCircle, AlertCircle, FileText, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 import { getAllTaskSubmissions, reviewTaskSubmission, getAllCollegeTasks, type CollegeTaskSubmission, type CollegeTask } from '@/lib/colleges';
+import { generateCollegeTaskShare } from '@/lib/sharing';
+import { showShareNotification } from '@/lib/shareNotification';
 
 export function TaskSubmissionsPanel({ onSubmissionReviewed }: { onSubmissionReviewed?: () => void }) {
   const [submissions, setSubmissions] = useState<CollegeTaskSubmission[]>([]);
@@ -72,6 +74,22 @@ export function TaskSubmissionsPanel({ onSubmissionReviewed }: { onSubmissionRev
       );
 
       toast.success(`Submission ${reviewAction}!`);
+      
+      // Show share notification for approved tasks
+      if (reviewAction === 'approved') {
+        const task = allTasks.find(t => t.id === selectedSubmission.taskId);
+        if (task) {
+          // Get college name from submission (you may need to fetch this)
+          const collegeName = selectedSubmission.collegeId; // This should be the college name
+          const shareData = generateCollegeTaskShare(
+            collegeName,
+            task.title,
+            parseInt(pointsAwarded) || task.points
+          );
+          showShareNotification(shareData, 'Task approved! Points awarded.');
+        }
+      }
+      
       setReviewDialogOpen(false);
       loadSubmissions();
       

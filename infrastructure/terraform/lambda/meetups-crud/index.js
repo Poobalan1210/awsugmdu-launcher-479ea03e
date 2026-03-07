@@ -1,10 +1,12 @@
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, PutCommand, GetCommand, UpdateCommand, ScanCommand, QueryCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
+const { authorize, createUnauthorizedResponse } = require('./shared/auth');
 
 const client = new DynamoDBClient({ region: process.env.AWS_REGION });
 const docClient = DynamoDBDocumentClient.from(client);
 
 const MEETUPS_TABLE = process.env.MEETUPS_TABLE_NAME || 'awsug-meetups';
+const USERS_TABLE = process.env.USERS_TABLE_NAME || 'awsug-users';
 
 // Helper function to generate CORS headers
 function getCorsHeaders() {
@@ -58,6 +60,22 @@ exports.handler = async (event) => {
       statusCode: 200,
       headers: getCorsHeaders(),
       body: ''
+    };
+  }
+  
+  // Skip authorization for GET requests (read-only operations)
+  // This allows public access to view meetups
+  if (event.httpMethod !== 'GET') {
+    // Authorize request for write operations
+    const authResult = await authorize(event, USERS_TABLE);
+    if (!authResult.authorized) {
+      return createUnauthorizedResponse(authResult.error, getCorsHeaders());
+    }
+    
+    // Add user context to event
+    event.userContext = {
+      userId: authResult.userId,
+      roles: authResult.roles,
     };
   }
   

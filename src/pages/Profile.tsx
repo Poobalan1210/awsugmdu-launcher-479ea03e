@@ -22,6 +22,8 @@ import { format, parseISO } from 'date-fns';
 import { getMeetups } from '@/lib/meetups';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
+import { ShareButton } from '@/components/common/ShareButton';
+import { generateBadgeShare } from '@/lib/sharing';
 
 export default function Profile() {
   const { userId } = useParams();
@@ -576,15 +578,27 @@ export default function Profile() {
                           transition={{ delay: index * 0.1 }}
                         >
                           <Card className="border-2 hover:border-primary/50 transition-colors">
-                            <CardContent className="p-4 flex items-start gap-4">
-                              <div className="text-4xl">{badge.icon}</div>
-                              <div className="flex-1">
-                                <h3 className="font-semibold">{badge.name}</h3>
-                                <p className="text-sm text-muted-foreground">{badge.description}</p>
-                                <p className="text-xs text-muted-foreground mt-2">
-                                  Earned {format(parseISO(badge.earnedDate), 'MMM d, yyyy')}
-                                </p>
+                            <CardContent className="p-4">
+                              <div className="flex items-start gap-4">
+                                <div className="text-4xl">{badge.icon}</div>
+                                <div className="flex-1">
+                                  <h3 className="font-semibold">{badge.name}</h3>
+                                  <p className="text-sm text-muted-foreground">{badge.description}</p>
+                                  <p className="text-xs text-muted-foreground mt-2">
+                                    Earned {format(parseISO(badge.earnedDate), 'MMM d, yyyy')}
+                                  </p>
+                                </div>
                               </div>
+                              {isOwnProfile && (
+                                <div className="mt-3 pt-3 border-t">
+                                  <ShareButton
+                                    data={generateBadgeShare(user.name, badge)}
+                                    variant="outline"
+                                    size="sm"
+                                    className="w-full"
+                                  />
+                                </div>
+                              )}
                             </CardContent>
                           </Card>
                         </motion.div>

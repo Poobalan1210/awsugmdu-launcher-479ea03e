@@ -9,6 +9,9 @@ import { Input } from '@/components/ui/input';
 import { User } from '@/data/mockData';
 import { getAllUsers } from '@/lib/userProfile';
 import { Link } from 'react-router-dom';
+import { ShareButton } from '@/components/common/ShareButton';
+import { generateLeaderboardShare } from '@/lib/sharing';
+import { useAuth } from '@/contexts/AuthContext';
 
 const getRankIcon = (rank: number) => {
   switch (rank) {
@@ -40,6 +43,7 @@ const Leaderboard = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const { user: currentUser } = useAuth();
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -141,29 +145,35 @@ const Leaderboard = () => {
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.3 }}
                     >
-                      <Link
-                        to={`/profile/${user.id}`}
-                        className={`flex items-center gap-4 p-4 rounded-lg border transition-all hover:scale-[1.01] ${getRankStyle(user.rank)}`}
-                      >
+                      <div className={`flex items-center gap-4 p-4 rounded-lg border transition-all ${getRankStyle(user.rank)}`}>
                         <div className="flex items-center justify-center w-10">
                           {getRankIcon(user.rank)}
                         </div>
-                        <Avatar className="h-12 w-12 border-2 border-border">
-                          <AvatarImage src={user.avatar} alt={user.name} />
-                          <AvatarFallback>{user.name?.charAt(0) || '?'}</AvatarFallback>
-                        </Avatar>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-lg truncate">{user.name}</p>
-                          <p className="text-sm text-muted-foreground truncate">{user.email}</p>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {user.badges?.length || 0} badges earned
-                          </p>
-                        </div>
+                        <Link to={`/profile/${user.id}`} className="flex items-center gap-4 flex-1 min-w-0">
+                          <Avatar className="h-12 w-12 border-2 border-border">
+                            <AvatarImage src={user.avatar} alt={user.name} />
+                            <AvatarFallback>{user.name?.charAt(0) || '?'}</AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-lg truncate">{user.name}</p>
+                            <p className="text-sm text-muted-foreground truncate">{user.email}</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {user.badges?.length || 0} badges earned
+                            </p>
+                          </div>
+                        </Link>
                         <div className="text-right">
                           <p className="font-bold text-xl text-primary">{(user.points || 0).toLocaleString()}</p>
                           <p className="text-xs text-muted-foreground">points</p>
                         </div>
-                      </Link>
+                        {currentUser?.id === user.id && (
+                          <ShareButton
+                            data={generateLeaderboardShare(user.name, user.rank, user.points || 0)}
+                            variant="ghost"
+                            size="sm"
+                          />
+                        )}
+                      </div>
                     </motion.div>
                   ))}
                 </div>

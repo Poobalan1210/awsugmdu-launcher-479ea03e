@@ -1,5 +1,6 @@
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, PutCommand, GetCommand, ScanCommand, QueryCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
+const { authorize, createUnauthorizedResponse } = require('../shared/auth');
 
 const client = new DynamoDBClient({ region: process.env.AWS_REGION });
 const docClient = DynamoDBDocumentClient.from(client);
@@ -38,6 +39,18 @@ exports.handler = async (event) => {
       body: ''
     };
   }
+  
+  // Authorize request
+  const authResult = await authorize(event, USERS_TABLE);
+  if (!authResult.authorized) {
+    return createUnauthorizedResponse(authResult.error, getCorsHeaders());
+  }
+  
+  // Add user context to event
+  event.userContext = {
+    userId: authResult.userId,
+    roles: authResult.roles,
+  };
   
   try {
     const method = event.httpMethod;

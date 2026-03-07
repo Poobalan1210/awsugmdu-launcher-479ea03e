@@ -1883,6 +1883,14 @@ resource "aws_api_gateway_deployment" "api" {
       aws_api_gateway_integration.store_items_post_lambda.id,
       aws_api_gateway_integration.store_orders_get_lambda.id,
       aws_lambda_function.store_crud.source_code_hash,
+      aws_lambda_function.user_roles_crud.source_code_hash,
+      aws_lambda_function.points_crud.source_code_hash,
+      aws_api_gateway_integration.users_roles_get_lambda.id,
+      aws_api_gateway_integration.users_id_roles_get_lambda.id,
+      aws_api_gateway_integration.users_points_activities_get_lambda.id,
+      aws_api_gateway_integration.users_id_points_activities_get_lambda.id,
+      aws_lambda_function.share_page.source_code_hash,
+      aws_api_gateway_integration.share_get_lambda.id,
     ]))
   }
 
@@ -1959,6 +1967,26 @@ resource "aws_api_gateway_deployment" "api" {
     aws_api_gateway_integration.store_orders_id_status_options_lambda,
     aws_api_gateway_integration.store_orders_id_assign_code_patch_lambda,
     aws_api_gateway_integration.store_orders_id_assign_code_options_lambda,
+    # User Roles integrations
+    aws_api_gateway_integration.users_roles_get_lambda,
+    aws_api_gateway_integration.users_roles_post_lambda,
+    aws_api_gateway_integration.users_roles_options_lambda,
+    aws_api_gateway_integration.users_id_roles_get_lambda,
+    aws_api_gateway_integration.users_id_roles_options_lambda,
+    aws_api_gateway_integration.users_roles_id_delete_lambda,
+    aws_api_gateway_integration.users_roles_id_options_lambda,
+    # Points integrations
+    aws_api_gateway_integration.users_points_activities_get_lambda,
+    aws_api_gateway_integration.users_points_activities_options_lambda,
+    aws_api_gateway_integration.users_points_award_post_lambda,
+    aws_api_gateway_integration.users_points_award_options_lambda,
+    aws_api_gateway_integration.users_id_points_get_lambda,
+    aws_api_gateway_integration.users_id_points_options_lambda,
+    aws_api_gateway_integration.users_id_points_activities_get_lambda,
+    aws_api_gateway_integration.users_id_points_activities_options_lambda,
+    # Share page integrations
+    aws_api_gateway_integration.share_get_lambda,
+    aws_api_gateway_integration.share_options_lambda,
   ]
 
   rest_api_id = aws_api_gateway_rest_api.api.id

@@ -17,7 +17,7 @@ import {
   Video, Send, ThumbsUp, Clock, ExternalLink,
   ChevronRight, ChevronDown, Linkedin, User,
   CheckCircle, Image, FileText, PlayCircle, Link2, Youtube,
-  Upload, X
+  Upload, X, Share2
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
@@ -28,6 +28,7 @@ import { getAllUsers } from '@/lib/userProfile';
 import { uploadFileToS3 } from '@/lib/s3Upload';
 import { format, parseISO, isPast } from 'date-fns';
 import { marked } from 'marked';
+import { generateSprintSubmissionShare } from '@/lib/sharing';
 import { useAuth } from '@/contexts/AuthContext';
 import { DiscussionForum } from '@/components/discussions/DiscussionForum';
 
@@ -825,6 +826,31 @@ function SubmitWorkForm({ sprint, onSuccess }: { sprint: Sprint; onSuccess?: () 
       });
 
       toast.success('Work submitted successfully! Awaiting review.');
+      
+      // Show share option
+      const shareData = generateSprintSubmissionShare(user.name, sprint.title, sprint.id);
+      toast.success(
+        <div className="flex flex-col gap-2">
+          <span>Work submitted successfully! Awaiting review.</span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              if (navigator.share) {
+                navigator.share({
+                  title: shareData.title,
+                  text: shareData.text,
+                  url: shareData.url,
+                });
+              }
+            }}
+          >
+            <Share2 className="h-3 w-3 mr-1" />
+            Share Achievement
+          </Button>
+        </div>,
+        { duration: 5000 }
+      );
       
       // Reset form
       setBlogUrl('');

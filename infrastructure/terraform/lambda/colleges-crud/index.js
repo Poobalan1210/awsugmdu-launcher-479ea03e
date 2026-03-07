@@ -1,5 +1,6 @@
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, PutCommand, GetCommand, UpdateCommand, DeleteCommand, QueryCommand, ScanCommand } = require('@aws-sdk/lib-dynamodb');
+const { authorize, createUnauthorizedResponse } = require('./shared/auth');
 
 const client = new DynamoDBClient({ region: process.env.AWS_REGION });
 const docClient = DynamoDBDocumentClient.from(client);
@@ -22,6 +23,22 @@ exports.handler = async (event) => {
       statusCode: 200,
       headers: corsHeaders,
       body: '',
+    };
+  }
+  
+  // Skip authorization for GET requests (read-only operations)
+  // This allows public access to view colleges, tasks, and submissions
+  if (event.httpMethod !== 'GET') {
+    // Authorize request for write operations
+    const authResult = await authorize(event, USERS_TABLE);
+    if (!authResult.authorized) {
+      return createUnauthorizedResponse(authResult.error, corsHeaders);
+    }
+    
+    // Add user context to event for use in handlers
+    event.userContext = {
+      userId: authResult.userId,
+      roles: authResult.roles,
     };
   }
   

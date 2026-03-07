@@ -1367,7 +1367,7 @@ export interface CollegeTask {
   category: 'onboarding' | 'learning' | 'community' | 'event' | 'special';
   isPredefined: boolean;
   isDefault?: boolean;
-  order: number;
+  order?: number;
 }
 
 export interface CollegeTaskCompletion {

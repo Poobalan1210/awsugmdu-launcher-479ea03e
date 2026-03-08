@@ -28,6 +28,7 @@ import { createMeetup, updateMeetup, publishMeetup, getMeetups, CreateMeetupData
 import { createSprint, addSession, getSprints, deleteSprint, deleteSession, CreateSprintData, CreateSessionData, reviewSubmission } from '@/lib/sprints';
 import { uploadFileToS3 } from '@/lib/s3Upload';
 import { getAllUsers } from '@/lib/userProfile';
+import { callApi } from '@/lib/api';
 import { listCertificationGroups, CertificationGroup } from '@/lib/certifications';
 import { College, CollegeEvent, CollegeTask } from '@/lib/colleges';
 import { Progress } from '@/components/ui/progress';
@@ -4203,7 +4204,7 @@ function MembersTab({ allUsers }: { allUsers: UserType[] }) {
     }
   };
 
-  const handleAwardPoints = () => {
+  const handleAwardPoints = async () => {
     if (!selectedUser || !awardForm.points || !awardForm.reason) {
       toast.error("Please fill in all fields");
       return;
@@ -4215,26 +4216,41 @@ function MembersTab({ allUsers }: { allUsers: UserType[] }) {
       return;
     }
 
-    // Create new activity
-    const newActivity: PointActivity = {
-      id: `pa-${Date.now()}`,
-      userId: selectedUser.id,
-      points: pointsNum,
-      reason: awardForm.reason,
-      type: 'adhoc',
-      awardedBy: authUser?.id || '',
-      awardedAt: new Date().toISOString().split('T')[0]
-    };
+    try {
+      const result = await callApi('/users/points/award', {
+        method: 'POST',
+        body: JSON.stringify({
+          userId: selectedUser.id,
+          points: pointsNum,
+          reason: awardForm.reason,
+          type: 'adhoc',
+          awardedBy: authUser?.id || '',
+        }),
+      });
 
-    setPointActivities(prev => [...prev, newActivity]);
-    setUserPoints(prev => ({
-      ...prev,
-      [selectedUser.id]: (prev[selectedUser.id] || 0) + pointsNum
-    }));
+      const newActivity: PointActivity = {
+        id: result.activity?.id || `pa-${Date.now()}`,
+        userId: selectedUser.id,
+        points: pointsNum,
+        reason: awardForm.reason,
+        type: 'adhoc',
+        awardedBy: authUser?.id || '',
+        awardedAt: new Date().toISOString().split('T')[0]
+      };
 
-    toast.success(`Awarded ${pointsNum} points to ${selectedUser.name}`);
-    setAwardForm({ points: '', reason: '' });
-    setIsAwardDialogOpen(false);
+      setPointActivities(prev => [...prev, newActivity]);
+      setUserPoints(prev => ({
+        ...prev,
+        [selectedUser.id]: (prev[selectedUser.id] || 0) + pointsNum
+      }));
+
+      toast.success(`Awarded ${pointsNum} points to ${selectedUser.name}`);
+      setAwardForm({ points: '', reason: '' });
+      setIsAwardDialogOpen(false);
+    } catch (error) {
+      console.error('Error awarding points:', error);
+      toast.error('Failed to award points');
+    }
   };
 
   const getRoleInfo = (role: CommunityRole) => {

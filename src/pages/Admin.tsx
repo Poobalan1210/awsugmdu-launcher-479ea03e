@@ -4129,7 +4129,7 @@ function CollegeChampsTab() {
 
 // Members Tab Component with integrated role management and points awarding
 function MembersTab({ allUsers }: { allUsers: UserType[] }) {
-  const { user: authUser } = useAuth();
+  const { user: authUser, refreshUser } = useAuth();
   const [userRoles, setUserRoles] = useState<UserRoleAssignment[]>(mockUserRoles);
   const [pointActivities, setPointActivities] = useState<PointActivity[]>(mockPointActivities);
   const [userPoints, setUserPoints] = useState<Record<string, number>>(
@@ -4247,6 +4247,7 @@ function MembersTab({ allUsers }: { allUsers: UserType[] }) {
       toast.success(`Awarded ${pointsNum} points to ${selectedUser.name}`);
       setAwardForm({ points: '', reason: '' });
       setIsAwardDialogOpen(false);
+      await refreshUser();
     } catch (error) {
       console.error('Error awarding points:', error);
       toast.error('Failed to award points');
@@ -4492,7 +4493,7 @@ function MembersTab({ allUsers }: { allUsers: UserType[] }) {
 
 // Badge Management Tab Component
 function BadgesTab({ allUsers }: { allUsers: UserType[] }) {
-  const { user: authUser } = useAuth();
+  const { user: authUser, refreshUser } = useAuth();
   const [badges, setBadges] = useState<BadgeType[]>(mockBadges);
   const [badgeAwards, setBadgeAwards] = useState<BadgeAward[]>(mockBadgeAwards);
   const [searchQuery, setSearchQuery] = useState('');
@@ -4579,7 +4580,7 @@ function BadgesTab({ allUsers }: { allUsers: UserType[] }) {
     setSelectedUserId('');
     setAwardReason('');
     setIsAwardDialogOpen(false);
-  };
+      await refreshUser();  };
 
   const handleCreateBadge = () => {
     if (!newBadge.name || !newBadge.description) {
@@ -4900,7 +4901,7 @@ function BadgesTab({ allUsers }: { allUsers: UserType[] }) {
 }
 
 export default function Admin() {
-  const { user: authUser } = useAuth();
+  const { user: authUser, refreshUser } = useAuth();
   const [activeTab, setActiveTab] = useState('submissions');
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [loadingSprints, setLoadingSprints] = useState(false);

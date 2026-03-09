@@ -4536,7 +4536,7 @@ function BadgesTab({ allUsers }: { allUsers: UserType[] }) {
     return allUsers.filter(user => !user.badges.some(b => b.id === badgeId));
   };
 
-  const handleAwardBadge = () => {
+  const handleAwardBadge = async () => {
     if (!selectedBadge || !selectedUserId) {
       toast.error('Please select a user');
       return;
@@ -4580,7 +4580,8 @@ function BadgesTab({ allUsers }: { allUsers: UserType[] }) {
     setSelectedUserId('');
     setAwardReason('');
     setIsAwardDialogOpen(false);
-      await refreshUser();  };
+    await refreshUser();
+  };
 
   const handleCreateBadge = () => {
     if (!newBadge.name || !newBadge.description) {

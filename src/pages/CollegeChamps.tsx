@@ -13,7 +13,8 @@ import { Input } from '@/components/ui/input';
 import { 
   GraduationCap, Users, Calendar, Award, ArrowRight, Trophy, Medal, 
   CheckCircle2, Circle, MapPin, Star, Zap, Target, PartyPopper,
-  ChevronRight, Clock, ExternalLink, Loader2, Search, X, Upload, Share2
+  ChevronRight, Clock, ExternalLink, Loader2, Search, X, Upload, Share2,
+  Activity
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CollegeTask, College, getAllCollegeTasks } from '@/lib/colleges';
@@ -329,12 +330,15 @@ function CollegeDetailView({ college, rank }: { college: College, rank: number }
       )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="completed">
             Tasks ({completedTasks.length}/{allAvailableTasks.length})
           </TabsTrigger>
           <TabsTrigger value="events">
             Events ({college.hostedEvents.length})
+          </TabsTrigger>
+          <TabsTrigger value="activity">
+            Activity
           </TabsTrigger>
           <TabsTrigger value="members">
             Members ({college.members.length})
@@ -555,6 +559,142 @@ function CollegeDetailView({ college, rank }: { college: College, rank: number }
               )}
             </>
           )}
+        </TabsContent>
+
+        <TabsContent value="activity" className="space-y-4">
+          {(() => {
+            // Build unified activity feed from tasks + events
+            type ActivityItem = {
+              id: string;
+              type: 'task' | 'event';
+              title: string;
+              description?: string;
+              date: string;
+              points: number;
+              category?: string;
+              status?: string;
+              eventType?: string;
+              attendees?: number;
+            };
+
+            const activities: ActivityItem[] = [];
+
+            // Add completed tasks
+            college.completedTasks?.forEach((ct) => {
+              const task = allAvailableTasks.find(t => t.id === ct.taskId);
+              if (task) {
+                activities.push({
+                  id: `task-${ct.taskId}`,
+                  type: 'task',
+                  title: task.title,
+                  description: task.description,
+                  date: ct.completedAt,
+                  points: task.points + (ct.bonusPoints || 0),
+                  category: task.category,
+                });
+              }
+            });
+
+            // Add hosted events (completed or upcoming)
+            college.hostedEvents.forEach((event) => {
+              activities.push({
+                id: `event-${event.id}`,
+                type: 'event',
+                title: event.title,
+                description: event.description,
+                date: event.date,
+                points: event.pointsAwarded || 0,
+                status: event.status,
+                eventType: event.type,
+                attendees: event.attendees,
+              });
+            });
+
+            // Sort by date descending (most recent first)
+            activities.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+            if (activities.length === 0) {
+              return (
+                <Card>
+                  <CardContent className="p-8 text-center">
+                    <Activity className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <h3 className="font-semibold mb-2">No Activity Yet</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Activities will appear here as the college completes tasks and hosts events.
+                    </p>
+                  </CardContent>
+                </Card>
+              );
+            }
+
+            return (
+              <div className="space-y-3">
+                {activities.map((item) => (
+                  <Card key={item.id} className="hover:shadow-sm transition-all">
+                    <CardContent className="p-4">
+                      <div className="flex items-start gap-3">
+                        <div className={`flex items-center justify-center w-9 h-9 rounded-full flex-shrink-0 mt-0.5 ${
+                          item.type === 'task'
+                            ? 'bg-green-500/10 text-green-600'
+                            : 'bg-blue-500/10 text-blue-600'
+                        }`}>
+                          {item.type === 'task' ? (
+                            <CheckCircle2 className="h-4 w-4" />
+                          ) : (
+                            <Calendar className="h-4 w-4" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            <span className="font-medium">{item.title}</span>
+                            {item.type === 'task' && item.category && (
+                              <Badge variant="outline" className={getCategoryColor(item.category as CollegeTask['category'])}>
+                                {getCategoryIcon(item.category as CollegeTask['category'])}
+                                <span className="ml-1 capitalize">{item.category}</span>
+                              </Badge>
+                            )}
+                            {item.type === 'event' && item.status && (
+                              <Badge variant={item.status === 'completed' ? 'secondary' : 'default'}
+                                className={item.status === 'upcoming' ? 'bg-blue-500' : ''}>
+                                {item.status === 'completed' ? 'Completed' : 'Upcoming'}
+                              </Badge>
+                            )}
+                            {item.type === 'event' && item.eventType && (
+                              <Badge variant="outline" className="capitalize">{item.eventType}</Badge>
+                            )}
+                          </div>
+                          {item.description && (
+                            <p className="text-sm text-muted-foreground line-clamp-1">{item.description}</p>
+                          )}
+                          <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
+                            <span className="flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              {new Date(item.date).toLocaleDateString()}
+                            </span>
+                            {item.type === 'task' && (
+                              <span className="text-green-600 font-medium">Task completed</span>
+                            )}
+                            {item.type === 'event' && item.attendees && item.attendees > 0 && (
+                              <span className="flex items-center gap-1">
+                                <Users className="h-3 w-3" />
+                                {item.attendees} attendees
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        {item.points > 0 && (
+                          <Badge className="bg-amber-500 text-white flex-shrink-0">
+                            <Zap className="h-3 w-3 mr-1" />
+                            {item.points} pts
+                          </Badge>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            );
+          })()}
         </TabsContent>
 
         <TabsContent value="members" className="space-y-4">

@@ -19,7 +19,7 @@ interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  signIn: (email: string, password: string) => Promise<void>;
+  signIn: (email: string, password: string, skipProfileFetch?: boolean) => Promise<void>;
   signUp: (email: string, password: string, name: string) => Promise<SignUpOutput>;
   confirmSignUp: (email: string, code: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -112,7 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const signIn = async (email: string, password: string) => {
+  const signIn = async (email: string, password: string, skipProfileFetch?: boolean) => {
     try {
       const output = await amplifySignIn({ username: email, password });
       
@@ -120,12 +120,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const currentUser = await getCurrentUser();
         const userId = currentUser.userId;
         
-        // Try to fetch profile, but don't fail if it doesn't exist yet
-        try {
-          const profile = await fetchUserProfile(userId, email);
-          setUser(profile);
-        } catch (error) {
-          // Set a basic user object temporarily
+        if (skipProfileFetch) {
+          // During signup, skip profile fetch since it doesn't exist yet
           const role = isOrganiserEmail(email) ? 'organiser' : 'member';
           setUser({
             id: userId,
@@ -138,6 +134,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             joinedDate: new Date().toISOString(),
             role,
           } as User);
+        } else {
+          // Try to fetch profile, but don't fail if it doesn't exist yet
+          try {
+            const profile = await fetchUserProfile(userId, email);
+            setUser(profile);
+          } catch (error) {
+            // Set a basic user object temporarily
+            const role = isOrganiserEmail(email) ? 'organiser' : 'member';
+            setUser({
+              id: userId,
+              email: email,
+              name: email.split('@')[0],
+              avatar: '',
+              points: 0,
+              rank: 0,
+              badges: [],
+              joinedDate: new Date().toISOString(),
+              role,
+            } as User);
+          }
         }
       }
     } catch (error: any) {

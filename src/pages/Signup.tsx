@@ -306,7 +306,7 @@ export default function Signup() {
       // Create user profile in DynamoDB BEFORE signing in
       try {
         // Sign in temporarily to get auth token for API call
-        await signIn(formData.email, formData.password);
+        await signIn(formData.email, formData.password, true);
         
         // Wait for auth session
         await new Promise(resolve => setTimeout(resolve, 1000));

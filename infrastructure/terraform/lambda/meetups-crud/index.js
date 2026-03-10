@@ -963,7 +963,7 @@ async function markAttendance(id, event) {
 // End a meetup event
 async function endMeetup(id, event) {
   const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
-  const { endDate } = body; // ISO date string (e.g., '2026-03-10')
+  const { endDate, endNow } = body;
 
   // Check if meetup exists
   const existing = await docClient.send(new GetCommand({
@@ -977,11 +977,10 @@ async function endMeetup(id, event) {
 
   const meetup = existing.Item;
   const now = new Date();
-  const endDateObj = endDate ? new Date(endDate + 'T23:59:59') : now;
 
-  // If end date is in the past or today, mark as completed immediately
-  // If end date is in the future, store it and keep status as upcoming
-  const shouldCompleteNow = endDateObj <= now;
+  // If endNow is true or no endDate provided, end immediately
+  // Otherwise check if the scheduled end date is in the past
+  const shouldCompleteNow = endNow || !endDate || new Date(endDate) <= now;
   const newStatus = shouldCompleteNow ? 'completed' : meetup.status;
 
   const updateExpression = 'SET #status = :status, endDate = :endDate, updatedAt = :updatedAt';

@@ -81,7 +81,7 @@ export async function deleteMeetup(id: string): Promise<void> {
 export async function endMeetup(id: string, endDate?: string): Promise<Meetup> {
   const response = await callApi<MeetupResponse>(`/meetups/${id}/end`, {
     method: 'PATCH',
-    body: JSON.stringify({ endDate: endDate || new Date().toISOString().split('T')[0] }),
+    body: JSON.stringify(endDate ? { endDate } : { endNow: true }),
   });
   return response.meetup;
 }

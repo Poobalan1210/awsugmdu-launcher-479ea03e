@@ -1940,6 +1940,10 @@ resource "aws_api_gateway_deployment" "api" {
   triggers = {
     redeployment = sha1(jsonencode([
       aws_api_gateway_integration.meetups_id_delete_lambda.id,
+      aws_api_gateway_integration.meetups_id_end_lambda.id,
+      aws_api_gateway_integration.meetups_id_end_options_lambda.id,
+      aws_api_gateway_integration.meetups_id_mark_attendance_lambda.id,
+      aws_api_gateway_integration.meetups_id_mark_attendance_options_lambda.id,
       aws_api_gateway_integration.sprints_id_sessions_sessionid_register_lambda.id,
       aws_api_gateway_integration.sprints_id_sessions_sessionid_register_options_lambda.id,
       aws_lambda_function.sprints_crud.source_code_hash,

@@ -4906,6 +4906,7 @@ export default function Admin() {
   const [activeTab, setActiveTab] = useState('submissions');
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [loadingSprints, setLoadingSprints] = useState(false);
+  const [meetupCount, setMeetupCount] = useState(0);
   const [allUsers, setAllUsers] = useState<UserType[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [allSubmissions, setAllSubmissions] = useState<Array<Submission & { sprintTitle: string; sprintId: string }>>([]);
@@ -4955,6 +4956,17 @@ export default function Admin() {
     }
   };
 
+  // Fetch meetups from API (for header stats only)
+  const fetchMeetupCount = async () => {
+    try {
+      const allMeetups = await getMeetups();
+      setMeetupCount(allMeetups.length);
+    } catch (error) {
+      console.error('Error fetching meetups for stats:', error);
+      setMeetupCount(0);
+    }
+  };
+
   // Delete sprint
   const handleDeleteSprint = async (sprintId: string, sprintTitle: string) => {
     if (!confirm(`Are you sure you want to delete "${sprintTitle}"? This will also delete all sessions in this sprint. This action cannot be undone.`)) {
@@ -5001,10 +5013,11 @@ export default function Admin() {
     }
   }, [isAdmin, activeTab]);
 
-  // Load users when component mounts
+  // Load users and meetup stats when component mounts
   useEffect(() => {
     if (isAdmin) {
       fetchUsers();
+      fetchMeetupCount();
     }
   }, [isAdmin]);
 
@@ -5075,13 +5088,13 @@ export default function Admin() {
             </Card>
             <Card className="glass-card">
               <CardContent className="p-4 text-center">
-                <div className="text-3xl font-bold text-amber-500">{sprints.length || mockSprints.length}</div>
+                <div className="text-3xl font-bold text-amber-500">{sprints.length}</div>
                 <p className="text-sm text-muted-foreground">Total Sprints</p>
               </CardContent>
             </Card>
             <Card className="glass-card">
               <CardContent className="p-4 text-center">
-                <div className="text-3xl font-bold text-blue-500">{mockMeetups.length}</div>
+                <div className="text-3xl font-bold text-blue-500">{meetupCount}</div>
                 <p className="text-sm text-muted-foreground">Total Meetups</p>
               </CardContent>
             </Card>

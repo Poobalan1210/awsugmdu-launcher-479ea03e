@@ -746,7 +746,7 @@ export default function Profile() {
                 </CardHeader>
                 <CardContent>
                   {activityHistory.length > 0 ? (
-                    <div className="space-y-4">
+                    <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2">
                       {activityHistory.map((activity, index) => {
                         const getActivityBadge = () => {
                           switch (activity.type) {

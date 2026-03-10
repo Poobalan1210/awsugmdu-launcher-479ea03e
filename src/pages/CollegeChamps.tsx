@@ -256,9 +256,9 @@ function CollegeDetailView({ college, rank }: { college: College, rank: number }
   const upcomingEvents = college.hostedEvents.filter(event => new Date(event.date) >= now && event.status === 'upcoming');
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col overflow-hidden h-full gap-4">
       {/* College Header - Redesigned */}
-      <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-primary via-primary/90 to-primary/80 p-6 text-white">
+      <div className="flex-shrink-0 relative overflow-hidden rounded-xl bg-gradient-to-br from-primary via-primary/90 to-primary/80 p-6 text-white">
         <div className="relative z-10">
           <div className="flex items-start justify-between mb-4">
             <div className="flex items-center gap-3">
@@ -302,7 +302,7 @@ function CollegeDetailView({ college, rank }: { college: College, rank: number }
 
       {/* Lead Info - Redesigned */}
       {champsLead && (
-        <Card>
+        <Card className="flex-shrink-0">
           <CardContent className="p-4">
             <div className="flex items-center gap-4">
               <Avatar className="h-14 w-14 border-2 border-primary/20">
@@ -329,8 +329,8 @@ function CollegeDetailView({ college, rank }: { college: College, rank: number }
         </Card>
       )}
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="grid w-full grid-cols-4">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col overflow-hidden flex-1 min-h-0">
+        <TabsList className="grid w-full grid-cols-4 flex-shrink-0">
           <TabsTrigger value="completed">
             Tasks ({completedTasks.length}/{allAvailableTasks.length})
           </TabsTrigger>
@@ -345,7 +345,8 @@ function CollegeDetailView({ college, rank }: { college: College, rank: number }
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="completed" className="space-y-4">
+        <div className="overflow-y-auto flex-1 min-h-0 mt-4">
+        <TabsContent value="completed" className="space-y-4 mt-0">
           {loadingTasks ? (
             <Card>
               <CardContent className="p-8 text-center">
@@ -462,7 +463,7 @@ function CollegeDetailView({ college, rank }: { college: College, rank: number }
           )}
         </TabsContent>
 
-        <TabsContent value="events" className="space-y-4">
+        <TabsContent value="events" className="space-y-4 mt-0">
           {college.hostedEvents.length === 0 ? (
             <Card>
               <CardContent className="p-8 text-center">
@@ -483,7 +484,7 @@ function CollegeDetailView({ college, rank }: { college: College, rank: number }
                     Upcoming Events ({upcomingEvents.length})
                   </h3>
                   {upcomingEvents.map((event) => (
-                    <Link key={event.id} to={`/meetups?id=${event.id}`}>
+                    <Link key={event.id} to={`/meetups?id=${event.id}`} className="block">
                       <Card className="border-blue-500/30 bg-blue-500/5 hover:shadow-md transition-all cursor-pointer">
                         <CardContent className="p-4">
                           <div className="flex items-start justify-between gap-4">
@@ -518,7 +519,7 @@ function CollegeDetailView({ college, rank }: { college: College, rank: number }
                     Past Events ({pastEvents.length})
                   </h3>
                   {pastEvents.map((event) => (
-                    <Link key={event.id} to={`/meetups?id=${event.id}`}>
+                    <Link key={event.id} to={`/meetups?id=${event.id}`} className="block">
                       <Card className="hover:shadow-md transition-all cursor-pointer">
                         <CardContent className="p-4">
                           <div className="flex items-start justify-between gap-4">
@@ -561,7 +562,7 @@ function CollegeDetailView({ college, rank }: { college: College, rank: number }
           )}
         </TabsContent>
 
-        <TabsContent value="activity" className="space-y-4">
+        <TabsContent value="activity" className="space-y-4 mt-0">
           {(() => {
             // Build unified activity feed from tasks + events
             type ActivityItem = {
@@ -697,7 +698,7 @@ function CollegeDetailView({ college, rank }: { college: College, rank: number }
           })()}
         </TabsContent>
 
-        <TabsContent value="members" className="space-y-4">
+        <TabsContent value="members" className="space-y-4 mt-0">
           {/* Search Bar */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -786,6 +787,7 @@ function CollegeDetailView({ college, rank }: { college: College, rank: number }
             </div>
           )}
         </TabsContent>
+        </div>
       </Tabs>
 
       {/* Submit Task Dialog */}
@@ -1007,12 +1009,12 @@ export default function CollegeChamps() {
 
         {/* College Details Modal */}
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-0 w-[95vw] sm:w-full focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0">
+          <DialogContent className="max-w-4xl h-[90vh] overflow-hidden p-0 w-[95vw] sm:w-full flex flex-col focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0">
             <DialogHeader className="sr-only">
               <DialogTitle>College Details</DialogTitle>
             </DialogHeader>
             {selectedCollege && (
-              <div className="p-4 sm:p-6">
+              <div className="p-4 sm:p-6 flex flex-col overflow-hidden h-full">
                 <CollegeDetailView 
                   college={selectedCollege.college} 
                   rank={selectedCollege.rank} 

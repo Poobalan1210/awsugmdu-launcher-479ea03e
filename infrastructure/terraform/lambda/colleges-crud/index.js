@@ -1228,8 +1228,9 @@ async function reviewSubmission(submissionId, requestBody) {
         taskPoints: points 
       }));
       
-      // Award points to the submitting user's profile
-      if (submittedBy && points > 0) {
+      // Log activity on the user's profile (without awarding personal points)
+      // Points for college tasks go only to the college, not the champ lead
+      if (submittedBy) {
         try {
           const userResult = await docClient.send(new GetCommand({
             TableName: USERS_TABLE,
@@ -1238,23 +1239,9 @@ async function reviewSubmission(submissionId, requestBody) {
           
           if (userResult.Item) {
             const user = userResult.Item;
-            const currentPoints = user.points || 0;
-            const pointActivities = user.pointActivities || [];
             const activities = user.activities || [];
             
-            // Create point activity record
-            const pointActivity = {
-              id: `pa-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-              userId: submittedBy,
-              points,
-              reason: `College task approved: ${taskId} for college ${collegeId}`,
-              type: 'submission',
-              awardedBy: reviewedBy || 'admin',
-              awardedAt: new Date().toISOString()
-            };
-            pointActivities.push(pointActivity);
-            
-            // Create general activity entry
+            // Create general activity entry (no personal points)
             activities.push({
               type: 'college_task_approved',
               collegeId,
@@ -1267,20 +1254,18 @@ async function reviewSubmission(submissionId, requestBody) {
             await docClient.send(new UpdateCommand({
               TableName: USERS_TABLE,
               Key: { userId: submittedBy },
-              UpdateExpression: 'SET points = :points, pointActivities = :pointActivities, activities = :activities, updatedAt = :updatedAt',
+              UpdateExpression: 'SET activities = :activities, updatedAt = :updatedAt',
               ExpressionAttributeValues: {
-                ':points': currentPoints + points,
-                ':pointActivities': pointActivities,
                 ':activities': activities,
                 ':updatedAt': new Date().toISOString()
               }
             }));
             
-            console.log(`Awarded ${points} points to user ${submittedBy} for college task ${taskId}`);
+            console.log(`Logged college task ${taskId} approval for user ${submittedBy} (points awarded to college ${collegeId} only)`);
           }
         } catch (error) {
-          console.error('Error awarding points to user:', error);
-          // Don't fail the review if user points update fails
+          console.error('Error logging activity for user:', error);
+          // Don't fail the review if user activity update fails
         }
       }
     }

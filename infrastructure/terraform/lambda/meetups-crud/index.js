@@ -279,7 +279,8 @@ async function createMeetup(event) {
     volunteers,
     sprintId,
     certificationGroupId,
-    collegeId
+    collegeId,
+    sessionPoints
   } = body;
 
   // Validation
@@ -373,6 +374,7 @@ async function createMeetup(event) {
     ...(type === 'skill-sprint' && sprintId ? { sprintId } : {}),
     ...(type === 'certification-circle' && certificationGroupId ? { certificationGroupId } : {}),
     ...(type === 'college-champ' && collegeId ? { collegeId } : {}),
+    ...(type === 'college-champ' && sessionPoints ? { sessionPoints: parseInt(sessionPoints) || 0 } : {}),
     speakers: speakers || [],
     hosts: hosts || [],
     volunteers: volunteers || [],
@@ -450,7 +452,7 @@ async function updateMeetup(id, event) {
   const allowedFields = [
     'title', 'description', 'richDescription', 'date', 'time', 'duration', 'type',
     'location', 'meetingLink', 'meetupUrl', 'image', 'maxAttendees',
-    'speakers', 'hosts', 'volunteers', 'sprintId', 'certificationGroupId', 'endDate'
+    'speakers', 'hosts', 'volunteers', 'sprintId', 'certificationGroupId', 'endDate', 'sessionPoints'
   ];
 
   allowedFields.forEach(field => {
@@ -999,6 +1001,42 @@ async function endMeetup(id, event) {
     }
   }));
 
+  // If this is a college-champ meetup and it's being completed, update the college's hostedEvents
+  if (shouldCompleteNow && meetup.collegeId) {
+    try {
+      const COLLEGES_TABLE = process.env.COLLEGES_TABLE_NAME || 'awsug-colleges';
+
+      const college = await docClient.send(new GetCommand({
+        TableName: COLLEGES_TABLE,
+        Key: { id: meetup.collegeId }
+      }));
+
+      if (college.Item) {
+        const hostedEvents = college.Item.hostedEvents || [];
+        const eventIndex = hostedEvents.findIndex(e => e.id === id);
+
+        if (eventIndex !== -1) {
+          // Update the existing event's status and attendees
+          hostedEvents[eventIndex].status = 'completed';
+          hostedEvents[eventIndex].attendees = (meetup.attendedUsers || []).length;
+
+          await docClient.send(new UpdateCommand({
+            TableName: COLLEGES_TABLE,
+            Key: { id: meetup.collegeId },
+            UpdateExpression: 'SET hostedEvents = :events, updatedAt = :updatedAt',
+            ExpressionAttributeValues: {
+              ':events': hostedEvents,
+              ':updatedAt': now.toISOString()
+            }
+          }));
+        }
+      }
+    } catch (error) {
+      console.error('Error updating college hostedEvents on meetup end:', error);
+      // Don't fail the end operation if college update fails
+    }
+  }
+
   // Fetch updated meetup
   const updated = await docClient.send(new GetCommand({
     TableName: MEETUPS_TABLE,
@@ -1012,3 +1050,4 @@ async function endMeetup(id, event) {
       : `Meetup scheduled to end on ${endDate}`
   });
 }
+

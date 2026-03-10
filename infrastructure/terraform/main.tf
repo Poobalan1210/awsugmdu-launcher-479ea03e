@@ -475,8 +475,9 @@ resource "aws_lambda_function" "meetups_crud" {
 
   environment {
     variables = {
-      MEETUPS_TABLE_NAME = aws_dynamodb_table.meetups.name
-      USERS_TABLE_NAME   = aws_dynamodb_table.users.name
+      MEETUPS_TABLE_NAME   = aws_dynamodb_table.meetups.name
+      USERS_TABLE_NAME     = aws_dynamodb_table.users.name
+      COLLEGES_TABLE_NAME  = aws_dynamodb_table.colleges.name
     }
   }
 

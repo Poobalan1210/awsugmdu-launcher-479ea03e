@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Switch } from '@/components/ui/switch';
-import { 
+import {
   Plus, Calendar, Users, CheckCircle, XCircle, Clock,
   Rocket, ExternalLink, MessageSquare, Award, Link2,
   Copy, Mail, Edit, Trash2, Eye, FileText, User, Video,
@@ -24,7 +24,7 @@ import {
   Trophy, ListTodo, ClipboardCheck, Target, Shield, UserCog, Medal, Github, ShoppingBag, Loader2
 } from 'lucide-react';
 import { mockSprints, mockMeetups, Submission, Sprint, Session, SessionPerson, User as UserType, predefinedTasks, mockColleges, getTaskById, communityRoles, mockUserRoles, CommunityRole, UserRoleAssignment, PointActivity, mockPointActivities, Meetup, mockBadges, Badge as BadgeType, BadgeAward, mockBadgeAwards, BadgeCriteriaType, criteriaTypeLabels, BadgeCriteria, mockUsers } from '@/data/mockData';
-import { createMeetup, updateMeetup, publishMeetup, getMeetups, CreateMeetupData, UpdateMeetupData, deleteMeetup } from '@/lib/meetups';
+import { createMeetup, updateMeetup, publishMeetup, getMeetups, CreateMeetupData, UpdateMeetupData, deleteMeetup, endMeetup } from '@/lib/meetups';
 import { createSprint, addSession, getSprints, deleteSprint, deleteSession, CreateSprintData, CreateSessionData, reviewSubmission } from '@/lib/sprints';
 import { uploadFileToS3 } from '@/lib/s3Upload';
 import { getAllUsers } from '@/lib/userProfile';
@@ -42,13 +42,13 @@ import CertificationGroupsManagement from '@/components/admin/CertificationGroup
 import { TaskSubmissionsPanel } from '@/components/college-champs/TaskSubmissionsPanel';
 
 // Get all submissions across sprints
-const allSubmissions = mockSprints.flatMap(s => 
+const allSubmissions = mockSprints.flatMap(s =>
   s.submissions.map(sub => ({ ...sub, sprintTitle: s.title, sprintId: s.id }))
 );
 
-function SubmissionReview({ submission, onAction }: { 
-  submission: Submission & { sprintTitle: string }; 
-  onAction: (action: 'approve' | 'reject', points?: number, feedback?: string) => void 
+function SubmissionReview({ submission, onAction }: {
+  submission: Submission & { sprintTitle: string };
+  onAction: (action: 'approve' | 'reject', points?: number, feedback?: string) => void
 }) {
   const [points, setPoints] = useState(100);
   const [feedback, setFeedback] = useState('');
@@ -68,23 +68,23 @@ function SubmissionReview({ submission, onAction }: {
                 <span className="font-semibold">{submission.userName}</span>
                 <Badge variant="outline" className="text-xs">{submission.sprintTitle}</Badge>
                 <Badge variant={
-                  submission.status === 'approved' ? 'default' : 
-                  submission.status === 'rejected' ? 'destructive' : 'secondary'
+                  submission.status === 'approved' ? 'default' :
+                    submission.status === 'rejected' ? 'destructive' : 'secondary'
                 } className="capitalize">
                   {submission.status}
                 </Badge>
               </div>
-              
+
               {/* Comments */}
               {submission.comments && (
                 <p className="text-sm text-muted-foreground mb-3">{submission.comments}</p>
               )}
-              
+
               {/* Links */}
               <div className="flex flex-wrap gap-3 text-sm mb-3">
                 {submission.blogUrl && (
-                  <a href={submission.blogUrl} target="_blank" rel="noopener noreferrer" 
-                     className="text-primary hover:underline flex items-center gap-1 bg-primary/10 px-2 py-1 rounded">
+                  <a href={submission.blogUrl} target="_blank" rel="noopener noreferrer"
+                    className="text-primary hover:underline flex items-center gap-1 bg-primary/10 px-2 py-1 rounded">
                     <FileText className="h-3 w-3" />
                     AWS Builder Blog
                     <ExternalLink className="h-3 w-3" />
@@ -92,24 +92,24 @@ function SubmissionReview({ submission, onAction }: {
                 )}
                 {submission.githubUrl && (
                   <a href={submission.githubUrl} target="_blank" rel="noopener noreferrer"
-                     className="text-primary hover:underline flex items-center gap-1 bg-primary/10 px-2 py-1 rounded">
+                    className="text-primary hover:underline flex items-center gap-1 bg-primary/10 px-2 py-1 rounded">
                     <Github className="h-3 w-3" />
                     GitHub Repository
                     <ExternalLink className="h-3 w-3" />
                   </a>
                 )}
               </div>
-              
+
               {/* Supporting Documents */}
               {submission.supportingDocuments && submission.supportingDocuments.length > 0 && (
                 <div className="mb-3">
                   <p className="text-xs font-medium text-muted-foreground mb-2">Supporting Documents:</p>
                   <div className="flex flex-wrap gap-2">
                     {submission.supportingDocuments.map((docUrl, index) => (
-                      <a 
+                      <a
                         key={index}
-                        href={docUrl} 
-                        target="_blank" 
+                        href={docUrl}
+                        target="_blank"
                         rel="noopener noreferrer"
                         className="text-xs text-primary hover:underline flex items-center gap-1 bg-muted/50 px-2 py-1 rounded"
                       >
@@ -121,20 +121,20 @@ function SubmissionReview({ submission, onAction }: {
                   </div>
                 </div>
               )}
-              
+
               <p className="text-xs text-muted-foreground mt-2">
                 Submitted {format(parseISO(submission.submittedAt), 'MMM d, yyyy')}
               </p>
             </div>
           </div>
-          
+
           {submission.status === 'pending' ? (
             <div className="flex flex-col gap-3 lg:w-64">
               <div className="flex items-center gap-2">
                 <Label className="text-xs">Points:</Label>
-                <Input 
-                  type="number" 
-                  value={points} 
+                <Input
+                  type="number"
+                  value={points}
                   onChange={(e) => setPoints(Number(e.target.value))}
                   className="w-20 h-8"
                   min={0}
@@ -142,7 +142,7 @@ function SubmissionReview({ submission, onAction }: {
                 />
               </div>
               {showFeedback && (
-                <Textarea 
+                <Textarea
                   placeholder="Add feedback (optional)..."
                   value={feedback}
                   onChange={(e) => setFeedback(e.target.value)}
@@ -160,9 +160,9 @@ function SubmissionReview({ submission, onAction }: {
                   Reject
                 </Button>
               </div>
-              <Button 
-                size="sm" 
-                variant="ghost" 
+              <Button
+                size="sm"
+                variant="ghost"
                 onClick={() => setShowFeedback(!showFeedback)}
                 className="text-xs"
               >
@@ -202,10 +202,10 @@ function ViewParticipantsDialog({ sprint }: { sprint: Sprint }) {
           const { getSprint } = await import('@/lib/sprints');
           const { getUserProfile } = await import('@/lib/userProfile');
           const freshSprint = await getSprint(sprint.id);
-          
+
           // Get all users who registered for this sprint
           const registeredUserIds = freshSprint.registeredUsers || [];
-          
+
           // Fetch each user's profile from the API
           const participantsList = await Promise.all(
             registeredUserIds.map(async (userId) => {
@@ -219,7 +219,7 @@ function ViewParticipantsDialog({ sprint }: { sprint: Sprint }) {
               }
             })
           );
-          
+
           // Filter out null values
           const validParticipants = participantsList.filter((user): user is UserType => user !== null);
           setParticipants(validParticipants);
@@ -234,7 +234,7 @@ function ViewParticipantsDialog({ sprint }: { sprint: Sprint }) {
         }
       }
     };
-    
+
     fetchParticipants();
   }, [open, sprint.id, sprint.registeredUsers]);
 
@@ -330,7 +330,7 @@ function CreateSprintDialog({ onSuccess }: { onSuccess?: () => void }) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    
+
     try {
       // Calculate start date (first day of month) and end date (last day of month)
       const year = parseInt(formData.year);
@@ -338,7 +338,7 @@ function CreateSprintDialog({ onSuccess }: { onSuccess?: () => void }) {
       const startDate = new Date(year, month - 1, 1).toISOString().split('T')[0];
       const lastDay = new Date(year, month, 0).getDate();
       const endDate = new Date(year, month - 1, lastDay).toISOString().split('T')[0];
-      
+
       const sprintData: CreateSprintData = {
         title: formData.title,
         theme: '', // Default empty theme
@@ -352,7 +352,7 @@ function CreateSprintDialog({ onSuccess }: { onSuccess?: () => void }) {
       toast.success('Sprint created successfully!');
       setOpen(false);
       onSuccess?.();
-      
+
       // Reset form
       setFormData({
         title: '',
@@ -387,7 +387,7 @@ function CreateSprintDialog({ onSuccess }: { onSuccess?: () => void }) {
             <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Basic Information</h3>
             <div className="space-y-2">
               <Label>Sprint Title *</Label>
-              <Input 
+              <Input
                 placeholder="e.g., Serverless January"
                 value={formData.title}
                 onChange={(e) => setFormData({ ...formData, title: e.target.value })}
@@ -397,8 +397,8 @@ function CreateSprintDialog({ onSuccess }: { onSuccess?: () => void }) {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Month *</Label>
-                <Select 
-                  value={formData.month} 
+                <Select
+                  value={formData.month}
                   onValueChange={(value) => setFormData({ ...formData, month: value })}
                   required
                 >
@@ -423,8 +423,8 @@ function CreateSprintDialog({ onSuccess }: { onSuccess?: () => void }) {
               </div>
               <div className="space-y-2">
                 <Label>Year *</Label>
-                <Select 
-                  value={formData.year} 
+                <Select
+                  value={formData.year}
                   onValueChange={(value) => setFormData({ ...formData, year: value })}
                   required
                 >
@@ -446,7 +446,7 @@ function CreateSprintDialog({ onSuccess }: { onSuccess?: () => void }) {
             </div>
             <div className="space-y-2">
               <Label>Description *</Label>
-              <Textarea 
+              <Textarea
                 rows={3}
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
@@ -461,7 +461,7 @@ function CreateSprintDialog({ onSuccess }: { onSuccess?: () => void }) {
             <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Resources</h3>
             <div className="space-y-2">
               <Label>GitHub Repo URL</Label>
-              <Input 
+              <Input
                 placeholder="https://github.com/..."
                 value={formData.githubRepo}
                 onChange={(e) => setFormData({ ...formData, githubRepo: e.target.value })}
@@ -531,7 +531,7 @@ function UserSelect({
   allUsers?: UserType[];
 }) {
   const [open, setOpen] = useState(false);
-  const availableUsers = allUsers.filter(user => 
+  const availableUsers = allUsers.filter(user =>
     !excludeUserIds.includes(user.id) && user.id !== selectedUser?.userId
   );
 
@@ -617,14 +617,14 @@ function UserMultiSelect({
 }) {
   const [open, setOpen] = useState(false);
   const selectedUserIds = selectedUsers.map(u => u.userId).filter(Boolean) as string[];
-  const availableUsers = allUsers.filter(user => 
+  const availableUsers = allUsers.filter(user =>
     !excludeUserIds.includes(user.id) && !selectedUserIds.includes(user.id)
   );
 
   const toggleUser = (user: UserType) => {
     const userPerson = userToSessionPerson(user);
     const isSelected = selectedUsers.some(u => u.userId === user.id);
-    
+
     if (isSelected) {
       onSelect(selectedUsers.filter(u => u.userId !== user.id));
     } else {
@@ -642,8 +642,8 @@ function UserMultiSelect({
           className="w-full justify-between"
         >
           <span className="text-muted-foreground">
-            {selectedUsers.length > 0 
-              ? `${selectedUsers.length} selected` 
+            {selectedUsers.length > 0
+              ? `${selectedUsers.length} selected`
               : placeholder}
           </span>
           <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -689,11 +689,11 @@ function UserMultiSelect({
   );
 }
 
-function SessionPeopleManager({ 
-  sessionData, 
+function SessionPeopleManager({
+  sessionData,
   onUpdate,
   allUsers = mockUsers
-}: { 
+}: {
   sessionData: {
     hosts?: SessionPerson[];
     speakers?: SessionPerson[];
@@ -888,7 +888,7 @@ function AddSessionDialog({ sprint, onSuccess, allUsers = mockUsers }: { sprint:
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!peopleData.speakers || peopleData.speakers.length === 0) {
       toast.error('Please add at least one speaker for this session');
       return;
@@ -900,7 +900,7 @@ function AddSessionDialog({ sprint, onSuccess, allUsers = mockUsers }: { sprint:
     }
 
     setLoading(true);
-    
+
     try {
       // Use the first speaker for backward compatibility with existing Session interface
       const primarySpeaker = peopleData.speakers[0];
@@ -928,7 +928,7 @@ function AddSessionDialog({ sprint, onSuccess, allUsers = mockUsers }: { sprint:
 
       await addSession(sprint.id, sessionData);
       toast.success('Session added successfully!');
-      
+
       // Reset form
       setFormData({
         title: '',
@@ -1060,19 +1060,19 @@ function AddSessionDialog({ sprint, onSuccess, allUsers = mockUsers }: { sprint:
                   onChange={async (e) => {
                     const file = e.target.files?.[0];
                     if (!file) return;
-                    
+
                     // Validate file size (max 5MB)
                     if (file.size > 5 * 1024 * 1024) {
                       toast.error('File size must be less than 5MB');
                       return;
                     }
-                    
+
                     // Validate file type
                     if (!file.type.startsWith('image/')) {
                       toast.error('Please select an image file');
                       return;
                     }
-                    
+
                     setUploadingImage(true);
                     try {
                       const imageUrl = await uploadFileToS3(file, 'meetup-posters');
@@ -1161,11 +1161,11 @@ function AddSessionDialog({ sprint, onSuccess, allUsers = mockUsers }: { sprint:
 }
 
 // Meetup People Manager Component
-function MeetupPeopleManager({ 
-  meetupData, 
+function MeetupPeopleManager({
+  meetupData,
   onUpdate,
   allUsers = []
-}: { 
+}: {
   meetupData: {
     speakers?: any[];
     hosts?: any[];
@@ -1356,7 +1356,7 @@ function MarkAttendanceDialog({ meetup, onSuccess }: { meetup: Meetup; onSuccess
           // Basic email validation
           return email.length > 0 && email.includes('@');
         });
-      
+
       setEmailsText(emails.join('\n'));
       toast.success(`Loaded ${emails.length} email addresses from CSV`);
     };
@@ -1367,14 +1367,14 @@ function MarkAttendanceDialog({ meetup, onSuccess }: { meetup: Meetup; onSuccess
     e.preventDefault();
     setLoading(true);
     setResults(null);
-    
+
     try {
       // Parse emails from textarea (one per line or comma-separated)
       const emails = emailsText
         .split(/[\n,]/)
         .map(e => e.trim())
         .filter(e => e.length > 0);
-      
+
       if (emails.length === 0) {
         toast.error('Please enter at least one email address');
         setLoading(false);
@@ -1388,9 +1388,9 @@ function MarkAttendanceDialog({ meetup, onSuccess }: { meetup: Meetup; onSuccess
         volunteerPoints,
         speakerPoints
       });
-      
+
       setResults(response);
-      
+
       if (response.summary.successful > 0) {
         toast.success(`Attendance marked for ${response.summary.successful} attendees!`);
         onSuccess?.();
@@ -1432,7 +1432,7 @@ function MarkAttendanceDialog({ meetup, onSuccess }: { meetup: Meetup; onSuccess
             Upload a CSV file or enter email addresses manually. Points will be awarded to each attendee.
           </DialogDescription>
         </DialogHeader>
-        
+
         {!results ? (
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
@@ -1687,9 +1687,10 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
     maxAttendees: '',
     sprintId: '',
     certificationGroupId: '',
-    collegeId: ''
+    collegeId: '',
+    endDate: ''
   });
-  
+
   const [peopleData, setPeopleData] = useState<{
     speakers?: any[];
     hosts?: any[];
@@ -1739,27 +1740,27 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     // Validate sprint selection if type is skill-sprint
     if (formData.type === 'skill-sprint' && !formData.sprintId) {
       toast.error('Please select a sprint for this session');
       return;
     }
-    
+
     // Validate certification group selection if type is certification-circle
     if (formData.type === 'certification-circle' && !formData.certificationGroupId) {
       toast.error('Please select a certification group for this session');
       return;
     }
-    
+
     // Validate college selection if type is college-champ
     if (formData.type === 'college-champ' && !formData.collegeId) {
       toast.error('Please select a college for this session');
       return;
     }
-    
+
     setLoading(true);
-    
+
     try {
       const meetupData: CreateMeetupData = {
         title: formData.title,
@@ -1779,14 +1780,15 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
         volunteers: peopleData.volunteers,
         sprintId: (formData.type === 'skill-sprint' && formData.sprintId) ? formData.sprintId : undefined,
         certificationGroupId: (formData.type === 'certification-circle' && formData.certificationGroupId) ? formData.certificationGroupId : undefined,
-        collegeId: (formData.type === 'college-champ' && formData.collegeId) ? formData.collegeId : undefined
+        collegeId: (formData.type === 'college-champ' && formData.collegeId) ? formData.collegeId : undefined,
+        endDate: formData.endDate || undefined
       };
-      
+
       await createMeetup(meetupData);
       toast.success('Meetup created successfully!');
       setOpen(false);
       onSuccess?.();
-      
+
       // Reset form
       setFormData({
         title: '',
@@ -1803,7 +1805,8 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
         maxAttendees: '',
         sprintId: '',
         certificationGroupId: '',
-        collegeId: ''
+        collegeId: '',
+        endDate: ''
       });
       setPeopleData({
         speakers: [],
@@ -1833,23 +1836,23 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label>Title *</Label>
-            <Input 
+            <Input
               placeholder="e.g., AWS Community Day"
               value={formData.title}
               onChange={(e) => setFormData({ ...formData, title: e.target.value })}
               required
             />
           </div>
-          
+
           {/* Event Type */}
           <div className="space-y-2">
             <Label>Event Type *</Label>
-            <Select 
+            <Select
               value={formData.type}
-              onValueChange={(value: 'virtual' | 'in-person' | 'skill-sprint' | 'certification-circle' | 'college-champ') => 
-                setFormData({ 
-                  ...formData, 
-                  type: value, 
+              onValueChange={(value: 'virtual' | 'in-person' | 'skill-sprint' | 'certification-circle' | 'college-champ') =>
+                setFormData({
+                  ...formData,
+                  type: value,
                   sprintId: value !== 'skill-sprint' ? '' : formData.sprintId,
                   certificationGroupId: value !== 'certification-circle' ? '' : formData.certificationGroupId,
                   collegeId: value !== 'college-champ' ? '' : formData.collegeId
@@ -1878,7 +1881,7 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
           {formData.type === 'skill-sprint' && (
             <div className="space-y-2">
               <Label>Select Sprint *</Label>
-              <Select 
+              <Select
                 value={formData.sprintId}
                 onValueChange={(value) => setFormData({ ...formData, sprintId: value })}
                 required
@@ -1910,7 +1913,7 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
           {formData.type === 'certification-circle' && (
             <div className="space-y-2">
               <Label>Select Certification Group *</Label>
-              <Select 
+              <Select
                 value={formData.certificationGroupId}
                 onValueChange={(value) => setFormData({ ...formData, certificationGroupId: value })}
                 required
@@ -1942,7 +1945,7 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
           {formData.type === 'college-champ' && (
             <div className="space-y-2">
               <Label>Select College *</Label>
-              <Select 
+              <Select
                 value={formData.collegeId}
                 onValueChange={(value) => setFormData({ ...formData, collegeId: value })}
                 required
@@ -1969,11 +1972,11 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
               )}
             </div>
           )}
-          
+
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Date *</Label>
-              <Input 
+              <Input
                 type="date"
                 value={formData.date}
                 onChange={(e) => setFormData({ ...formData, date: e.target.value })}
@@ -1982,7 +1985,7 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
             </div>
             <div className="space-y-2">
               <Label>Time *</Label>
-              <Input 
+              <Input
                 type="time"
                 value={formData.time}
                 onChange={(e) => setFormData({ ...formData, time: e.target.value })}
@@ -1990,19 +1993,31 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
               />
             </div>
           </div>
-          
+
           <div className="space-y-2">
             <Label>Duration</Label>
-            <Input 
+            <Input
               placeholder="e.g., 2 hours"
               value={formData.duration}
               onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
             />
           </div>
-          
+
+          <div className="space-y-2">
+            <Label>End Date (Optional)</Label>
+            <Input
+              type="date"
+              value={formData.endDate}
+              onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
+            />
+            <p className="text-xs text-muted-foreground">
+              If set, the event will automatically be marked as completed on this date. Leave empty for manual control.
+            </p>
+          </div>
+
           <div className="space-y-2">
             <Label>Max Attendees</Label>
-            <Input 
+            <Input
               type="number"
               placeholder="e.g., 100"
               value={formData.maxAttendees}
@@ -2010,24 +2025,24 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
               min="1"
             />
           </div>
-          
+
           {/* Location - show for in-person events */}
           {formData.type === 'in-person' && (
             <div className="space-y-2">
               <Label>Location</Label>
-              <Input 
+              <Input
                 placeholder="e.g., Tech Hub, Bangalore"
                 value={formData.location}
                 onChange={(e) => setFormData({ ...formData, location: e.target.value })}
               />
             </div>
           )}
-          
+
           {/* Meeting Link - show for virtual events */}
           {(formData.type === 'virtual' || formData.type === 'skill-sprint' || formData.type === 'certification-circle' || formData.type === 'college-champ') && (
             <div className="space-y-2">
               <Label>Meeting Link</Label>
-              <Input 
+              <Input
                 placeholder="https://meet.example.com/..."
                 value={formData.meetingLink}
                 onChange={(e) => setFormData({ ...formData, meetingLink: e.target.value })}
@@ -2037,7 +2052,7 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
               </p>
             </div>
           )}
-          
+
           <div className="space-y-2">
             <Label>Event Poster Image</Label>
             <div className="flex gap-2">
@@ -2055,13 +2070,13 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
                 onChange={async (e) => {
                   const file = e.target.files?.[0];
                   if (!file) return;
-                  
+
                   // Validate file size (max 5MB)
                   if (file.size > 5 * 1024 * 1024) {
                     toast.error('File size must be less than 5MB');
                     return;
                   }
-                  
+
                   setUploadingImage(true);
                   try {
                     const imageUrl = await uploadFileToS3(file, 'meetup-posters');
@@ -2108,17 +2123,17 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
               Upload an image file or paste an image URL. Supported formats: JPEG, PNG, GIF, WebP (max 5MB)
             </p>
           </div>
-          
+
           <div className="space-y-2">
             <Label>Meetup URL *</Label>
-            <Input 
+            <Input
               placeholder="https://www.meetup.com/..."
               value={formData.meetupUrl}
               onChange={(e) => setFormData({ ...formData, meetupUrl: e.target.value })}
               required
             />
           </div>
-          
+
           {/* People Management */}
           <div className="space-y-4 border-t pt-6">
             <h3 className="font-semibold text-lg">Event Team</h3>
@@ -2128,10 +2143,10 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
               allUsers={allUsers}
             />
           </div>
-          
+
           <div className="space-y-2">
             <Label>Short Description *</Label>
-            <Textarea 
+            <Textarea
               rows={3}
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
@@ -2139,10 +2154,10 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
               required
             />
           </div>
-          
+
           <div className="space-y-2">
             <Label>Rich Description (Markdown/HTML)</Label>
-            <Textarea 
+            <Textarea
               rows={8}
               value={formData.richDescription}
               onChange={(e) => setFormData({ ...formData, richDescription: e.target.value })}
@@ -2153,7 +2168,7 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
               Supports Markdown and HTML. This will be displayed on the meetup detail page.
             </p>
           </div>
-          
+
           <div className="flex gap-2 pt-4 border-t">
             <Button type="submit" className="flex-1" disabled={loading}>
               {loading ? 'Creating...' : 'Create Meetup'}
@@ -2187,13 +2202,14 @@ function EditMeetupDialog({ meetup, onSuccess, allUsers = [] }: { meetup: Meetup
     meetupUrl: meetup.meetupUrl || '',
     image: meetup.image || '',
     maxAttendees: meetup.maxAttendees?.toString() || '',
-    sprintId: meetup.sprintId || ''
+    sprintId: meetup.sprintId || '',
+    endDate: meetup.endDate || ''
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    
+
     try {
       const updateData: UpdateMeetupData = {
         title: formData.title,
@@ -2207,9 +2223,10 @@ function EditMeetupDialog({ meetup, onSuccess, allUsers = [] }: { meetup: Meetup
         meetupUrl: formData.meetupUrl || undefined,
         image: formData.image || undefined,
         maxAttendees: formData.maxAttendees ? parseInt(formData.maxAttendees) : undefined,
-        sprintId: (formData.type === 'skill-sprint' && formData.sprintId) ? formData.sprintId : null
+        sprintId: (formData.type === 'skill-sprint' && formData.sprintId) ? formData.sprintId : null,
+        endDate: formData.endDate || undefined
       };
-      
+
       await updateMeetup(meetup.id, updateData);
       toast.success('Meetup updated successfully!');
       setOpen(false);
@@ -2240,18 +2257,18 @@ function EditMeetupDialog({ meetup, onSuccess, allUsers = [] }: { meetup: Meetup
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label>Title *</Label>
-            <Input 
+            <Input
               placeholder="e.g., AWS Community Day"
               value={formData.title}
               onChange={(e) => setFormData({ ...formData, title: e.target.value })}
               required
             />
           </div>
-          
+
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Date *</Label>
-              <Input 
+              <Input
                 type="date"
                 value={formData.date}
                 onChange={(e) => setFormData({ ...formData, date: e.target.value })}
@@ -2260,7 +2277,7 @@ function EditMeetupDialog({ meetup, onSuccess, allUsers = [] }: { meetup: Meetup
             </div>
             <div className="space-y-2">
               <Label>Time *</Label>
-              <Input 
+              <Input
                 type="time"
                 value={formData.time}
                 onChange={(e) => setFormData({ ...formData, time: e.target.value })}
@@ -2268,13 +2285,25 @@ function EditMeetupDialog({ meetup, onSuccess, allUsers = [] }: { meetup: Meetup
               />
             </div>
           </div>
-          
+
+          <div className="space-y-2">
+            <Label>End Date (Optional)</Label>
+            <Input
+              type="date"
+              value={formData.endDate}
+              onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
+            />
+            <p className="text-xs text-muted-foreground">
+              If set, the event will automatically be marked as completed on this date.
+            </p>
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Event Type *</Label>
-              <Select 
+              <Select
                 value={formData.type}
-                onValueChange={(value: 'virtual' | 'in-person' | 'hybrid') => 
+                onValueChange={(value: 'virtual' | 'in-person' | 'hybrid') =>
                   setFormData({ ...formData, type: value })
                 }
               >
@@ -2288,7 +2317,7 @@ function EditMeetupDialog({ meetup, onSuccess, allUsers = [] }: { meetup: Meetup
             </div>
             <div className="space-y-2">
               <Label>Max Attendees</Label>
-              <Input 
+              <Input
                 type="number"
                 placeholder="e.g., 100"
                 value={formData.maxAttendees}
@@ -2297,7 +2326,7 @@ function EditMeetupDialog({ meetup, onSuccess, allUsers = [] }: { meetup: Meetup
               />
             </div>
           </div>
-          
+
           <div className="space-y-2">
             <Label>Event Poster Image</Label>
             <div className="flex gap-2">
@@ -2315,13 +2344,13 @@ function EditMeetupDialog({ meetup, onSuccess, allUsers = [] }: { meetup: Meetup
                 onChange={async (e) => {
                   const file = e.target.files?.[0];
                   if (!file) return;
-                  
+
                   // Validate file size (max 5MB)
                   if (file.size > 5 * 1024 * 1024) {
                     toast.error('File size must be less than 5MB');
                     return;
                   }
-                  
+
                   setUploadingImage(true);
                   try {
                     const imageUrl = await uploadFileToS3(file, 'meetup-posters');
@@ -2368,42 +2397,42 @@ function EditMeetupDialog({ meetup, onSuccess, allUsers = [] }: { meetup: Meetup
               Upload an image file or paste an image URL. Supported formats: JPEG, PNG, GIF, WebP (max 5MB)
             </p>
           </div>
-          
+
           <div className="space-y-2">
             <Label>Meetup URL *</Label>
-            <Input 
+            <Input
               placeholder="https://www.meetup.com/..."
               value={formData.meetupUrl}
               onChange={(e) => setFormData({ ...formData, meetupUrl: e.target.value })}
               required
             />
           </div>
-          
+
           {(formData.type === 'in-person' || formData.type === 'hybrid') && (
             <div className="space-y-2">
               <Label>Location</Label>
-              <Input 
+              <Input
                 placeholder="e.g., Tech Hub, Bangalore"
                 value={formData.location}
                 onChange={(e) => setFormData({ ...formData, location: e.target.value })}
               />
             </div>
           )}
-          
+
           {(formData.type === 'virtual' || formData.type === 'hybrid') && (
             <div className="space-y-2">
               <Label>Meeting Link</Label>
-              <Input 
+              <Input
                 placeholder="https://meet.example.com/..."
                 value={formData.meetingLink}
                 onChange={(e) => setFormData({ ...formData, meetingLink: e.target.value })}
               />
             </div>
           )}
-          
+
           <div className="space-y-2">
             <Label>Short Description *</Label>
-            <Textarea 
+            <Textarea
               rows={3}
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
@@ -2411,10 +2440,10 @@ function EditMeetupDialog({ meetup, onSuccess, allUsers = [] }: { meetup: Meetup
               required
             />
           </div>
-          
+
           <div className="space-y-2">
             <Label>Rich Description (Markdown/HTML)</Label>
-            <Textarea 
+            <Textarea
               rows={8}
               value={formData.richDescription}
               onChange={(e) => setFormData({ ...formData, richDescription: e.target.value })}
@@ -2425,7 +2454,7 @@ function EditMeetupDialog({ meetup, onSuccess, allUsers = [] }: { meetup: Meetup
               Supports Markdown and HTML. This will be displayed on the meetup detail page.
             </p>
           </div>
-          
+
           <div className="flex gap-2 pt-4 border-t">
             <Button type="submit" className="flex-1" disabled={loading}>
               {loading ? 'Updating...' : 'Update Meetup'}
@@ -2435,6 +2464,85 @@ function EditMeetupDialog({ meetup, onSuccess, allUsers = [] }: { meetup: Meetup
             </Button>
           </div>
         </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// End Event Dialog
+function EndEventDialog({ meetup, onSuccess }: { meetup: Meetup; onSuccess?: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+
+  const handleEnd = async () => {
+    setLoading(true);
+    try {
+      await endMeetup(meetup.id, endDate);
+      const selectedDate = new Date(endDate + 'T23:59:59');
+      const now = new Date();
+      if (selectedDate <= now) {
+        toast.success('Event ended successfully!');
+      } else {
+        toast.success(`Event scheduled to end on ${format(new Date(endDate), 'MMM d, yyyy')}`);
+      }
+      setOpen(false);
+      onSuccess?.();
+    } catch (error) {
+      console.error('Error ending meetup:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to end event');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" className="gap-1 text-amber-600 border-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950">
+          <XCircle className="h-4 w-4" />
+          End Event
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>End Event</DialogTitle>
+          <DialogDescription>
+            End "{meetup.title}". Choose an end date — if the date is today or in the past, the event will be marked as completed immediately. A future date will schedule automatic completion.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label>End Date</Label>
+            <Input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              {new Date(endDate + 'T23:59:59') <= new Date()
+                ? '⚡ Event will be marked as completed immediately.'
+                : `📅 Event will automatically complete on ${format(new Date(endDate), 'MMMM d, yyyy')}.`
+              }
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-2 justify-end">
+          <Button variant="outline" onClick={() => setOpen(false)} disabled={loading}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleEnd}
+            disabled={loading}
+            className="gap-1 bg-amber-600 hover:bg-amber-700"
+          >
+            {loading ? (
+              <><Clock className="h-4 w-4 animate-spin" /> Ending...</>
+            ) : (
+              <><XCircle className="h-4 w-4" /> Confirm End Event</>
+            )}
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -2490,8 +2598,8 @@ function MeetupsManagementTab({ allUsers = [] }: { allUsers?: UserType[] }) {
     }
   };
 
-  const filteredMeetups = filterStatus === 'all' 
-    ? meetups 
+  const filteredMeetups = filterStatus === 'all'
+    ? meetups
     : meetups.filter(m => m.status === filterStatus);
 
   const draftMeetups = meetups.filter(m => m.status === 'draft');
@@ -2578,8 +2686,8 @@ function MeetupsManagementTab({ allUsers = [] }: { allUsers?: UserType[] }) {
             <Calendar className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
             <h3 className="text-lg font-semibold mb-2">No Meetups Found</h3>
             <p className="text-muted-foreground">
-              {filterStatus === 'all' 
-                ? 'Create your first meetup to get started!' 
+              {filterStatus === 'all'
+                ? 'Create your first meetup to get started!'
                 : `No ${filterStatus} meetups found.`}
             </p>
           </CardContent>
@@ -2593,12 +2701,12 @@ function MeetupsManagementTab({ allUsers = [] }: { allUsers?: UserType[] }) {
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-2">
                       <h3 className="font-semibold text-lg">{meetup.title}</h3>
-                      <Badge 
+                      <Badge
                         variant={
-                          meetup.status === 'upcoming' ? 'default' : 
-                          meetup.status === 'draft' ? 'secondary' : 
-                          'outline'
-                        } 
+                          meetup.status === 'upcoming' ? 'default' :
+                            meetup.status === 'draft' ? 'secondary' :
+                              'outline'
+                        }
                         className="capitalize"
                       >
                         {meetup.status}
@@ -2622,13 +2730,22 @@ function MeetupsManagementTab({ allUsers = [] }: { allUsers?: UserType[] }) {
                           {meetup.speakers.length} speakers
                         </span>
                       )}
+                      {meetup.endDate && (
+                        <span className="flex items-center gap-1 text-amber-600">
+                          <Clock className="h-4 w-4" />
+                          {new Date(meetup.endDate) < new Date()
+                            ? `Ended ${format(parseISO(meetup.endDate), 'MMM d, yyyy')}`
+                            : `Ends ${format(parseISO(meetup.endDate), 'MMM d, yyyy')}`
+                          }
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {meetup.status === 'draft' && (
-                      <Button 
-                        variant="default" 
-                        size="sm" 
+                      <Button
+                        variant="default"
+                        size="sm"
                         className="gap-1"
                         onClick={() => handlePublish(meetup, true)}
                       >
@@ -2637,9 +2754,9 @@ function MeetupsManagementTab({ allUsers = [] }: { allUsers?: UserType[] }) {
                       </Button>
                     )}
                     {meetup.status === 'upcoming' && (
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
+                      <Button
+                        variant="outline"
+                        size="sm"
                         className="gap-1"
                         onClick={() => handlePublish(meetup, false)}
                       >
@@ -2647,22 +2764,25 @@ function MeetupsManagementTab({ allUsers = [] }: { allUsers?: UserType[] }) {
                         Unpublish
                       </Button>
                     )}
+                    {meetup.status === 'upcoming' && (
+                      <EndEventDialog meetup={meetup} onSuccess={loadMeetups} />
+                    )}
                     {(meetup.status === 'completed' || meetup.status === 'upcoming') && (
                       <MarkAttendanceDialog meetup={meetup} onSuccess={loadMeetups} />
                     )}
                     <EditMeetupDialog meetup={meetup} onSuccess={loadMeetups} allUsers={allUsers} />
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
+                    <Button
+                      variant="outline"
+                      size="sm"
                       className="gap-1"
                       onClick={() => window.open(`/meetups?id=${meetup.id}`, '_blank')}
                     >
                       <Eye className="h-4 w-4" />
                       View
                     </Button>
-                    <Button 
-                      variant="destructive" 
-                      size="sm" 
+                    <Button
+                      variant="destructive"
+                      size="sm"
                       className="gap-1"
                       onClick={() => handleDelete(meetup)}
                     >
@@ -2698,7 +2818,7 @@ function CreateTaskDialog({ task, onClose, onSuccess }: { task?: CollegeTask; on
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
-    
+
     try {
       if (task) {
         // Update existing task
@@ -2711,7 +2831,7 @@ function CreateTaskDialog({ task, onClose, onSuccess }: { task?: CollegeTask; on
         await createCollegeTask(formData);
         toast.success('Task created successfully!');
       }
-      
+
       setOpen(false);
       onClose?.();
       onSuccess?.();
@@ -2860,7 +2980,7 @@ function AssignTasksDialog({ college, onSuccess }: { college: College; onSuccess
       const { getAllCollegeTasks } = await import('@/lib/colleges');
       const tasks = await getAllCollegeTasks();
       setAllTasks(tasks);
-      
+
       // Filter out any assigned task IDs that no longer exist or are now default
       const validAssignedTasks = (college.assignedTaskIds || []).filter(taskId => {
         const task = tasks.find(t => t.id === taskId);
@@ -2881,11 +3001,11 @@ function AssignTasksDialog({ college, onSuccess }: { college: College; onSuccess
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
-    
+
     try {
       const { assignTasksToCollege } = await import('@/lib/colleges');
       await assignTasksToCollege(college.id, selectedTasks);
-      
+
       toast.success(`Tasks assigned to ${college.name}!`);
       setOpen(false);
       onSuccess();
@@ -2898,8 +3018,8 @@ function AssignTasksDialog({ college, onSuccess }: { college: College; onSuccess
   };
 
   const toggleTask = (taskId: string) => {
-    setSelectedTasks(prev => 
-      prev.includes(taskId) 
+    setSelectedTasks(prev =>
+      prev.includes(taskId)
         ? prev.filter(id => id !== taskId)
         : [...prev, taskId]
     );
@@ -2938,11 +3058,10 @@ function AssignTasksDialog({ college, onSuccess }: { college: College; onSuccess
                 {assignableTasks.map(task => (
                   <label
                     key={task.id}
-                    className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                      selectedTasks.includes(task.id)
-                        ? 'bg-primary/5 border-primary'
-                        : 'hover:bg-muted'
-                    }`}
+                    className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${selectedTasks.includes(task.id)
+                      ? 'bg-primary/5 border-primary'
+                      : 'hover:bg-muted'
+                      }`}
                   >
                     <div className="flex items-center h-5">
                       <input
@@ -3020,7 +3139,7 @@ function VerifyTaskDialog({ college, taskId, onSuccess }: { college: College; ta
     try {
       const { completeTask } = await import('@/lib/colleges');
       await completeTask(college.id, taskId, bonusPoints, task.points);
-      
+
       toast.success(`Task verified for ${college.name}! ${task.points + bonusPoints} points awarded.`);
       setOpen(false);
       onSuccess();
@@ -3102,7 +3221,7 @@ function AwardPointsDialog({ college, onSuccess }: { college: College; onSuccess
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!formData.reason || formData.points <= 0) {
       toast.error('Please fill in all fields');
       return;
@@ -3111,10 +3230,10 @@ function AwardPointsDialog({ college, onSuccess }: { college: College; onSuccess
     setIsSubmitting(true);
     try {
       const { updateCollege } = await import('@/lib/colleges');
-      
+
       // Update college with new total points
       const newTotalPoints = college.totalPoints + formData.points;
-      
+
       await updateCollege(college.id, {
         totalPoints: newTotalPoints
       });
@@ -3205,8 +3324,8 @@ function AwardPointsDialog({ college, onSuccess }: { college: College; onSuccess
 }
 
 // Create College Dialog
-function CreateCollegeDialog({ isOpen, onOpenChange, onSuccess, allUsers = [] }: { 
-  isOpen: boolean; 
+function CreateCollegeDialog({ isOpen, onOpenChange, onSuccess, allUsers = [] }: {
+  isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess: () => void;
   allUsers?: UserType[];
@@ -3254,7 +3373,7 @@ function CreateCollegeDialog({ isOpen, onOpenChange, onSuccess, allUsers = [] }:
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!formData.name || !formData.shortName || !formData.location || !formData.champsLeadId) {
       toast.error('Please fill in all required fields');
       return;
@@ -3263,17 +3382,17 @@ function CreateCollegeDialog({ isOpen, onOpenChange, onSuccess, allUsers = [] }:
     setIsSubmitting(true);
     try {
       const { createCollege } = await import('@/lib/colleges');
-      
+
       // Get the selected user's name
       const selectedUser = allUsers.find(u => u.id === formData.champsLeadId);
       if (!selectedUser) {
         toast.error('Selected champs lead not found');
         return;
       }
-      
+
       // Generate ID from short name if not provided
       const collegeId = formData.id || `college-${formData.shortName.toLowerCase().replace(/\s+/g, '-')}`;
-      
+
       await createCollege({
         id: collegeId,
         name: formData.name,
@@ -3295,7 +3414,7 @@ function CreateCollegeDialog({ isOpen, onOpenChange, onSuccess, allUsers = [] }:
         champsLeadId: '',
         logo: '',
       });
-      
+
       onOpenChange(false);
       onSuccess();
     } catch (error) {
@@ -3423,9 +3542,9 @@ function CreateCollegeDialog({ isOpen, onOpenChange, onSuccess, allUsers = [] }:
             <Label htmlFor="logo">College Logo</Label>
             <div className="flex items-center gap-2">
               {formData.logo && (
-                <img 
-                  src={formData.logo} 
-                  alt="College logo preview" 
+                <img
+                  src={formData.logo}
+                  alt="College logo preview"
                   className="h-16 w-16 rounded-lg object-cover border"
                 />
               )}
@@ -3491,8 +3610,8 @@ function CreateCollegeDialog({ isOpen, onOpenChange, onSuccess, allUsers = [] }:
 }
 
 // Change Champs Lead Dialog
-function ChangeLeadDialog({ college, allUsers, onSuccess }: { 
-  college: College; 
+function ChangeLeadDialog({ college, allUsers, onSuccess }: {
+  college: College;
   allUsers: UserType[];
   onSuccess: () => void;
 }) {
@@ -3504,12 +3623,12 @@ function ChangeLeadDialog({ college, allUsers, onSuccess }: {
   const [searchQuery, setSearchQuery] = useState('');
 
   const toggleUser = (userId: string) => {
-    setSelectedUserIds(prev => 
+    setSelectedUserIds(prev =>
       prev.includes(userId) ? [] : [userId]
     );
   };
 
-  const filteredUsers = allUsers.filter(user => 
+  const filteredUsers = allUsers.filter(user =>
     user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     user.email.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -3524,7 +3643,7 @@ function ChangeLeadDialog({ college, allUsers, onSuccess }: {
     try {
       const { updateCollege } = await import('@/lib/colleges');
       const selectedUsers = allUsers.filter(u => selectedUserIds.includes(u.id));
-      
+
       if (selectedUsers.length === 0) {
         toast.error('Selected users not found');
         return;
@@ -3538,7 +3657,7 @@ function ChangeLeadDialog({ college, allUsers, onSuccess }: {
         champsLeadId: primaryLead.id,
         champsLead: leadNames
       });
-      
+
       toast.success(`Champs lead updated for ${college.name}`);
       setOpen(false);
       onSuccess();
@@ -3565,7 +3684,7 @@ function ChangeLeadDialog({ college, allUsers, onSuccess }: {
             Select a champs lead for {college.name}
           </DialogDescription>
         </DialogHeader>
-        
+
         <div className="space-y-4">
           {/* Current Lead */}
           <div className="p-3 rounded-lg bg-muted/30">
@@ -3576,7 +3695,7 @@ function ChangeLeadDialog({ college, allUsers, onSuccess }: {
           {/* Select New Leads */}
           <div className="space-y-2">
             <Label>Select Lead</Label>
-            
+
             {/* Search Input */}
             <Input
               placeholder="Search users..."
@@ -3598,13 +3717,11 @@ function ChangeLeadDialog({ college, allUsers, onSuccess }: {
                     <div
                       key={user.id}
                       onClick={() => toggleUser(user.id)}
-                      className={`flex items-center gap-3 p-3 cursor-pointer hover:bg-muted/50 transition-colors ${
-                        isSelected ? 'bg-primary/10' : ''
-                      }`}
+                      className={`flex items-center gap-3 p-3 cursor-pointer hover:bg-muted/50 transition-colors ${isSelected ? 'bg-primary/10' : ''
+                        }`}
                     >
-                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                        isSelected ? 'border-primary' : 'border-muted-foreground'
-                      }`}>
+                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${isSelected ? 'border-primary' : 'border-muted-foreground'
+                        }`}>
                         {isSelected && <div className="w-2.5 h-2.5 rounded-full bg-primary" />}
                       </div>
                       <Avatar className="h-8 w-8">
@@ -3649,7 +3766,7 @@ function ChangeLeadDialog({ college, allUsers, onSuccess }: {
 }
 
 // College Management Card
-function CollegeManagementCard({ college, onDelete, onUpdate, allUsers }: { 
+function CollegeManagementCard({ college, onDelete, onUpdate, allUsers }: {
   college: College;
   onDelete: () => void;
   onUpdate: () => void;
@@ -3660,7 +3777,7 @@ function CollegeManagementCard({ college, onDelete, onUpdate, allUsers }: {
   const pendingTasks = predefinedTasks.filter(t => !completedTaskIds.includes(t.id));
   const completedTasks = predefinedTasks.filter(t => completedTaskIds.includes(t.id));
   const progressPercent = (completedTasks.length / predefinedTasks.length) * 100;
-  
+
   const lead = college.champsLeadId ? allUsers.find(u => u.id === college.champsLeadId) || null : null;
 
   const getCategoryColor = (category: string) => {
@@ -3685,13 +3802,13 @@ function CollegeManagementCard({ college, onDelete, onUpdate, allUsers }: {
           {/* Header */}
           <div className="flex items-center gap-4 mb-4">
             {college.logo ? (
-              <img 
-                src={college.logo} 
+              <img
+                src={college.logo}
                 alt={`${college.name} logo`}
                 className="w-12 h-12 rounded-xl object-cover shadow-lg"
               />
             ) : (
-              <div 
+              <div
                 className="w-12 h-12 rounded-xl flex items-center justify-center bg-gradient-to-br from-primary to-primary/70 text-white font-bold text-lg shadow-lg"
               >
                 #{college.rank}
@@ -3721,16 +3838,16 @@ function CollegeManagementCard({ college, onDelete, onUpdate, allUsers }: {
               <AssignTasksDialog college={college} onSuccess={onUpdate} />
               <AwardPointsDialog college={college} onSuccess={onUpdate} />
               <ChangeLeadDialog college={college} allUsers={allUsers} onSuccess={onUpdate} />
-              <Button 
-                variant="ghost" 
+              <Button
+                variant="ghost"
                 size="sm"
                 onClick={onDelete}
                 className="text-destructive hover:text-destructive"
               >
                 <Trash2 className="h-4 w-4" />
               </Button>
-              <Button 
-                variant="ghost" 
+              <Button
+                variant="ghost"
                 size="sm"
                 onClick={() => setExpanded(!expanded)}
               >
@@ -3960,7 +4077,7 @@ function CollegeChampsTab() {
   };
 
   const sortedColleges = [...colleges].sort((a, b) => a.rank - b.rank);
-  const filteredColleges = sortedColleges.filter(c => 
+  const filteredColleges = sortedColleges.filter(c =>
     c.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     c.shortName?.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -4041,31 +4158,31 @@ function CollegeChampsTab() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {allTasks.sort((a, b) => (a.order || 0) - (b.order || 0)).map(task => (
-              <div key={task.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-sm font-medium text-primary">
-                    {task.order}
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">{task.title}</p>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="text-xs capitalize">{task.category}</Badge>
-                      <span className="text-xs text-muted-foreground">{task.points} pts</span>
+                <div key={task.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-sm font-medium text-primary">
+                      {task.order}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">{task.title}</p>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-xs capitalize">{task.category}</Badge>
+                        <span className="text-xs text-muted-foreground">{task.points} pts</span>
+                      </div>
                     </div>
                   </div>
+                  <div className="flex items-center gap-1">
+                    <CreateTaskDialog task={task} onSuccess={fetchTasks} />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => handleDeleteTask(task.id, task.title)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  <CreateTaskDialog task={task} onSuccess={fetchTasks} />
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    className="text-destructive hover:text-destructive"
-                    onClick={() => handleDeleteTask(task.id, task.title)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
               ))}
             </div>
           )}
@@ -4090,7 +4207,7 @@ function CollegeChampsTab() {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="max-w-xs"
               />
-              <CreateCollegeDialog 
+              <CreateCollegeDialog
                 isOpen={isCreateDialogOpen}
                 onOpenChange={setIsCreateDialogOpen}
                 onSuccess={fetchColleges}
@@ -4112,8 +4229,8 @@ function CollegeChampsTab() {
             </div>
           ) : (
             filteredColleges.map(college => (
-              <CollegeManagementCard 
-                key={college.id} 
+              <CollegeManagementCard
+                key={college.id}
                 college={college}
                 allUsers={allUsers}
                 onDelete={() => handleDeleteCollege(college.id, college.name)}
@@ -4156,7 +4273,7 @@ function MembersTab({ allUsers }: { allUsers: UserType[] }) {
     loadRoles();
   }, []);
 
-  const filteredUsers = allUsers.filter(user => 
+  const filteredUsers = allUsers.filter(user =>
     user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     user.email.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -4166,7 +4283,7 @@ function MembersTab({ allUsers }: { allUsers: UserType[] }) {
   };
 
   const getUserActivities = (userId: string): PointActivity[] => {
-    return pointActivities.filter(pa => pa.userId === userId).sort((a, b) => 
+    return pointActivities.filter(pa => pa.userId === userId).sort((a, b) =>
       new Date(b.awardedAt).getTime() - new Date(a.awardedAt).getTime()
     );
   };
@@ -4177,9 +4294,9 @@ function MembersTab({ allUsers }: { allUsers: UserType[] }) {
       toast.error("Member role cannot be removed");
       return;
     }
-    
+
     const existingRoleAssignment = userRoles.find(ur => ur.userId === userId && ur.role === role);
-    
+
     try {
       if (existingRoleAssignment) {
         // Remove role
@@ -4328,8 +4445,8 @@ function MembersTab({ allUsers }: { allUsers: UserType[] }) {
                           if (!open) setSelectedUser(null);
                         }}>
                           <DialogTrigger asChild>
-                            <Button 
-                              variant="outline" 
+                            <Button
+                              variant="outline"
                               size="sm"
                               onClick={() => {
                                 setSelectedUser(user);
@@ -4566,7 +4683,7 @@ function BadgesTab({ allUsers }: { allUsers: UserType[] }) {
     };
 
     setBadgeAwards(prev => [...prev, newAward]);
-    
+
     // Update user badges in mock data
     const userIndex = mockUsers.findIndex(u => u.id === selectedUserId);
     if (userIndex !== -1) {
@@ -4592,8 +4709,8 @@ function BadgesTab({ allUsers }: { allUsers: UserType[] }) {
     const criteria: BadgeCriteria = {
       type: newBadge.criteriaType,
       threshold: newBadge.criteriaType !== 'manual' ? newBadge.threshold : undefined,
-      description: newBadge.criteriaType === 'manual' 
-        ? 'Manually awarded by admins' 
+      description: newBadge.criteriaType === 'manual'
+        ? 'Manually awarded by admins'
         : `${criteriaTypeLabels[newBadge.criteriaType]}: ${newBadge.threshold}`
     };
 
@@ -4803,17 +4920,17 @@ function BadgesTab({ allUsers }: { allUsers: UserType[] }) {
                         {usersWithBadge.length} awarded
                       </span>
                     </div>
-                    <Dialog 
-                      open={isAwardDialogOpen && selectedBadge?.id === badge.id} 
+                    <Dialog
+                      open={isAwardDialogOpen && selectedBadge?.id === badge.id}
                       onOpenChange={(open) => {
                         setIsAwardDialogOpen(open);
                         if (!open) setSelectedBadge(null);
                       }}
                     >
                       <DialogTrigger asChild>
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
+                        <Button
+                          variant="outline"
+                          size="sm"
                           className="w-full gap-1"
                           onClick={() => {
                             setSelectedBadge(badge);
@@ -4863,9 +4980,9 @@ function BadgesTab({ allUsers }: { allUsers: UserType[] }) {
                             />
                           </div>
                           <div className="flex gap-2 pt-2">
-                            <Button 
-                              variant="outline" 
-                              onClick={() => setIsAwardDialogOpen(false)} 
+                            <Button
+                              variant="outline"
+                              onClick={() => setIsAwardDialogOpen(false)}
                               className="flex-1"
                             >
                               Cancel
@@ -4937,9 +5054,9 @@ export default function Admin() {
     try {
       const fetchedSprints = await getSprints();
       setSprints(fetchedSprints);
-      
+
       // Extract all submissions from sprints
-      const submissions = fetchedSprints.flatMap(s => 
+      const submissions = fetchedSprints.flatMap(s =>
         (s.submissions || []).map(sub => ({ ...sub, sprintTitle: s.title, sprintId: s.id }))
       );
       setAllSubmissions(submissions);
@@ -4947,7 +5064,7 @@ export default function Admin() {
       console.error('Error fetching sprints:', error);
       // Fallback to mock data if API fails
       setSprints(mockSprints);
-      const submissions = mockSprints.flatMap(s => 
+      const submissions = mockSprints.flatMap(s =>
         s.submissions.map(sub => ({ ...sub, sprintTitle: s.title, sprintId: s.id }))
       );
       setAllSubmissions(submissions);
@@ -5030,9 +5147,9 @@ export default function Admin() {
         feedback,
         reviewedBy: authUser?.id || ''
       });
-      
+
       toast.success(`Submission ${action}d${points ? ` with ${points} points` : ''}`);
-      
+
       // Refresh submissions
       fetchSprints();
     } catch (error) {
@@ -5062,7 +5179,7 @@ export default function Admin() {
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
-      
+
       <main className="flex-1 container mx-auto px-4 py-8">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 gap-4">
@@ -5164,9 +5281,9 @@ export default function Admin() {
                     </div>
                   ) : (
                     pendingSubmissions.map(sub => (
-                      <SubmissionReview 
-                        key={sub.id} 
-                        submission={sub} 
+                      <SubmissionReview
+                        key={sub.id}
+                        submission={sub}
                         onAction={(action, points, feedback) => handleSubmissionAction(sub.id, sub.sprintId, action, points, feedback)}
                       />
                     ))
@@ -5183,10 +5300,10 @@ export default function Admin() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {reviewedSubmissions.map(sub => (
-                    <SubmissionReview 
-                      key={sub.id} 
-                      submission={sub} 
-                      onAction={() => {}}
+                    <SubmissionReview
+                      key={sub.id}
+                      submission={sub}
+                      onAction={() => { }}
                     />
                   ))}
                 </CardContent>
@@ -5216,53 +5333,53 @@ export default function Admin() {
                         </Card>
                       ) : (
                         sprints.map(sprint => (
-                      <Card key={sprint.id} className="glass-card">
-                        <CardContent className="p-4">
-                          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-2">
-                                <h3 className="font-semibold text-lg">{sprint.title}</h3>
-                                <Badge variant={sprint.status === 'active' ? 'default' : 'secondary'} className="capitalize">
-                                  {sprint.status}
-                                </Badge>
+                          <Card key={sprint.id} className="glass-card">
+                            <CardContent className="p-4">
+                              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <h3 className="font-semibold text-lg">{sprint.title}</h3>
+                                    <Badge variant={sprint.status === 'active' ? 'default' : 'secondary'} className="capitalize">
+                                      {sprint.status}
+                                    </Badge>
+                                  </div>
+                                  <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                                    <span className="flex items-center gap-1">
+                                      <Users className="h-4 w-4" />
+                                      {sprint.participants} participants
+                                    </span>
+                                    <span className="flex items-center gap-1">
+                                      <Calendar className="h-4 w-4" />
+                                      {format(parseISO(sprint.startDate), 'MMM d')} - {format(parseISO(sprint.endDate), 'MMM d, yyyy')}
+                                    </span>
+                                    <span className="flex items-center gap-1">
+                                      <MessageSquare className="h-4 w-4" />
+                                      {sprint.submissions.length} submissions
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  <ViewParticipantsDialog sprint={sprint} />
+                                  <Button variant="outline" size="sm" className="gap-1">
+                                    <Edit className="h-4 w-4" />
+                                    Edit
+                                  </Button>
+                                  <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    className="gap-1"
+                                    onClick={() => handleDeleteSprint(sprint.id, sprint.title)}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                    Delete
+                                  </Button>
+                                </div>
                               </div>
-                              <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
-                                <span className="flex items-center gap-1">
-                                  <Users className="h-4 w-4" />
-                                  {sprint.participants} participants
-                                </span>
-                                <span className="flex items-center gap-1">
-                                  <Calendar className="h-4 w-4" />
-                                  {format(parseISO(sprint.startDate), 'MMM d')} - {format(parseISO(sprint.endDate), 'MMM d, yyyy')}
-                                </span>
-                                <span className="flex items-center gap-1">
-                                  <MessageSquare className="h-4 w-4" />
-                                  {sprint.submissions.length} submissions
-                                </span>
-                              </div>
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                              <ViewParticipantsDialog sprint={sprint} />
-                              <Button variant="outline" size="sm" className="gap-1">
-                                <Edit className="h-4 w-4" />
-                                Edit
-                              </Button>
-                              <Button 
-                                variant="destructive" 
-                                size="sm" 
-                                className="gap-1"
-                                onClick={() => handleDeleteSprint(sprint.id, sprint.title)}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                                Delete
-                              </Button>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                      ))
-                    )}
-                  </div>
+                            </CardContent>
+                          </Card>
+                        ))
+                      )}
+                    </div>
                   )}
                 </TabsContent>
 

@@ -239,6 +239,7 @@ export interface Meetup {
   volunteers?: MeetupPerson[];
   image?: string;
   duration?: string;
+  endDate?: string; // Date when the event ends/ended (ISO date string)
   sprintId?: string; // Link to sprint if type is 'skill-sprint'
 }
 

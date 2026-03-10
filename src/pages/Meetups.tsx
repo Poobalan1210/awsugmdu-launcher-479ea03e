@@ -10,8 +10,8 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
-import { 
-  Calendar, MapPin, Users, Video, Clock, 
+import {
+  Calendar, MapPin, Users, Video, Clock,
   ArrowLeft, ExternalLink, PlayCircle,
   Linkedin, Github, CheckCircle, Search, Rocket, Award, GraduationCap
 } from 'lucide-react';
@@ -83,9 +83,9 @@ function MeetupCard({ meetup, onSelect }: { meetup: Meetup; onSelect: () => void
       <Card className="glass-card h-full overflow-hidden cursor-pointer" onClick={onSelect}>
         {meetup.image && (
           <div className="h-64 overflow-hidden bg-muted/20 flex items-center justify-center">
-            <img 
-              src={meetup.image} 
-              alt={meetup.title} 
+            <img
+              src={meetup.image}
+              alt={meetup.title}
               className="w-full h-full object-contain transition-transform duration-300 hover:scale-105"
             />
           </div>
@@ -97,10 +97,10 @@ function MeetupCard({ meetup, onSelect }: { meetup: Meetup; onSelect: () => void
               {typeBadge.label}
             </Badge>
           </div>
-          
+
           <h3 className="font-semibold text-lg mb-2 line-clamp-2">{meetup.title}</h3>
           <p className="text-sm text-muted-foreground mb-4 line-clamp-2">{meetup.description}</p>
-          
+
           <div className="space-y-2 text-sm text-muted-foreground mb-4">
             <div className="flex items-center gap-2">
               <Calendar className="h-4 w-4" />
@@ -224,7 +224,7 @@ function MeetupDetail({ meetup: initialMeetup, onBack }: { meetup: Meetup; onBac
     if (!searchQuery.trim()) return people;
 
     const query = searchQuery.toLowerCase();
-    return people.filter(person => 
+    return people.filter(person =>
       person.name.toLowerCase().includes(query) ||
       person.designation?.toLowerCase().includes(query) ||
       person.company?.toLowerCase().includes(query)
@@ -233,7 +233,7 @@ function MeetupDetail({ meetup: initialMeetup, onBack }: { meetup: Meetup; onBac
 
   // Check if user is registered
   const isRegistered = user && meetup.registeredUsers?.includes(user.id);
-  
+
   // Check if user is organizer, speaker, or volunteer (auto-registered)
   const isOrganizer = user && meetup.hosts?.some(h => h.userId === user.id);
   const isSpeaker = user && meetup.speakers?.some(s => s.userId === user.id);
@@ -255,7 +255,7 @@ function MeetupDetail({ meetup: initialMeetup, onBack }: { meetup: Meetup; onBac
     try {
       // First, register in our system
       const result = await registerForMeetup(meetup.id, user.id);
-      
+
       if (result.alreadyRegistered) {
         toast.info('You are already registered for this meetup');
         // Still redirect to meetup URL
@@ -266,7 +266,7 @@ function MeetupDetail({ meetup: initialMeetup, onBack }: { meetup: Meetup; onBac
         queryClient.invalidateQueries({ queryKey: ['meetup', meetup.id] });
         queryClient.invalidateQueries({ queryKey: ['meetups'] });
         queryClient.invalidateQueries({ queryKey: ['meetup-participants', meetup.id] });
-        
+
         // Redirect to meetup URL after registration
         setTimeout(() => {
           window.open(meetup.meetupUrl, '_blank');
@@ -303,10 +303,10 @@ function MeetupDetail({ meetup: initialMeetup, onBack }: { meetup: Meetup; onBac
                   {typeBadge.label}
                 </Badge>
               </div>
-              
+
               <h1 className="text-2xl md:text-3xl font-bold mb-4">{meetup.title}</h1>
               <p className="text-muted-foreground mb-6">{meetup.description}</p>
-              
+
               <div className="flex flex-wrap gap-6 text-sm mb-6">
                 <div className="flex items-center gap-2">
                   <Calendar className="h-4 w-4 text-primary" />
@@ -327,6 +327,15 @@ function MeetupDetail({ meetup: initialMeetup, onBack }: { meetup: Meetup; onBac
                   <Users className="h-4 w-4 text-primary" />
                   {meetup.attendees} registered
                 </div>
+                {meetup.endDate && (
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-primary" />
+                    {isPast(parseISO(meetup.endDate))
+                      ? `Ended ${format(parseISO(meetup.endDate), 'MMMM d, yyyy')}`
+                      : `Ends ${format(parseISO(meetup.endDate), 'MMMM d, yyyy')}`
+                    }
+                  </div>
+                )}
               </div>
 
               {/* Action Buttons - Different for upcoming vs past events and event type */}
@@ -336,8 +345,8 @@ function MeetupDetail({ meetup: initialMeetup, onBack }: { meetup: Meetup; onBac
                   <>
                     {isUpcoming ? (
                       meetup.meetupUrl && !isAutoRegistered && (
-                        <Button 
-                          size="lg" 
+                        <Button
+                          size="lg"
                           className="gap-2"
                           onClick={handleRegister}
                           disabled={isRegistering || isRegistered}
@@ -377,8 +386,8 @@ function MeetupDetail({ meetup: initialMeetup, onBack }: { meetup: Meetup; onBac
                     {isUpcoming ? (
                       <>
                         {meetup.meetupUrl && !isAutoRegistered && (
-                          <Button 
-                            size="lg" 
+                          <Button
+                            size="lg"
                             className="gap-2"
                             onClick={handleRegister}
                             disabled={isRegistering || isRegistered}
@@ -441,9 +450,9 @@ function MeetupDetail({ meetup: initialMeetup, onBack }: { meetup: Meetup; onBac
             <Card className="glass-card">
               <CardContent className="p-0">
                 <div className="rounded-xl overflow-hidden bg-muted/20 flex items-center justify-center">
-                  <img 
-                    src={meetup.image} 
-                    alt={meetup.title} 
+                  <img
+                    src={meetup.image}
+                    alt={meetup.title}
                     className="w-full h-auto object-contain"
                   />
                 </div>
@@ -458,7 +467,7 @@ function MeetupDetail({ meetup: initialMeetup, onBack }: { meetup: Meetup; onBac
                 <CardTitle>About this Event</CardTitle>
               </CardHeader>
               <CardContent>
-                <div 
+                <div
                   className="prose prose-sm max-w-none dark:prose-invert
                     prose-headings:text-foreground prose-headings:font-semibold
                     prose-h2:text-xl prose-h2:mt-0 prose-h2:mb-4
@@ -525,7 +534,7 @@ function MeetupDetail({ meetup: initialMeetup, onBack }: { meetup: Meetup; onBac
 export default function Meetups() {
   const [searchParams] = useSearchParams();
   const meetupId = searchParams.get('id');
-  
+
   // Fetch meetups from backend
   const { data: allMeetups = [], isLoading } = useQuery({
     queryKey: ['meetups'],
@@ -552,7 +561,7 @@ export default function Meetups() {
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
-      
+
       <main className="flex-1 container mx-auto px-4 py-8">
         {selectedMeetup ? (
           <MeetupDetail meetup={selectedMeetup} onBack={() => setSelectedMeetup(null)} />

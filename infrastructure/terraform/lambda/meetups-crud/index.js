@@ -35,25 +35,25 @@ function parsePath(event) {
   // Path parameters are also available in event.pathParameters
   const path = event.path || event.requestContext?.path || '';
   const pathParts = path.split('/').filter(p => p);
-  
+
   // Remove stage name if present (e.g., /dev/meetups -> meetups)
   const stageIndex = pathParts.findIndex(p => ['dev', 'staging', 'prod'].includes(p));
   const startIndex = stageIndex >= 0 ? stageIndex + 1 : 0;
   const relevantParts = pathParts.slice(startIndex);
-  
+
   // Also check pathParameters (from API Gateway)
   const pathParams = event.pathParameters || {};
-  
+
   const resource = relevantParts[0] || pathParams.resource;
   const id = pathParams.id || relevantParts[1];
   const action = relevantParts[2] || pathParams.action;
-  
+
   return { resource, id, action };
 }
 
 exports.handler = async (event) => {
   console.log('Event:', JSON.stringify(event, null, 2));
-  
+
   // Handle CORS preflight - must be first
   if (event.httpMethod === 'OPTIONS') {
     return {
@@ -62,7 +62,7 @@ exports.handler = async (event) => {
       body: ''
     };
   }
-  
+
   // Skip authorization for GET requests (read-only operations)
   // This allows public access to view meetups
   if (event.httpMethod !== 'GET') {
@@ -71,28 +71,28 @@ exports.handler = async (event) => {
     if (!authResult.authorized) {
       return createUnauthorizedResponse(authResult.error, getCorsHeaders());
     }
-    
+
     // Add user context to event
     event.userContext = {
       userId: authResult.userId,
       roles: authResult.roles,
     };
   }
-  
+
   try {
     const method = event.httpMethod;
     const path = event.path || event.requestContext?.path || '';
-    
+
     // Parse path - handle both /dev/meetups and /meetups formats
     const pathParts = path.split('/').filter(p => p);
     const stageIndex = pathParts.findIndex(p => ['dev', 'staging', 'prod'].includes(p));
     const startIndex = stageIndex >= 0 ? stageIndex + 1 : 0;
     const routeParts = pathParts.slice(startIndex);
-    
+
     const resource = routeParts[0];
     const id = routeParts[1];
     const action = routeParts[2];
-    
+
     // Route handling
     if (resource === 'meetups') {
       if (method === 'GET' && !id) {
@@ -122,18 +122,21 @@ exports.handler = async (event) => {
       } else if (method === 'POST' && id && action === 'mark-attendance') {
         // POST /meetups/{id}/mark-attendance - Mark attendance for users
         return await markAttendance(id, event);
+      } else if (method === 'PATCH' && id && action === 'end') {
+        // PATCH /meetups/{id}/end - End a meetup event
+        return await endMeetup(id, event);
       }
     }
-    
+
     // Log for debugging
     console.log('Route not matched:', { resource, id, action, method, path, routeParts });
-    
+
     return createResponse(404, { error: 'Not found' });
   } catch (error) {
     console.error('Error:', error);
-    return createResponse(500, { 
+    return createResponse(500, {
       error: 'Internal server error',
-      message: error.message 
+      message: error.message
     });
   }
 };
@@ -144,9 +147,9 @@ async function listMeetups(event) {
   const status = queryParams.status; // 'draft', 'upcoming', 'completed'
   const sprintId = queryParams.sprintId; // Filter by sprint
   const certificationGroupId = queryParams.certificationGroupId; // Filter by certification group
-  
+
   let meetups;
-  
+
   if (sprintId) {
     // Query by sprintId using GSI
     const result = await docClient.send(new QueryCommand({
@@ -158,7 +161,7 @@ async function listMeetups(event) {
       }
     }));
     meetups = result.Items || [];
-    
+
     // Further filter by status if provided
     if (status) {
       meetups = meetups.filter(m => m.status === status);
@@ -174,7 +177,7 @@ async function listMeetups(event) {
       }
     }));
     meetups = result.Items || [];
-    
+
     // Further filter by status if provided
     if (status) {
       meetups = meetups.filter(m => m.status === status);
@@ -200,19 +203,26 @@ async function listMeetups(event) {
     }));
     meetups = result.Items || [];
   }
-  
+
   // Sort by date (newest first)
   meetups.sort((a, b) => {
     const dateA = new Date(a.date + 'T' + (a.time || '00:00'));
     const dateB = new Date(b.date + 'T' + (b.time || '00:00'));
     return dateB - dateA;
   });
-  
+
   // Auto-update status for past events
   const now = new Date();
   for (const meetup of meetups) {
+    if (meetup.status !== 'upcoming') continue;
+
     const eventDate = new Date(meetup.date + 'T' + (meetup.time || '00:00'));
-    if (eventDate < now && meetup.status === 'upcoming') {
+    const endDate = meetup.endDate ? new Date(meetup.endDate + 'T23:59:59') : null;
+
+    // Mark as completed if: event date has passed, OR endDate has passed
+    const shouldComplete = eventDate < now || (endDate && endDate < now);
+
+    if (shouldComplete) {
       // Update status to completed
       await docClient.send(new UpdateCommand({
         TableName: MEETUPS_TABLE,
@@ -229,7 +239,7 @@ async function listMeetups(event) {
       meetup.status = 'completed';
     }
   }
-  
+
   return createResponse(200, { meetups });
 }
 
@@ -239,18 +249,18 @@ async function getMeetup(id) {
     TableName: MEETUPS_TABLE,
     Key: { id }
   }));
-  
+
   if (!result.Item) {
     return createResponse(404, { error: 'Meetup not found' });
   }
-  
+
   return createResponse(200, { meetup: result.Item });
 }
 
 // Create meetup
 async function createMeetup(event) {
   const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
-  
+
   const {
     title,
     description,
@@ -271,48 +281,48 @@ async function createMeetup(event) {
     certificationGroupId,
     collegeId
   } = body;
-  
+
   // Validation
   if (!title || !date || !time || !type) {
-    return createResponse(400, { 
-      error: 'Missing required fields: title, date, time, type' 
+    return createResponse(400, {
+      error: 'Missing required fields: title, date, time, type'
     });
   }
-  
+
   // Validate sprint selection if type is skill-sprint
   if (type === 'skill-sprint' && !sprintId) {
-    return createResponse(400, { 
-      error: 'Sprint ID is required when type is skill-sprint' 
+    return createResponse(400, {
+      error: 'Sprint ID is required when type is skill-sprint'
     });
   }
-  
+
   // Validate certification group selection if type is certification-circle
   if (type === 'certification-circle' && !certificationGroupId) {
-    return createResponse(400, { 
-      error: 'Certification Group ID is required when type is certification-circle' 
+    return createResponse(400, {
+      error: 'Certification Group ID is required when type is certification-circle'
     });
   }
-  
+
   // Validate college selection if type is college-champ
   if (type === 'college-champ' && !collegeId) {
-    return createResponse(400, { 
-      error: 'College ID is required when type is college-champ' 
+    return createResponse(400, {
+      error: 'College ID is required when type is college-champ'
     });
   }
-  
+
   // Generate ID
   const id = `meetup-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  
+
   const now = new Date().toISOString();
   const eventDate = new Date(date + 'T' + time);
   const isPast = eventDate < new Date();
-  
+
   // Determine initial status
   let status = 'draft'; // Always start as draft
-  
+
   // Auto-register organizers, speakers, and volunteers
   const autoRegisteredUsers = new Set();
-  
+
   // Add speakers
   if (speakers && Array.isArray(speakers)) {
     speakers.forEach(speaker => {
@@ -321,7 +331,7 @@ async function createMeetup(event) {
       }
     });
   }
-  
+
   // Add hosts (organizers)
   if (hosts && Array.isArray(hosts)) {
     hosts.forEach(host => {
@@ -330,7 +340,7 @@ async function createMeetup(event) {
       }
     });
   }
-  
+
   // Add volunteers
   if (volunteers && Array.isArray(volunteers)) {
     volunteers.forEach(volunteer => {
@@ -339,7 +349,7 @@ async function createMeetup(event) {
       }
     });
   }
-  
+
   const registeredUsers = Array.from(autoRegisteredUsers);
   const attendees = registeredUsers.length;
 
@@ -369,23 +379,23 @@ async function createMeetup(event) {
     createdAt: now,
     updatedAt: now
   };
-  
+
   await docClient.send(new PutCommand({
     TableName: MEETUPS_TABLE,
     Item: meetup
   }));
-  
+
   // If college-champ type, add event to college's hostedEvents
   if (type === 'college-champ' && collegeId) {
     try {
       const COLLEGES_TABLE = process.env.COLLEGES_TABLE_NAME || 'awsug-colleges';
-      
+
       // Get college
       const college = await docClient.send(new GetCommand({
         TableName: COLLEGES_TABLE,
         Key: { id: collegeId }
       }));
-      
+
       if (college.Item) {
         const hostedEvents = college.Item.hostedEvents || [];
         hostedEvents.push({
@@ -398,7 +408,7 @@ async function createMeetup(event) {
           pointsAwarded: 0,
           status: 'upcoming'
         });
-        
+
         await docClient.send(new UpdateCommand({
           TableName: COLLEGES_TABLE,
           Key: { id: collegeId },
@@ -414,35 +424,35 @@ async function createMeetup(event) {
       // Don't fail the meetup creation if college update fails
     }
   }
-  
+
   return createResponse(201, { meetup });
 }
 
 // Update meetup
 async function updateMeetup(id, event) {
   const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
-  
+
   // Check if meetup exists
   const existing = await docClient.send(new GetCommand({
     TableName: MEETUPS_TABLE,
     Key: { id }
   }));
-  
+
   if (!existing.Item) {
     return createResponse(404, { error: 'Meetup not found' });
   }
-  
+
   // Build update expression
   const updateExpressions = [];
   const expressionAttributeNames = {};
   const expressionAttributeValues = {};
-  
+
   const allowedFields = [
     'title', 'description', 'richDescription', 'date', 'time', 'duration', 'type',
     'location', 'meetingLink', 'meetupUrl', 'image', 'maxAttendees',
-    'speakers', 'hosts', 'volunteers', 'sprintId', 'certificationGroupId'
+    'speakers', 'hosts', 'volunteers', 'sprintId', 'certificationGroupId', 'endDate'
   ];
-  
+
   allowedFields.forEach(field => {
     if (body[field] !== undefined) {
       updateExpressions.push(`#${field} = :${field}`);
@@ -450,11 +460,11 @@ async function updateMeetup(id, event) {
       expressionAttributeValues[`:${field}`] = body[field];
     }
   });
-  
+
   // Auto-register organizers, speakers, and volunteers when they are updated
   if (body.speakers || body.hosts || body.volunteers) {
     const autoRegisteredUsers = new Set(existing.Item.registeredUsers || []);
-    
+
     // Add speakers
     if (body.speakers && Array.isArray(body.speakers)) {
       body.speakers.forEach(speaker => {
@@ -470,7 +480,7 @@ async function updateMeetup(id, event) {
         }
       });
     }
-    
+
     // Add hosts (organizers)
     if (body.hosts && Array.isArray(body.hosts)) {
       body.hosts.forEach(host => {
@@ -486,7 +496,7 @@ async function updateMeetup(id, event) {
         }
       });
     }
-    
+
     // Add volunteers
     if (body.volunteers && Array.isArray(body.volunteers)) {
       body.volunteers.forEach(volunteer => {
@@ -502,15 +512,15 @@ async function updateMeetup(id, event) {
         }
       });
     }
-    
+
     const registeredUsers = Array.from(autoRegisteredUsers);
     updateExpressions.push('registeredUsers = :registeredUsers');
     expressionAttributeValues[':registeredUsers'] = registeredUsers;
-    
+
     updateExpressions.push('attendees = :attendees');
     expressionAttributeValues[':attendees'] = registeredUsers.length;
   }
-  
+
   // Handle sprintId - add it if provided, remove it if explicitly set to null
   if (body.sprintId === null) {
     // Remove the sprintId attribute
@@ -520,7 +530,7 @@ async function updateMeetup(id, event) {
     updateExpressions.push('sprintId = :sprintId');
     expressionAttributeValues[':sprintId'] = body.sprintId;
   }
-  
+
   // Handle certificationGroupId - add it if provided, remove it if explicitly set to null
   if (body.certificationGroupId === null) {
     // Remove the certificationGroupId attribute
@@ -530,15 +540,15 @@ async function updateMeetup(id, event) {
     updateExpressions.push('certificationGroupId = :certificationGroupId');
     expressionAttributeValues[':certificationGroupId'] = body.certificationGroupId;
   }
-  
+
   // Always update updatedAt
   updateExpressions.push('updatedAt = :updatedAt');
   expressionAttributeValues[':updatedAt'] = new Date().toISOString();
-  
+
   if (updateExpressions.length === 0) {
     return createResponse(400, { error: 'No fields to update' });
   }
-  
+
   await docClient.send(new UpdateCommand({
     TableName: MEETUPS_TABLE,
     Key: { id },
@@ -546,13 +556,13 @@ async function updateMeetup(id, event) {
     ExpressionAttributeNames: expressionAttributeNames,
     ExpressionAttributeValues: expressionAttributeValues
   }));
-  
+
   // Fetch updated meetup
   const updated = await docClient.send(new GetCommand({
     TableName: MEETUPS_TABLE,
     Key: { id }
   }));
-  
+
   return createResponse(200, { meetup: updated.Item });
 }
 
@@ -560,21 +570,21 @@ async function updateMeetup(id, event) {
 async function publishMeetup(id, event) {
   const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
   const { publish } = body; // true to publish, false to unpublish
-  
+
   // Check if meetup exists
   const existing = await docClient.send(new GetCommand({
     TableName: MEETUPS_TABLE,
     Key: { id }
   }));
-  
+
   if (!existing.Item) {
     return createResponse(404, { error: 'Meetup not found' });
   }
-  
+
   const meetup = existing.Item;
   const eventDate = new Date(meetup.date + 'T' + (meetup.time || '00:00'));
   const now = new Date();
-  
+
   let newStatus;
   if (publish) {
     // Publish: change from draft to upcoming (if not past) or completed (if past)
@@ -587,7 +597,7 @@ async function publishMeetup(id, event) {
     // Unpublish: change to draft
     newStatus = 'draft';
   }
-  
+
   await docClient.send(new UpdateCommand({
     TableName: MEETUPS_TABLE,
     Key: { id },
@@ -600,13 +610,13 @@ async function publishMeetup(id, event) {
       ':updatedAt': new Date().toISOString()
     }
   }));
-  
+
   // Fetch updated meetup
   const updated = await docClient.send(new GetCommand({
     TableName: MEETUPS_TABLE,
     Key: { id }
   }));
-  
+
   return createResponse(200, { meetup: updated.Item });
 }
 
@@ -614,42 +624,42 @@ async function publishMeetup(id, event) {
 async function registerForMeetup(id, event) {
   const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
   const { userId } = body;
-  
+
   if (!userId) {
     return createResponse(400, { error: 'Missing required field: userId' });
   }
-  
+
   // Check if meetup exists
   const existing = await docClient.send(new GetCommand({
     TableName: MEETUPS_TABLE,
     Key: { id }
   }));
-  
+
   if (!existing.Item) {
     return createResponse(404, { error: 'Meetup not found' });
   }
-  
+
   const meetup = existing.Item;
-  
+
   // Check if user is already registered
   const registeredUsers = meetup.registeredUsers || [];
   if (registeredUsers.includes(userId)) {
-    return createResponse(200, { 
+    return createResponse(200, {
       meetup: meetup,
       message: 'User already registered',
       alreadyRegistered: true
     });
   }
-  
+
   // Check if meetup is at capacity
   if (meetup.maxAttendees && registeredUsers.length >= meetup.maxAttendees) {
     return createResponse(400, { error: 'Meetup is at full capacity' });
   }
-  
+
   // Add user to registeredUsers array and increment attendees
   const updatedRegisteredUsers = [...registeredUsers, userId];
   const newAttendeesCount = updatedRegisteredUsers.length;
-  
+
   await docClient.send(new UpdateCommand({
     TableName: MEETUPS_TABLE,
     Key: { id },
@@ -660,14 +670,14 @@ async function registerForMeetup(id, event) {
       ':updatedAt': new Date().toISOString()
     }
   }));
-  
+
   // Fetch updated meetup
   const updated = await docClient.send(new GetCommand({
     TableName: MEETUPS_TABLE,
     Key: { id }
   }));
-  
-  return createResponse(200, { 
+
+  return createResponse(200, {
     meetup: updated.Item,
     message: 'Successfully registered for meetup',
     alreadyRegistered: false
@@ -681,29 +691,29 @@ async function getMeetupParticipants(id) {
     TableName: MEETUPS_TABLE,
     Key: { id }
   }));
-  
+
   if (!meetupResult.Item) {
     return createResponse(404, { error: 'Meetup not found' });
   }
-  
+
   const meetup = meetupResult.Item;
   const registeredUsers = meetup.registeredUsers || [];
-  
+
   if (registeredUsers.length === 0) {
     return createResponse(200, { participants: [] });
   }
-  
+
   // Fetch user details for all registered users
   const USERS_TABLE = process.env.USERS_TABLE_NAME || 'awsug-users';
   const participants = [];
-  
+
   for (const userId of registeredUsers) {
     try {
       const userResult = await docClient.send(new GetCommand({
         TableName: USERS_TABLE,
         Key: { userId }
       }));
-      
+
       if (userResult.Item) {
         const user = userResult.Item;
         participants.push({
@@ -720,7 +730,7 @@ async function getMeetupParticipants(id) {
       // Continue with other users even if one fails
     }
   }
-  
+
   return createResponse(200, { participants });
 }
 
@@ -731,52 +741,52 @@ async function deleteMeetup(id) {
     TableName: MEETUPS_TABLE,
     Key: { id }
   }));
-  
+
   if (!existing.Item) {
     return createResponse(404, { error: 'Meetup not found' });
   }
-  
+
   // Delete the meetup
   await docClient.send(new DeleteCommand({
     TableName: MEETUPS_TABLE,
     Key: { id }
   }));
-  
+
   return createResponse(200, { message: 'Meetup deleted successfully' });
 }
 
 // Mark attendance for meetup
 async function markAttendance(id, event) {
   const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
-  const { 
-    emails, 
+  const {
+    emails,
     pointsPerAttendee = 50,
     awardVolunteerPoints = true,
     volunteerPoints = 75,
     awardSpeakerPoints = true,
     speakerPoints = 100
   } = body;
-  
+
   if (!emails || !Array.isArray(emails) || emails.length === 0) {
     return createResponse(400, { error: 'Missing required field: emails (array)' });
   }
-  
+
   // Check if meetup exists
   const meetupResult = await docClient.send(new GetCommand({
     TableName: MEETUPS_TABLE,
     Key: { id }
   }));
-  
+
   if (!meetupResult.Item) {
     return createResponse(404, { error: 'Meetup not found' });
   }
-  
+
   const meetup = meetupResult.Item;
-  
+
   // Get volunteer and speaker user IDs
   const volunteerIds = new Set((meetup.volunteers || []).map(v => v.userId).filter(Boolean));
   const speakerIds = new Set((meetup.speakers || []).map(s => s.userId).filter(Boolean));
-  
+
   // Fetch users by email
   const USERS_TABLE = process.env.USERS_TABLE_NAME || 'awsug-users';
   const results = {
@@ -787,11 +797,11 @@ async function markAttendance(id, event) {
     volunteersAwarded: [],
     speakersAwarded: []
   };
-  
+
   // Get current attendedUsers list
   const attendedUsers = meetup.attendedUsers || [];
   const attendedEmails = new Set();
-  
+
   // Build a map of already attended users
   for (const userId of attendedUsers) {
     try {
@@ -806,21 +816,21 @@ async function markAttendance(id, event) {
       console.error(`Error fetching user ${userId}:`, error);
     }
   }
-  
+
   // Process each email
   for (const email of emails) {
     const normalizedEmail = email.trim().toLowerCase();
-    
+
     if (!normalizedEmail) {
       continue;
     }
-    
+
     // Check if already marked
     if (attendedEmails.has(normalizedEmail)) {
       results.alreadyMarked.push(email);
       continue;
     }
-    
+
     try {
       // Find user by email using GSI
       const userQueryResult = await docClient.send(new QueryCommand({
@@ -831,23 +841,23 @@ async function markAttendance(id, event) {
           ':email': normalizedEmail
         }
       }));
-      
+
       if (!userQueryResult.Items || userQueryResult.Items.length === 0) {
         results.notFound.push(email);
         continue;
       }
-      
+
       const user = userQueryResult.Items[0];
       const userId = user.userId;
-      
+
       // Add to attendedUsers list
       attendedUsers.push(userId);
       attendedEmails.add(normalizedEmail);
-      
+
       // Determine points based on role
       let pointsToAward = pointsPerAttendee;
       let role = 'attendee';
-      
+
       if (speakerIds.has(userId) && awardSpeakerPoints) {
         pointsToAward = speakerPoints;
         role = 'speaker';
@@ -855,11 +865,11 @@ async function markAttendance(id, event) {
         pointsToAward = volunteerPoints;
         role = 'volunteer';
       }
-      
+
       // Award points to user
       const currentPoints = user.points || 0;
       const newPoints = currentPoints + pointsToAward;
-      
+
       // Create point activity
       const pointActivity = {
         id: `pa-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -870,10 +880,10 @@ async function markAttendance(id, event) {
         awardedBy: event.userContext?.userId || 'system',
         awardedAt: new Date().toISOString()
       };
-      
+
       const pointActivities = user.pointActivities || [];
       pointActivities.push(pointActivity);
-      
+
       // Update user's points and add activity
       const activity = {
         type: 'meetup_attended',
@@ -882,10 +892,10 @@ async function markAttendance(id, event) {
         points: pointsToAward,
         timestamp: new Date().toISOString()
       };
-      
+
       const userActivities = user.activities || [];
       userActivities.push(activity);
-      
+
       await docClient.send(new UpdateCommand({
         TableName: USERS_TABLE,
         Key: { userId },
@@ -897,7 +907,7 @@ async function markAttendance(id, event) {
           ':updatedAt': new Date().toISOString()
         }
       }));
-      
+
       const result = {
         email,
         userId,
@@ -906,9 +916,9 @@ async function markAttendance(id, event) {
         pointsAwarded: pointsToAward,
         newTotal: newPoints
       };
-      
+
       results.success.push(result);
-      
+
       if (role === 'volunteer') {
         results.volunteersAwarded.push(result);
       } else if (role === 'speaker') {
@@ -922,7 +932,7 @@ async function markAttendance(id, event) {
       });
     }
   }
-  
+
   // Update meetup with new attendedUsers list
   await docClient.send(new UpdateCommand({
     TableName: MEETUPS_TABLE,
@@ -933,7 +943,7 @@ async function markAttendance(id, event) {
       ':updatedAt': new Date().toISOString()
     }
   }));
-  
+
   return createResponse(200, {
     message: 'Attendance marked successfully',
     results,
@@ -950,3 +960,56 @@ async function markAttendance(id, event) {
   });
 }
 
+// End a meetup event
+async function endMeetup(id, event) {
+  const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
+  const { endDate } = body; // ISO date string (e.g., '2026-03-10')
+
+  // Check if meetup exists
+  const existing = await docClient.send(new GetCommand({
+    TableName: MEETUPS_TABLE,
+    Key: { id }
+  }));
+
+  if (!existing.Item) {
+    return createResponse(404, { error: 'Meetup not found' });
+  }
+
+  const meetup = existing.Item;
+  const now = new Date();
+  const endDateObj = endDate ? new Date(endDate + 'T23:59:59') : now;
+
+  // If end date is in the past or today, mark as completed immediately
+  // If end date is in the future, store it and keep status as upcoming
+  const shouldCompleteNow = endDateObj <= now;
+  const newStatus = shouldCompleteNow ? 'completed' : meetup.status;
+
+  const updateExpression = 'SET #status = :status, endDate = :endDate, updatedAt = :updatedAt';
+
+  await docClient.send(new UpdateCommand({
+    TableName: MEETUPS_TABLE,
+    Key: { id },
+    UpdateExpression: updateExpression,
+    ExpressionAttributeNames: {
+      '#status': 'status'
+    },
+    ExpressionAttributeValues: {
+      ':status': newStatus,
+      ':endDate': endDate || now.toISOString().split('T')[0],
+      ':updatedAt': now.toISOString()
+    }
+  }));
+
+  // Fetch updated meetup
+  const updated = await docClient.send(new GetCommand({
+    TableName: MEETUPS_TABLE,
+    Key: { id }
+  }));
+
+  return createResponse(200, {
+    meetup: updated.Item,
+    message: shouldCompleteNow
+      ? 'Meetup ended successfully'
+      : `Meetup scheduled to end on ${endDate}`
+  });
+}

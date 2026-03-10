@@ -1688,6 +1688,7 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
     sprintId: '',
     certificationGroupId: '',
     collegeId: '',
+    sessionPoints: '',
     endDate: ''
   });
 
@@ -1781,6 +1782,7 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
         sprintId: (formData.type === 'skill-sprint' && formData.sprintId) ? formData.sprintId : undefined,
         certificationGroupId: (formData.type === 'certification-circle' && formData.certificationGroupId) ? formData.certificationGroupId : undefined,
         collegeId: (formData.type === 'college-champ' && formData.collegeId) ? formData.collegeId : undefined,
+        sessionPoints: (formData.type === 'college-champ' && formData.sessionPoints) ? parseInt(formData.sessionPoints) : undefined,
         endDate: formData.endDate || undefined
       };
 
@@ -1806,6 +1808,7 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
         sprintId: '',
         certificationGroupId: '',
         collegeId: '',
+        sessionPoints: '',
         endDate: ''
       });
       setPeopleData({
@@ -1943,34 +1946,51 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
 
           {/* College Selection - Only show if type is college-champ */}
           {formData.type === 'college-champ' && (
-            <div className="space-y-2">
-              <Label>Select College *</Label>
-              <Select
-                value={formData.collegeId}
-                onValueChange={(value) => setFormData({ ...formData, collegeId: value })}
-                required
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Choose a college..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {colleges.length === 0 ? (
-                    <SelectItem value="none" disabled>No colleges available</SelectItem>
-                  ) : (
-                    colleges.map((college) => (
-                      <SelectItem key={college.id} value={college.id}>
-                        {college.name} ({college.shortName})
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
-              {colleges.length === 0 && (
-                <p className="text-xs text-amber-600">
-                  ⚠️ No colleges found. Please register a college first.
+            <>
+              <div className="space-y-2">
+                <Label>Select College *</Label>
+                <Select
+                  value={formData.collegeId}
+                  onValueChange={(value) => setFormData({ ...formData, collegeId: value })}
+                  required
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose a college..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {colleges.length === 0 ? (
+                      <SelectItem value="none" disabled>No colleges available</SelectItem>
+                    ) : (
+                      colleges.map((college) => (
+                        <SelectItem key={college.id} value={college.id}>
+                          {college.name} ({college.shortName})
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+                {colleges.length === 0 && (
+                  <p className="text-xs text-amber-600">
+                    ⚠️ No colleges found. Please register a college first.
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label>Session Points *</Label>
+                <Input
+                  type="number"
+                  placeholder="e.g., 100"
+                  value={formData.sessionPoints}
+                  onChange={(e) => setFormData({ ...formData, sessionPoints: e.target.value })}
+                  min="0"
+                  required
+                />
+                <p className="text-xs text-muted-foreground">
+                  Points awarded to the college's total score when this session is completed.
                 </p>
-              )}
-            </div>
+              </div>
+            </>
           )}
 
           <div className="grid grid-cols-2 gap-4">

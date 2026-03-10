@@ -1012,27 +1012,44 @@ async function endMeetup(id, event) {
       }));
 
       if (college.Item) {
+        let updateExpression = 'SET hostedEvents = :events, updatedAt = :updatedAt';
+        const expressionAttributeValues = {
+          ':updatedAt': now.toISOString()
+        };
+
         const hostedEvents = college.Item.hostedEvents || [];
         const eventIndex = hostedEvents.findIndex(e => e.id === id);
 
+        // Award points if configured
+        const pointsToAward = meetup.sessionPoints || 0;
+
         if (eventIndex !== -1) {
-          // Update the existing event's status and attendees
+          // Update the existing event's status, attendees, and points awarded
           hostedEvents[eventIndex].status = 'completed';
           hostedEvents[eventIndex].attendees = (meetup.attendedUsers || []).length;
+          hostedEvents[eventIndex].pointsAwarded = pointsToAward;
 
+          expressionAttributeValues[':events'] = hostedEvents;
+        }
+
+        // Add to totalPoints if there are points to award
+        if (pointsToAward > 0) {
+          const currentTotal = college.Item.totalPoints || 0;
+          updateExpression += ', totalPoints = :totalPoints';
+          expressionAttributeValues[':totalPoints'] = currentTotal + pointsToAward;
+        }
+
+        if (eventIndex !== -1 || pointsToAward > 0) {
           await docClient.send(new UpdateCommand({
             TableName: COLLEGES_TABLE,
             Key: { id: meetup.collegeId },
-            UpdateExpression: 'SET hostedEvents = :events, updatedAt = :updatedAt',
-            ExpressionAttributeValues: {
-              ':events': hostedEvents,
-              ':updatedAt': now.toISOString()
-            }
+            UpdateExpression: updateExpression,
+            ExpressionAttributeValues: expressionAttributeValues
           }));
         }
       }
     } catch (error) {
-      console.error('Error updating college hostedEvents on meetup end:', error);
+      console.error('Error updating college hostedEvents and points on meetup end:', error);
       // Don't fail the end operation if college update fails
     }
   }

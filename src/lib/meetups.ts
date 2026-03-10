@@ -23,6 +23,7 @@ export interface CreateMeetupData {
   certificationGroupId?: string;
   collegeId?: string;
   endDate?: string;
+  sessionPoints?: number;
 }
 
 export interface UpdateMeetupData extends Partial<CreateMeetupData> {

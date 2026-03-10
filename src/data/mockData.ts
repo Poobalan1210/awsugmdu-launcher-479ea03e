@@ -112,7 +112,7 @@ export interface UserActivity {
 }
 
 // Badge criteria types for auto-awarding
-export type BadgeCriteriaType = 
+export type BadgeCriteriaType =
   | 'manual' // Only awarded manually by admins
   | 'sprints_completed' // Complete X sprints
   | 'meetups_attended' // Attend X meetups
@@ -241,6 +241,8 @@ export interface Meetup {
   duration?: string;
   endDate?: string; // Date when the event ends/ended (ISO date string)
   sprintId?: string; // Link to sprint if type is 'skill-sprint'
+  collegeId?: string; // Link to college if type is 'college-champ'
+  sessionPoints?: number; // Total points awarded to college for this session
 }
 
 export interface MeetupPerson {
@@ -1263,13 +1265,17 @@ export const mockCertificationGroups: CertificationGroup[] = [
       { id: 'gs1', groupId: 'cg1', title: 'Weekly Study Session', description: 'Going through Domain 1: Cloud Concepts', date: '2025-01-18', time: '19:00 IST', hostId: '1', hostName: 'Priya Sharma', meetingLink: 'https://meet.example.com/cp-study' }
     ],
     messages: [
-      { id: 'gm1', groupId: 'cg1', userId: '1', userName: 'Priya Sharma', userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Priya', content: 'Welcome everyone! Let us use this channel to discuss Cloud Practitioner exam prep. Share resources, ask questions, and support each other!', createdAt: '2025-01-01', replies: [
-        { id: 'gr1', messageId: 'gm1', userId: '5', userName: 'Sneha Reddy', userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sneha', content: 'Thanks for setting this up! Super helpful.', createdAt: '2025-01-01', likes: 3 }
-      ], likes: 12, isPinned: true },
-      { id: 'gm2', groupId: 'cg1', userId: '6', userName: 'Arjun Nair', userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Arjun', content: 'Anyone have good resources for understanding the shared responsibility model?', createdAt: '2025-01-05', replies: [
-        { id: 'gr2', messageId: 'gm2', userId: '1', userName: 'Priya Sharma', userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Priya', content: 'Check out the AWS Well-Architected Framework whitepaper. It explains this really well!', createdAt: '2025-01-05', likes: 5 },
-        { id: 'gr3', messageId: 'gm2', userId: '3', userName: 'Ananya Patel', userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Ananya', content: 'Also Stephane Maarek has a great video on this topic.', createdAt: '2025-01-05', likes: 4 }
-      ], likes: 6 }
+      {
+        id: 'gm1', groupId: 'cg1', userId: '1', userName: 'Priya Sharma', userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Priya', content: 'Welcome everyone! Let us use this channel to discuss Cloud Practitioner exam prep. Share resources, ask questions, and support each other!', createdAt: '2025-01-01', replies: [
+          { id: 'gr1', messageId: 'gm1', userId: '5', userName: 'Sneha Reddy', userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sneha', content: 'Thanks for setting this up! Super helpful.', createdAt: '2025-01-01', likes: 3 }
+        ], likes: 12, isPinned: true
+      },
+      {
+        id: 'gm2', groupId: 'cg1', userId: '6', userName: 'Arjun Nair', userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Arjun', content: 'Anyone have good resources for understanding the shared responsibility model?', createdAt: '2025-01-05', replies: [
+          { id: 'gr2', messageId: 'gm2', userId: '1', userName: 'Priya Sharma', userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Priya', content: 'Check out the AWS Well-Architected Framework whitepaper. It explains this really well!', createdAt: '2025-01-05', likes: 5 },
+          { id: 'gr3', messageId: 'gm2', userId: '3', userName: 'Ananya Patel', userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Ananya', content: 'Also Stephane Maarek has a great video on this topic.', createdAt: '2025-01-05', likes: 4 }
+        ], likes: 6
+      }
     ]
   },
   {
@@ -1297,9 +1303,11 @@ export const mockCertificationGroups: CertificationGroup[] = [
     color: 'bg-blue-500/10 text-blue-600 border-blue-500/30',
     scheduledSessions: [],
     messages: [
-      { id: 'gm4', groupId: 'cg3', userId: '5', userName: 'Sneha Reddy', userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sneha', content: 'Just passed my DVA-C02! Happy to share my study notes.', createdAt: '2025-01-08', replies: [
-        { id: 'gr4', messageId: 'gm4', userId: '6', userName: 'Arjun Nair', userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Arjun', content: 'Congrats! Would love to see your notes!', createdAt: '2025-01-08', likes: 2 }
-      ], likes: 15 }
+      {
+        id: 'gm4', groupId: 'cg3', userId: '5', userName: 'Sneha Reddy', userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sneha', content: 'Just passed my DVA-C02! Happy to share my study notes.', createdAt: '2025-01-08', replies: [
+          { id: 'gr4', messageId: 'gm4', userId: '6', userName: 'Arjun Nair', userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Arjun', content: 'Congrats! Would love to see your notes!', createdAt: '2025-01-08', likes: 2 }
+        ], likes: 15
+      }
     ]
   },
   {
@@ -1651,18 +1659,18 @@ export const getUserByIdAsync = async (id: string): Promise<User | undefined> =>
   try {
     // Import dynamically to avoid circular dependency
     const { getAllUsers } = await import('@/lib/userProfile');
-    
+
     // Check cache
     const now = Date.now();
     if (usersCache && (now - cacheTimestamp) < CACHE_DURATION) {
       return usersCache.find(user => user.id === id);
     }
-    
+
     // Fetch fresh data
     const users = await getAllUsers();
     usersCache = users;
     cacheTimestamp = now;
-    
+
     return users.find(user => user.id === id);
   } catch (error) {
     console.error('Failed to fetch user:', error);
@@ -1697,7 +1705,7 @@ export const getEventLink = (event: Event): string => {
 // NOTE: This must be defined AFTER mockColleges to avoid circular dependency
 export const generateUnifiedEvents = (): Event[] => {
   const events: Event[] = [];
-  
+
   // Add Sprint Sessions
   mockSprints.forEach(sprint => {
     sprint.sessions.forEach(session => {
@@ -1715,7 +1723,7 @@ export const generateUnifiedEvents = (): Event[] => {
       });
     });
   });
-  
+
   // Add Meetups
   mockMeetups.forEach(meetup => {
     events.push({
@@ -1725,14 +1733,14 @@ export const generateUnifiedEvents = (): Event[] => {
       date: meetup.date,
       time: meetup.time,
       type: meetup.type,
-      category: meetup.title.toLowerCase().includes('workshop') ? 'workshop' : 
-                meetup.title.toLowerCase().includes('certification') ? 'certification' : 'meetup',
+      category: meetup.title.toLowerCase().includes('workshop') ? 'workshop' :
+        meetup.title.toLowerCase().includes('certification') ? 'certification' : 'meetup',
       attendees: meetup.attendees,
       image: meetup.image,
       linkedEventId: meetup.id
     });
   });
-  
+
   // Add College Champs Events
   mockColleges.forEach(college => {
     college.hostedEvents.forEach(event => {
@@ -1741,15 +1749,15 @@ export const generateUnifiedEvents = (): Event[] => {
         title: `${event.title} - ${college.shortName}`,
         description: event.description,
         date: event.date,
-        type: event.type === 'webinar' ? 'virtual' : 
-              event.type === 'hackathon' ? 'hybrid' : 'in-person',
+        type: event.type === 'webinar' ? 'virtual' :
+          event.type === 'hackathon' ? 'hybrid' : 'in-person',
         category: 'champs',
         attendees: event.attendees,
         linkedEventId: college.id
       });
     });
   });
-  
+
   // Sort by date (newest first for upcoming, oldest first for past)
   return events.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 };

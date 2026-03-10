@@ -1304,6 +1304,7 @@ async function reviewSubmission(submissionId, requestBody) {
 // ============ HELPER FUNCTIONS ============
 async function updateUserCollegeInfo(userId, collegeId, isLead) {
   try {
+    // Update college info on user
     await docClient.send(new UpdateCommand({
       TableName: USERS_TABLE,
       Key: { userId },
@@ -1314,6 +1315,41 @@ async function updateUserCollegeInfo(userId, collegeId, isLead) {
         ':updatedAt': new Date().toISOString(),
       },
     }));
+
+    // If user is a champs lead, ensure they have the 'champ' role for permissions
+    if (isLead) {
+      const userResult = await docClient.send(new GetCommand({
+        TableName: USERS_TABLE,
+        Key: { userId },
+      }));
+
+      if (userResult.Item) {
+        const roles = userResult.Item.roles || [];
+        const hasChampRole = roles.some(r => r.role === 'champ');
+
+        if (!hasChampRole) {
+          const newRole = {
+            id: `role-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            userId,
+            role: 'champ',
+            assignedAt: new Date().toISOString(),
+            assignedBy: 'system',
+          };
+          roles.push(newRole);
+
+          await docClient.send(new UpdateCommand({
+            TableName: USERS_TABLE,
+            Key: { userId },
+            UpdateExpression: 'SET #roles = :roles, updatedAt = :updatedAt',
+            ExpressionAttributeNames: { '#roles': 'roles' },
+            ExpressionAttributeValues: {
+              ':roles': roles,
+              ':updatedAt': new Date().toISOString(),
+            },
+          }));
+        }
+      }
+    }
   } catch (error) {
     console.error('Error updating user college info:', error);
     // Don't throw - this is a non-critical operation

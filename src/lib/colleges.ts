@@ -34,6 +34,13 @@ export interface CollegeTaskSubmission {
   pointsAwarded?: number;
 }
 
+export interface CollegePointActivity {
+  id: string;
+  points: number;
+  reason: string;
+  awardedAt: string;
+}
+
 export interface CollegeEvent {
   id: string;
   title: string;
@@ -60,6 +67,7 @@ export interface College {
   members: string[];
   assignedTaskIds?: string[]; // College-specific task IDs (in addition to default tasks)
   logo?: string;
+  pointActivities?: CollegePointActivity[];
   createdAt?: string;
   updatedAt?: string;
 }
@@ -86,6 +94,7 @@ export interface UpdateCollegeData {
   completedTasks?: CollegeTaskCompletion[];
   hostedEvents?: CollegeEvent[];
   members?: string[];
+  pointActivities?: CollegePointActivity[];
 }
 
 // Get all colleges

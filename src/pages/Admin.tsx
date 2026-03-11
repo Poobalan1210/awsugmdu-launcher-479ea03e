@@ -3253,9 +3253,17 @@ function AwardPointsDialog({ college, onSuccess }: { college: College; onSuccess
 
       // Update college with new total points
       const newTotalPoints = college.totalPoints + formData.points;
+      
+      const newActivity = {
+        id: `pa-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        points: formData.points,
+        reason: formData.reason,
+        awardedAt: new Date().toISOString()
+      };
 
       await updateCollege(college.id, {
-        totalPoints: newTotalPoints
+        totalPoints: newTotalPoints,
+        pointActivities: [...(college.pointActivities || []), newActivity]
       });
 
       toast.success(`${formData.points} points awarded to ${college.name}!`);

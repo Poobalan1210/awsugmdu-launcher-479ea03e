@@ -275,7 +275,7 @@ async function updateCollege(collegeId, requestBody) {
     // Fields that can be updated
     const updatableFields = [
       'name', 'shortName', 'location', 'champsLead', 'champsLeadId',
-      'totalPoints', 'rank', 'logo', 'completedTasks', 'hostedEvents', 'members'
+      'totalPoints', 'rank', 'logo', 'completedTasks', 'hostedEvents', 'members', 'pointActivities'
     ];
     
     updatableFields.forEach(field => {

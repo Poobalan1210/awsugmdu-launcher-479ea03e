@@ -567,7 +567,7 @@ function CollegeDetailView({ college, rank }: { college: College, rank: number }
             // Build unified activity feed from tasks + events
             type ActivityItem = {
               id: string;
-              type: 'task' | 'event';
+              type: 'task' | 'event' | 'adhoc';
               title: string;
               description?: string;
               date: string;
@@ -611,6 +611,18 @@ function CollegeDetailView({ college, rank }: { college: College, rank: number }
               });
             });
 
+            // Add point activities
+            college.pointActivities?.forEach((pa) => {
+              activities.push({
+                id: pa.id,
+                type: 'adhoc',
+                title: 'Points Awarded',
+                description: pa.reason,
+                date: pa.awardedAt,
+                points: pa.points,
+              });
+            });
+
             // Sort by date descending (most recent first)
             activities.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
@@ -637,10 +649,14 @@ function CollegeDetailView({ college, rank }: { college: College, rank: number }
                         <div className={`flex items-center justify-center w-9 h-9 rounded-full flex-shrink-0 mt-0.5 ${
                           item.type === 'task'
                             ? 'bg-green-500/10 text-green-600'
+                            : item.type === 'adhoc'
+                            ? 'bg-amber-500/10 text-amber-600'
                             : 'bg-blue-500/10 text-blue-600'
                         }`}>
                           {item.type === 'task' ? (
                             <CheckCircle2 className="h-4 w-4" />
+                          ) : item.type === 'adhoc' ? (
+                            <Star className="h-4 w-4" />
                           ) : (
                             <Calendar className="h-4 w-4" />
                           )}

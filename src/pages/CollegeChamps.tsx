@@ -675,10 +675,7 @@ function CollegeDetailView({ college, rank }: { college: College, rank: number }
                               <Clock className="h-3 w-3" />
                               {new Date(item.date).toLocaleDateString()}
                             </span>
-                            {item.type === 'task' && item.category && (
-                              <span className="capitalize text-muted-foreground">{item.category}</span>
-                            )}
-                            {item.type === 'event' && item.attendees && item.attendees > 0 && (
+                            {item.type === 'event' && Number(item.attendees) > 0 && (
                               <span className="flex items-center gap-1">
                                 <Users className="h-3 w-3" />
                                 {item.attendees} attendees

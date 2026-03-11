@@ -648,6 +648,9 @@ function CollegeDetailView({ college, rank }: { college: College, rank: number }
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1 flex-wrap">
                             <span className="font-medium">{item.title}</span>
+                            {item.type === 'task' && (
+                              <Badge variant="secondary">Completed</Badge>
+                            )}
                             {item.type === 'task' && item.category && (
                               <Badge variant="outline" className={getCategoryColor(item.category as CollegeTask['category'])}>
                                 {getCategoryIcon(item.category as CollegeTask['category'])}
@@ -672,8 +675,8 @@ function CollegeDetailView({ college, rank }: { college: College, rank: number }
                               <Clock className="h-3 w-3" />
                               {new Date(item.date).toLocaleDateString()}
                             </span>
-                            {item.type === 'task' && (
-                              <span className="text-green-600 font-medium">Task completed</span>
+                            {item.type === 'task' && item.category && (
+                              <span className="capitalize text-muted-foreground">{item.category}</span>
                             )}
                             {item.type === 'event' && item.attendees && item.attendees > 0 && (
                               <span className="flex items-center gap-1">

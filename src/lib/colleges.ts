@@ -15,6 +15,7 @@ export interface CollegeTaskCompletion {
   taskId: string;
   completedAt: string;
   bonusPoints?: number;
+  taskPoints?: number;
 }
 
 export interface CollegeTaskSubmission {

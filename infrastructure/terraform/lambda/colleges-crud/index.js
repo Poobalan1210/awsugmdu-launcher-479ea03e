@@ -675,7 +675,8 @@ async function completeTask(collegeId, requestBody) {
     const taskCompletion = {
       taskId,
       completedAt: new Date().toISOString(),
-      ...(bonusPoints > 0 && { bonusPoints })
+      ...(bonusPoints > 0 && { bonusPoints }),
+      ...(taskPoints !== undefined && { taskPoints })
     };
     
     completedTasks.push(taskCompletion);

@@ -590,7 +590,7 @@ function CollegeDetailView({ college, rank }: { college: College, rank: number }
                   title: task.title,
                   description: task.description,
                   date: ct.completedAt,
-                  points: task.points + (ct.bonusPoints || 0),
+                  points: (ct.taskPoints !== undefined ? ct.taskPoints : task.points) + (ct.bonusPoints || 0),
                   category: task.category,
                 });
               }

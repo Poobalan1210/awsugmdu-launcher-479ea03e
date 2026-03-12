@@ -22,7 +22,7 @@ import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { SubmitTaskDialog } from '@/components/college-champs/SubmitTaskDialog';
 import { ShareButton } from '@/components/common/ShareButton';
-import { generateCollegeRankShare } from '@/lib/sharing';
+import { generateCollegeRankShare, generateCollegeActivityShare } from '@/lib/sharing';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -642,7 +642,16 @@ function CollegeDetailView({ college, rank }: { college: College, rank: number }
 
             return (
               <div className="space-y-3">
-                {activities.map((item) => (
+                {activities.map((item) => {
+                  const shareData = generateCollegeActivityShare(
+                    college.name,
+                    item.type,
+                    item.title,
+                    item.points,
+                    item.status === 'upcoming'
+                  );
+                  
+                  return (
                   <Card key={item.id} className="hover:shadow-sm transition-all">
                     <CardContent className="p-4">
                       <div className="flex items-start gap-3">
@@ -699,16 +708,27 @@ function CollegeDetailView({ college, rank }: { college: College, rank: number }
                             )}
                           </div>
                         </div>
-                        {item.points > 0 && (
-                          <Badge className="bg-amber-500 text-white flex-shrink-0">
-                            <Zap className="h-3 w-3 mr-1" />
-                            {item.points} pts
-                          </Badge>
-                        )}
+                        <div className="flex flex-col items-end gap-2 flex-shrink-0">
+                          {item.points > 0 && (
+                            <Badge className="bg-amber-500 text-white">
+                              <Zap className="h-3 w-3 mr-1" />
+                              {item.points} pts
+                            </Badge>
+                          )}
+                          {shareData && (
+                            <ShareButton 
+                              data={shareData}
+                              variant="outline"
+                              size="sm"
+                              className="h-8 shadow-sm"
+                            />
+                          )}
+                        </div>
                       </div>
                     </CardContent>
                   </Card>
-                ))}
+                  );
+                })}
               </div>
             );
           })()}

@@ -119,3 +119,106 @@ function getRankSuffix(rank: number): string {
   if (j === 3 && k !== 13) return 'rd';
   return 'th';
 }
+
+// Generate share data for varied profile activities
+export function generateProfileActivityShare(
+  userName: string,
+  activityType: string,
+  activityTitle: string,
+  activityLink?: string,
+  points?: number
+): AchievementShareData | null {
+  const url = activityLink ? `${BASE_URL}${activityLink}` : `${BASE_URL}/profile`;
+  const hashtags = ['AWSUG', 'AWS', 'Community'];
+  
+  if (activityType === 'sprint_attended') {
+    return {
+      title: `${userName} attended ${activityTitle}`,
+      text: `I participated in the "${activityTitle}" skill sprint with AWS User Group! 🚀`,
+      url,
+      hashtags: [...hashtags, 'SkillSprint', 'Learning']
+    };
+  }
+  
+  if (activityType === 'sprint_spoke') {
+    return {
+      title: `${userName} spoke at ${activityTitle}`,
+      text: `I had the honor of speaking at "${activityTitle}"! 🎙️`,
+      url,
+      hashtags: [...hashtags, 'Speaker', 'SkillSprint']
+    };
+  }
+  
+  if (activityType === 'meetup_spoke') {
+    return {
+      title: `${userName} spoke at ${activityTitle}`,
+      text: `I spoke at "${activityTitle}"! 🎙️`,
+      url,
+      hashtags: [...hashtags, 'Speaker', 'Meetup']
+    };
+  }
+  
+  if (activityType === 'blog_submitted') {
+    return {
+      title: `${userName} published a blog for ${activityTitle}`,
+      text: `I just published a new blog for the "${activityTitle}" skill sprint! 📝`,
+      url,
+      hashtags: [...hashtags, 'Blog', 'SkillSprint']
+    };
+  }
+  
+  if (activityType === 'submission_approved') {
+    return {
+      title: `${userName}'s submission for ${activityTitle} was approved`,
+      text: `My submission for the "${activityTitle}" skill sprint was approved! I earned ${points || 0} points! 🏆`,
+      url,
+      hashtags: [...hashtags, 'Achievement', 'SkillSprint']
+    };
+  }
+  
+  if (activityType === 'points_awarded') {
+    return {
+      title: `${userName} earned points`,
+      text: `I was awarded ${points || 0} points by the AWS User Group! ⚡`,
+      url,
+      hashtags: [...hashtags, 'Achievement']
+    };
+  }
+  
+  // Return null for unhandled types or ones handled differently (e.g., meetup_attended)
+  return null;
+}
+
+// Generate share data for varied college activities
+export function generateCollegeActivityShare(
+  collegeName: string,
+  activityType: 'task' | 'event' | 'adhoc',
+  activityTitle: string,
+  points: number,
+  isEventUpcoming?: boolean
+): AchievementShareData {
+  const url = `${BASE_URL}/college-champs`;
+  const hashtags = ['AWSUG', 'CollegeChamps', 'AWS', 'Students'];
+  
+  if (activityType === 'task') {
+    return generateCollegeTaskShare(collegeName, activityTitle, points);
+  }
+  
+  if (activityType === 'event') {
+    const verb = isEventUpcoming ? 'is hosting' : 'hosted';
+    return {
+      title: `${collegeName} ${verb} ${activityTitle}`,
+      text: `${collegeName} ${verb} "${activityTitle}" for the AWS User Group! 📅`,
+      url,
+      hashtags: [...hashtags, 'Event']
+    };
+  }
+  
+  // Adhoc
+  return {
+    title: `${collegeName} earned points`,
+    text: `${collegeName} was awarded ${points} points! ⚡🏆`,
+    url,
+    hashtags: [...hashtags, 'Achievement']
+  };
+}

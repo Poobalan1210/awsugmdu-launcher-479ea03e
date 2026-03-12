@@ -24,7 +24,7 @@ import { getMeetups } from '@/lib/meetups';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { ShareButton } from '@/components/common/ShareButton';
-import { generateBadgeShare } from '@/lib/sharing';
+import { generateBadgeShare, generateProfileActivityShare, generateMeetupAttendanceShare } from '@/lib/sharing';
 
 export default function Profile() {
   const { userId } = useParams();
@@ -257,6 +257,9 @@ export default function Profile() {
 
   const generateActivityHistory = (): ActivityHistoryItem[] => {
     const activities: ActivityHistoryItem[] = [];
+    
+    // Helper to extract plain text string from potentially complex titles
+    const getStringTitle = (sprintTitle: any) => typeof sprintTitle === 'string' ? sprintTitle : 'Skill Sprint';
 
     // Sprint attendance
     userSprintsParticipated.forEach(sprint => {
@@ -771,6 +774,45 @@ export default function Profile() {
                           }
                         };
 
+                        // Generate appropriate share data block for this activity
+                        const getShareData = () => {
+                          if (activity.type === 'meetup_attended') {
+                            const meetupIdMatch = activity.link?.match(/id=([^&]+)/);
+                            const meetupId = meetupIdMatch ? meetupIdMatch[1] : '';
+                            return generateMeetupAttendanceShare(user.name, activity.description, meetupId);
+                          }
+                          
+                          if (activity.type === 'badge_earned') {
+                            const badge = user.badges.find(b => `badge-${b.id}` === activity.id);
+                            if (badge) return generateBadgeShare(user.name, badge);
+                            return null;
+                          }
+                          
+                          // For points_awarded, extract the points from the title string
+                          let pointsStr = '0';
+                          if (activity.type === 'points_awarded' || activity.type === 'submission_approved') {
+                            const match = activity.type === 'points_awarded' 
+                              ? activity.title.match(/(\d+)/)
+                              : activity.description.match(/(\d+)/);
+                            if (match) pointsStr = match[1];
+                          }
+                          
+                          const title = activity.type === 'points_awarded' || activity.type === 'blog_submitted' 
+                            ? activity.description 
+                            : activity.type === 'submission_approved' ? activity.title.replace('Submission approved: ', '')
+                            : activity.title.replace(/^(Attended|Spoke at|Registered for) /i, '');
+
+                          return generateProfileActivityShare(
+                            user.name,
+                            activity.type,
+                            title,
+                            activity.link,
+                            parseInt(pointsStr) || undefined
+                          );
+                        };
+                        
+                        const shareData = isOwnProfile ? getShareData() : null;
+
                         const content = activity.link ? (
                           activity.type === 'blog_submitted' ? (
                             <a
@@ -779,7 +821,7 @@ export default function Profile() {
                               rel="noopener noreferrer"
                               className="block"
                             >
-                              <div className="flex items-start gap-4 p-4 rounded-lg border hover:bg-muted/50 transition-colors">
+                              <div className="flex items-start gap-4 p-4 pr-24 rounded-lg border hover:bg-muted/50 transition-colors">
                                 <div className="mt-1 text-primary">{activity.icon}</div>
                                 <div className="flex-1 min-w-0">
                                   <div className="flex flex-wrap items-center gap-2 mb-1">
@@ -796,7 +838,7 @@ export default function Profile() {
                             </a>
                           ) : (
                             <Link to={activity.link} className="block">
-                              <div className="flex items-start gap-4 p-4 rounded-lg border hover:bg-muted/50 transition-colors">
+                              <div className="flex items-start gap-4 p-4 pr-24 rounded-lg border hover:bg-muted/50 transition-colors">
                                 <div className="mt-1 text-primary">{activity.icon}</div>
                                 <div className="flex-1 min-w-0">
                                   <div className="flex flex-wrap items-center gap-2 mb-1">
@@ -812,7 +854,7 @@ export default function Profile() {
                             </Link>
                           )
                         ) : (
-                          <div className="flex items-start gap-4 p-4 rounded-lg border">
+                          <div className="flex items-start gap-4 p-4 pr-24 rounded-lg border">
                             <div className="mt-1 text-primary">{activity.icon}</div>
                             <div className="flex-1 min-w-0">
                               <div className="flex flex-wrap items-center gap-2 mb-1">
@@ -834,7 +876,19 @@ export default function Profile() {
                             animate={{ opacity: 1, x: 0 }}
                             transition={{ delay: index * 0.05 }}
                           >
-                            {content}
+                            <div className="relative">
+                              {content}
+                              {shareData && (
+                                <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                                  <ShareButton 
+                                    data={shareData}
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-8 shadow-sm bg-background border"
+                                  />
+                                </div>
+                              )}
+                            </div>
                           </motion.div>
                         );
                       })}

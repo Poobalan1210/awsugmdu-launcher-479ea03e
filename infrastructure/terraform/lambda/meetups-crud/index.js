@@ -280,7 +280,10 @@ async function createMeetup(event) {
     sprintId,
     certificationGroupId,
     collegeId,
-    sessionPoints
+    sessionPoints,
+    speakerPoints,
+    volunteerPoints,
+    hostPoints
   } = body;
 
   // Validation
@@ -375,6 +378,9 @@ async function createMeetup(event) {
     ...(type === 'certification-circle' && certificationGroupId ? { certificationGroupId } : {}),
     ...(type === 'college-champ' && collegeId ? { collegeId } : {}),
     ...(type === 'college-champ' && sessionPoints ? { sessionPoints: parseInt(sessionPoints) || 0 } : {}),
+    speakerPoints: speakerPoints ? parseInt(speakerPoints) : 0,
+    volunteerPoints: volunteerPoints ? parseInt(volunteerPoints) : 0,
+    hostPoints: hostPoints ? parseInt(hostPoints) : 0,
     speakers: speakers || [],
     hosts: hosts || [],
     volunteers: volunteers || [],
@@ -452,7 +458,8 @@ async function updateMeetup(id, event) {
   const allowedFields = [
     'title', 'description', 'richDescription', 'date', 'time', 'duration', 'type',
     'location', 'meetingLink', 'meetupUrl', 'image', 'maxAttendees',
-    'speakers', 'hosts', 'volunteers', 'sprintId', 'certificationGroupId', 'endDate', 'sessionPoints'
+    'speakers', 'hosts', 'volunteers', 'sprintId', 'certificationGroupId', 'endDate', 'sessionPoints',
+    'speakerPoints', 'volunteerPoints', 'hostPoints'
   ];
 
   allowedFields.forEach(field => {
@@ -762,11 +769,7 @@ async function markAttendance(id, event) {
   const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
   const {
     emails,
-    pointsPerAttendee = 50,
-    awardVolunteerPoints = true,
-    volunteerPoints = 75,
-    awardSpeakerPoints = true,
-    speakerPoints = 100
+    pointsPerAttendee = 50
   } = body;
 
   if (!emails || !Array.isArray(emails) || emails.length === 0) {
@@ -860,14 +863,6 @@ async function markAttendance(id, event) {
       let pointsToAward = pointsPerAttendee;
       let role = 'attendee';
 
-      if (speakerIds.has(userId) && awardSpeakerPoints) {
-        pointsToAward = speakerPoints;
-        role = 'speaker';
-      } else if (volunteerIds.has(userId) && awardVolunteerPoints) {
-        pointsToAward = volunteerPoints;
-        role = 'volunteer';
-      }
-
       // Award points to user
       const currentPoints = user.points || 0;
       const newPoints = currentPoints + pointsToAward;
@@ -920,12 +915,6 @@ async function markAttendance(id, event) {
       };
 
       results.success.push(result);
-
-      if (role === 'volunteer') {
-        results.volunteersAwarded.push(result);
-      } else if (role === 'speaker') {
-        results.speakersAwarded.push(result);
-      }
     } catch (error) {
       console.error(`Error processing email ${email}:`, error);
       results.errors.push({
@@ -984,6 +973,7 @@ async function endMeetup(id, event) {
   // Otherwise check if the scheduled end date is in the past
   const shouldCompleteNow = endNow || !endDate || new Date(endDate) <= now;
   const newStatus = shouldCompleteNow ? 'completed' : meetup.status;
+  const isTransitioningToCompleted = shouldCompleteNow && meetup.status !== 'completed';
 
   const updateExpression = 'SET #status = :status, endDate = :endDate, updatedAt = :updatedAt';
 
@@ -1001,8 +991,84 @@ async function endMeetup(id, event) {
     }
   }));
 
+  // Assign points to hosts, speakers, and volunteers if transitioning to completed
+  if (isTransitioningToCompleted) {
+    try {
+      const USERS_TABLE = process.env.USERS_TABLE_NAME || 'awsug-users';
+      
+      const rolesToAward = [
+        { users: meetup.hosts || [], requiredPoints: meetup.hostPoints || 0, roleName: 'organizer' },
+        { users: meetup.speakers || [], requiredPoints: meetup.speakerPoints || 0, roleName: 'speaker' },
+        { users: meetup.volunteers || [], requiredPoints: meetup.volunteerPoints || 0, roleName: 'volunteer' }
+      ];
+
+      for (const roleDef of rolesToAward) {
+        if (roleDef.requiredPoints > 0 && roleDef.users.length > 0) {
+          for (const person of roleDef.users) {
+            if (!person.userId) continue;
+
+            try {
+              // Fetch user
+              const userResult = await docClient.send(new GetCommand({
+                TableName: USERS_TABLE,
+                Key: { userId: person.userId }
+              }));
+
+              if (userResult.Item) {
+                const user = userResult.Item;
+                const currentPoints = user.points || 0;
+                const newPoints = currentPoints + roleDef.requiredPoints;
+
+                const pointActivity = {
+                  id: `pa-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                  userId: person.userId,
+                  points: roleDef.requiredPoints,
+                  reason: `Hosted/Spoke/Volunteered at ${meetup.title} as ${roleDef.roleName}`,
+                  type: 'event',
+                  awardedBy: event.userContext?.userId || 'system',
+                  awardedAt: now.toISOString()
+                };
+
+                const pointActivities = user.pointActivities || [];
+                pointActivities.push(pointActivity);
+
+                const activity = {
+                  type: 'meetup_organized',
+                  meetupId: id,
+                  meetupTitle: meetup.title,
+                  points: roleDef.requiredPoints,
+                  role: roleDef.roleName,
+                  timestamp: now.toISOString()
+                };
+
+                const userActivities = user.activities || [];
+                userActivities.push(activity);
+
+                await docClient.send(new UpdateCommand({
+                  TableName: USERS_TABLE,
+                  Key: { userId: person.userId },
+                  UpdateExpression: 'SET points = :points, activities = :activities, pointActivities = :pointActivities, updatedAt = :updatedAt',
+                  ExpressionAttributeValues: {
+                    ':points': newPoints,
+                    ':activities': userActivities,
+                    ':pointActivities': pointActivities,
+                    ':updatedAt': now.toISOString()
+                  }
+                }));
+              }
+            } catch (error) {
+              console.error(`Error awarding points to ${roleDef.roleName} ${person.userId}:`, error);
+            }
+          }
+        }
+      }
+    } catch (globalError) {
+      console.error('Failed to process team points assignment', globalError);
+    }
+  }
+
   // If this is a college-champ meetup and it's being completed, update the college's hostedEvents
-  if (shouldCompleteNow && meetup.collegeId) {
+  if (isTransitioningToCompleted && meetup.collegeId) {
     try {
       const COLLEGES_TABLE = process.env.COLLEGES_TABLE_NAME || 'awsug-colleges';
 

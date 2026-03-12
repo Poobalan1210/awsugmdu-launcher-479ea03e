@@ -24,6 +24,9 @@ export interface CreateMeetupData {
   collegeId?: string;
   endDate?: string;
   sessionPoints?: number;
+  speakerPoints?: number;
+  volunteerPoints?: number;
+  hostPoints?: number;
 }
 
 export interface UpdateMeetupData extends Partial<CreateMeetupData> {
@@ -143,8 +146,6 @@ export async function getMeetupsByCertificationGroup(certificationGroupId: strin
 export interface MarkAttendanceRequest {
   emails: string[];
   pointsPerAttendee?: number;
-  volunteerPoints?: number;
-  speakerPoints?: number;
 }
 
 export interface MarkAttendanceResult {
@@ -189,8 +190,6 @@ export interface MarkAttendanceData {
   attendedUserIds: string[];
   awardPoints?: boolean;
   attendeePoints?: number;
-  volunteerPoints?: number;
-  speakerPoints?: number;
 }
 
 export async function markAttendance(meetupId: string, data: MarkAttendanceData): Promise<Meetup> {

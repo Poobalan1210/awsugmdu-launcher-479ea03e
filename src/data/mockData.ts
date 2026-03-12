@@ -243,6 +243,9 @@ export interface Meetup {
   sprintId?: string; // Link to sprint if type is 'skill-sprint'
   collegeId?: string; // Link to college if type is 'college-champ'
   sessionPoints?: number; // Total points awarded to college for this session
+  speakerPoints?: number;
+  volunteerPoints?: number;
+  hostPoints?: number;
 }
 
 export interface MeetupPerson {

@@ -1333,8 +1333,6 @@ function MarkAttendanceDialog({ meetup, onSuccess }: { meetup: Meetup; onSuccess
   const [loading, setLoading] = useState(false);
   const [emailsText, setEmailsText] = useState('');
   const [pointsPerAttendee, setPointsPerAttendee] = useState(50);
-  const [volunteerPoints, setVolunteerPoints] = useState(75);
-  const [speakerPoints, setSpeakerPoints] = useState(100);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [results, setResults] = useState<any>(null);
 
@@ -1384,9 +1382,7 @@ function MarkAttendanceDialog({ meetup, onSuccess }: { meetup: Meetup; onSuccess
       const { markMeetupAttendance } = await import('@/lib/meetups');
       const response = await markMeetupAttendance(meetup.id, {
         emails,
-        pointsPerAttendee,
-        volunteerPoints,
-        speakerPoints
+        pointsPerAttendee
       });
 
       setResults(response);
@@ -1409,8 +1405,6 @@ function MarkAttendanceDialog({ meetup, onSuccess }: { meetup: Meetup; onSuccess
     setOpen(false);
     setEmailsText('');
     setPointsPerAttendee(50);
-    setVolunteerPoints(75);
-    setSpeakerPoints(100);
     setResults(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -1498,35 +1492,7 @@ function MarkAttendanceDialog({ meetup, onSuccess }: { meetup: Meetup; onSuccess
               </p>
             </div>
 
-            <div className="space-y-2">
-              <Label>Points per Volunteer</Label>
-              <Input
-                type="number"
-                value={volunteerPoints}
-                onChange={(e) => setVolunteerPoints(Number(e.target.value))}
-                min={1}
-                max={500}
-                required
-              />
-              <p className="text-xs text-muted-foreground">
-                Each volunteer will receive this many points
-              </p>
-            </div>
 
-            <div className="space-y-2">
-              <Label>Points per Speaker</Label>
-              <Input
-                type="number"
-                value={speakerPoints}
-                onChange={(e) => setSpeakerPoints(Number(e.target.value))}
-                min={1}
-                max={500}
-                required
-              />
-              <p className="text-xs text-muted-foreground">
-                Each speaker will receive this many points
-              </p>
-            </div>
 
             <div className="flex gap-2 pt-4 border-t">
               <Button type="submit" className="flex-1" disabled={loading}>
@@ -1689,6 +1655,9 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
     certificationGroupId: '',
     collegeId: '',
     sessionPoints: '',
+    speakerPoints: '100',
+    volunteerPoints: '75',
+    hostPoints: '50',
     endDate: ''
   });
 
@@ -1776,6 +1745,9 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
         meetupUrl: formData.meetupUrl || undefined,
         image: formData.image || undefined,
         maxAttendees: formData.maxAttendees ? parseInt(formData.maxAttendees) : undefined,
+        speakerPoints: parseInt(formData.speakerPoints) || 0,
+        volunteerPoints: parseInt(formData.volunteerPoints) || 0,
+        hostPoints: parseInt(formData.hostPoints) || 0,
         speakers: peopleData.speakers,
         hosts: peopleData.hosts,
         volunteers: peopleData.volunteers,
@@ -1809,6 +1781,9 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
         certificationGroupId: '',
         collegeId: '',
         sessionPoints: '',
+        speakerPoints: '100',
+        volunteerPoints: '75',
+        hostPoints: '50',
         endDate: ''
       });
       setPeopleData({
@@ -2035,15 +2010,44 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
             </p>
           </div>
 
-          <div className="space-y-2">
-            <Label>Max Attendees</Label>
-            <Input
-              type="number"
-              placeholder="e.g., 100"
-              value={formData.maxAttendees}
-              onChange={(e) => setFormData({ ...formData, maxAttendees: e.target.value })}
-              min="1"
-            />
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="space-y-2">
+              <Label>Max Attendees</Label>
+              <Input
+                type="number"
+                placeholder="e.g., 100"
+                value={formData.maxAttendees}
+                onChange={(e) => setFormData({ ...formData, maxAttendees: e.target.value })}
+                min="1"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Speaker Points</Label>
+              <Input
+                type="number"
+                value={formData.speakerPoints}
+                onChange={(e) => setFormData({ ...formData, speakerPoints: e.target.value })}
+                min="0"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Volunteer Pts</Label>
+              <Input
+                type="number"
+                value={formData.volunteerPoints}
+                onChange={(e) => setFormData({ ...formData, volunteerPoints: e.target.value })}
+                min="0"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Host Points</Label>
+              <Input
+                type="number"
+                value={formData.hostPoints}
+                onChange={(e) => setFormData({ ...formData, hostPoints: e.target.value })}
+                min="0"
+              />
+            </div>
           </div>
 
           {/* Location - show for in-person events */}
@@ -2223,6 +2227,9 @@ function EditMeetupDialog({ meetup, onSuccess, allUsers = [] }: { meetup: Meetup
     image: meetup.image || '',
     maxAttendees: meetup.maxAttendees?.toString() || '',
     sprintId: meetup.sprintId || '',
+    speakerPoints: meetup.speakerPoints?.toString() || '100',
+    volunteerPoints: meetup.volunteerPoints?.toString() || '75',
+    hostPoints: meetup.hostPoints?.toString() || '50',
     endDate: meetup.endDate || ''
   });
 
@@ -2243,6 +2250,9 @@ function EditMeetupDialog({ meetup, onSuccess, allUsers = [] }: { meetup: Meetup
         meetupUrl: formData.meetupUrl || undefined,
         image: formData.image || undefined,
         maxAttendees: formData.maxAttendees ? parseInt(formData.maxAttendees) : undefined,
+        speakerPoints: parseInt(formData.speakerPoints) || 0,
+        volunteerPoints: parseInt(formData.volunteerPoints) || 0,
+        hostPoints: parseInt(formData.hostPoints) || 0,
         sprintId: (formData.type === 'skill-sprint' && formData.sprintId) ? formData.sprintId : null,
         endDate: formData.endDate || undefined
       };
@@ -2335,15 +2345,44 @@ function EditMeetupDialog({ meetup, onSuccess, allUsers = [] }: { meetup: Meetup
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
-              <Label>Max Attendees</Label>
-              <Input
-                type="number"
-                placeholder="e.g., 100"
-                value={formData.maxAttendees}
-                onChange={(e) => setFormData({ ...formData, maxAttendees: e.target.value })}
-                min="1"
-              />
+            <div className="col-span-2 grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="space-y-2">
+                <Label>Max Attendees</Label>
+                <Input
+                  type="number"
+                  placeholder="e.g., 100"
+                  value={formData.maxAttendees}
+                  onChange={(e) => setFormData({ ...formData, maxAttendees: e.target.value })}
+                  min="1"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Speaker Pts</Label>
+                <Input
+                  type="number"
+                  value={formData.speakerPoints}
+                  onChange={(e) => setFormData({ ...formData, speakerPoints: e.target.value })}
+                  min="0"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Volunteer Pts</Label>
+                <Input
+                  type="number"
+                  value={formData.volunteerPoints}
+                  onChange={(e) => setFormData({ ...formData, volunteerPoints: e.target.value })}
+                  min="0"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Host Pts</Label>
+                <Input
+                  type="number"
+                  value={formData.hostPoints}
+                  onChange={(e) => setFormData({ ...formData, hostPoints: e.target.value })}
+                  min="0"
+                />
+              </div>
             </div>
           </div>
 

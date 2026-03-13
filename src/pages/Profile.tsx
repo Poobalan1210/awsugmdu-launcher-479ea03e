@@ -239,11 +239,11 @@ export default function Profile() {
     totalPoints: user.points,
     submissions: userSubmissions.length,
     blogsWritten: userSubmissions.filter(s => s.blogUrl).length,
-    eventsAttended: (user.activities?.filter(a => a.type === 'meetup_attended').length || 0) + userSprintsParticipated.length,
+    eventsAttended: (user.activities?.filter(a => a.type === 'meetup_attended' || a.type === 'meetup_organized').length || 0) + userSprintsParticipated.length,
   };
 
   // Generate activity history
-  type ActivityType = 'sprint_attended' | 'sprint_spoke' | 'meetup_attended' | 'meetup_spoke' | 'blog_submitted' | 'submission_approved' | 'badge_earned' | 'points_awarded';
+  type ActivityType = 'sprint_attended' | 'sprint_spoke' | 'meetup_attended' | 'meetup_spoke' | 'meetup_organized' | 'blog_submitted' | 'submission_approved' | 'badge_earned' | 'points_awarded';
   
   interface ActivityHistoryItem {
     id: string;
@@ -309,6 +309,26 @@ export default function Profile() {
               date: activity.timestamp,
               link: `/meetups?id=${activity.meetupId}`,
               icon: <CheckCircle className="h-4 w-4" />
+            });
+          }
+        });
+    }
+    
+    // Show organized/volunteered meetups
+    if (user.activities) {
+      user.activities
+        .filter(a => a.type === 'meetup_organized')
+        .forEach(activity => {
+          const meetup = meetupsToCheck.find(m => m.id === activity.meetupId);
+          if (meetup || activity.meetupTitle) {
+            activities.push({
+              id: `meetup-organized-${activity.meetupId}-${activity.timestamp}`,
+              type: 'meetup_organized',
+              title: `Contributed as ${activity.role}`,
+              description: activity.meetupTitle || meetup?.title || 'Event',
+              date: activity.timestamp,
+              link: `/meetups?id=${activity.meetupId}`,
+              icon: <Zap className="h-4 w-4" />
             });
           }
         });

@@ -618,7 +618,7 @@ function CollegeDetailView({ college, rank }: { college: College, rank: number }
                 type: 'adhoc',
                 title: 'Points Awarded',
                 description: pa.reason,
-                date: pa.awardedAt,
+                date: pa.date || pa.awardedAt || new Date().toISOString(),
                 points: pa.points,
               });
             });

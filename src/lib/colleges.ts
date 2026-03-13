@@ -40,6 +40,7 @@ export interface CollegePointActivity {
   points: number;
   reason: string;
   awardedAt: string;
+  date?: string;
 }
 
 export interface CollegeEvent {

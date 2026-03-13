@@ -101,7 +101,7 @@ export interface User {
 }
 
 export interface UserActivity {
-  type: 'meetup_attended' | 'sprint_completed' | 'submission_approved' | 'badge_earned' | 'certification_earned';
+  type: 'meetup_attended' | 'meetup_organized' | 'sprint_completed' | 'submission_approved' | 'badge_earned' | 'certification_earned';
   meetupId?: string;
   meetupTitle?: string;
   sprintId?: string;
@@ -109,6 +109,7 @@ export interface UserActivity {
   points: number;
   timestamp: string;
   description?: string;
+  role?: string;
 }
 
 // Badge criteria types for auto-awarding

@@ -12,6 +12,7 @@ export function HeroSection() {
   const [userCount, setUserCount] = useState(0);
   const [activeSprint, setActiveSprint] = useState<Sprint | null>(null);
   const [meetupCount, setMeetupCount] = useState(0);
+  const [badgeCount, setBadgeCount] = useState(0);
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -22,6 +23,10 @@ export function HeroSection() {
           getMeetups(),
         ]);
         setUserCount(Array.isArray(users) ? users.length : 0);
+        if (Array.isArray(users)) {
+          const totalBadges = users.reduce((acc, user) => acc + (user.badges?.length || 0), 0);
+          setBadgeCount(totalBadges);
+        }
         setActiveSprint(sprints.find((s) => s.status === 'active') || null);
         setMeetupCount(Array.isArray(meetups) ? meetups.length : 0);
       } catch (error) {
@@ -34,7 +39,7 @@ export function HeroSection() {
   const stats = [
     { label: 'Active Members', value: userCount || 4, icon: Users },
     { label: 'Events Hosted', value: meetupCount || 0, icon: Calendar },
-    { label: 'Badges Awarded', value: 150, icon: Award },
+    { label: 'Badges Awarded', value: badgeCount, icon: Award },
   ];
 
 const containerVariants: Variants = {

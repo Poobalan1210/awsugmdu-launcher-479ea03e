@@ -4738,33 +4738,55 @@ function BadgesTab({ allUsers }: { allUsers: UserType[] }) {
       return;
     }
 
-    // Add badge to user
-    const newAward: BadgeAward = {
-      id: `ba-${Date.now()}`,
-      badgeId: selectedBadge.id,
-      userId: selectedUserId,
-      awardedAt: new Date().toISOString().split('T')[0],
-      awardedBy: authUser?.id || '',
-      reason: awardReason || 'Adhoc badge award',
-      isAdhoc: true
+    const newBadgeForUser = {
+      ...selectedBadge,
+      earnedDate: new Date().toISOString().split('T')[0]
     };
 
-    setBadgeAwards(prev => [...prev, newAward]);
+    const updatedBadges = [...user.badges, newBadgeForUser];
 
-    // Update user badges in mock data
-    const userIndex = mockUsers.findIndex(u => u.id === selectedUserId);
-    if (userIndex !== -1) {
-      mockUsers[userIndex].badges.push({
-        ...selectedBadge,
-        earnedDate: new Date().toISOString().split('T')[0]
-      });
+    try {
+      // Import updateUserProfile dynamically to avoid circular dependencies if any
+      const { updateUserProfile } = await import('@/lib/userProfile');
+      
+      // Update user in the backend
+      await updateUserProfile(selectedUserId, { badges: updatedBadges } as any);
+
+      // Add badge to local tracking
+      const newAward: BadgeAward = {
+        id: `ba-${Date.now()}`,
+        badgeId: selectedBadge.id,
+        userId: selectedUserId,
+        awardedAt: new Date().toISOString().split('T')[0],
+        awardedBy: authUser?.id || '',
+        reason: awardReason || 'Adhoc badge award',
+        isAdhoc: true
+      };
+
+      setBadgeAwards(prev => [...prev, newAward]);
+
+      // Update user badges in mock data to reflect immediately
+      const userIndex = mockUsers.findIndex(u => u.id === selectedUserId);
+      if (userIndex !== -1) {
+        mockUsers[userIndex].badges.push(newBadgeForUser);
+      }
+      
+      // Update user in the allUsers prop to reflect immediately in the UI
+      user.badges.push(newBadgeForUser);
+
+      toast.success(`Awarded "${selectedBadge.name}" badge to ${user.name}`);
+      setSelectedUserId('');
+      setAwardReason('');
+      setIsAwardDialogOpen(false);
+      
+      // Refresh auth user if awarding to self
+      if (authUser?.id === selectedUserId) {
+        await refreshUser();
+      }
+    } catch (error) {
+      console.error('Error awarding badge:', error);
+      toast.error('Failed to award badge. Please try again.');
     }
-
-    toast.success(`Awarded "${selectedBadge.name}" badge to ${user.name}`);
-    setSelectedUserId('');
-    setAwardReason('');
-    setIsAwardDialogOpen(false);
-    await refreshUser();
   };
 
   const handleCreateBadge = () => {

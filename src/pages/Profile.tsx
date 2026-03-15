@@ -9,10 +9,11 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { 
   Trophy, Calendar, Target, FileText, Medal, Zap, 
   Linkedin, Github, Twitter, ExternalLink, Building, User,
-  Mic, BookOpen, CheckCircle, Clock, Award, Shield, ShoppingBag
+  Mic, BookOpen, CheckCircle, Clock, Award, Shield, ShoppingBag, Loader2, Package
 } from 'lucide-react';
 import { mockBadges, communityRoles, CommunityRole, User as UserType } from '@/data/mockData';
 import { getSprints } from '@/lib/sprints';
@@ -20,6 +21,7 @@ import { getUserProfile } from '@/lib/userProfile';
 import { getAllColleges, College } from '@/lib/colleges';
 import { getUserRoles } from '@/lib/userRoles';
 import { format, parseISO } from 'date-fns';
+import { getOrders, type Order } from '@/lib/store';
 import { getMeetups } from '@/lib/meetups';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
@@ -38,6 +40,9 @@ export default function Profile() {
   const [pointActivities, setPointActivities] = useState<any[]>([]);
   const [loadingPointActivities, setLoadingPointActivities] = useState(true);
   const [colleges, setColleges] = useState<College[]>([]);
+  const [selectedOrderDetail, setSelectedOrderDetail] = useState<Order | null>(null);
+  const [showOrderDetailDialog, setShowOrderDetailDialog] = useState(false);
+  const [loadingOrderDetail, setLoadingOrderDetail] = useState(false);
   
   // Fetch meetups from backend
   const { data: allMeetups = [] } = useQuery({
@@ -242,6 +247,31 @@ export default function Profile() {
     eventsAttended: (user.activities?.filter(a => a.type === 'meetup_attended' || a.type === 'meetup_organized').length || 0) + userSprintsParticipated.length,
   };
 
+  // Handle store_redeemed activity click - fetch order details and show modal
+  const handleStoreActivityClick = async (activity: ActivityHistoryItem) => {
+    if (!activity.metadata?.itemId || !user) return;
+    setLoadingOrderDetail(true);
+    setShowOrderDetailDialog(true);
+    try {
+      const orders = await getOrders(user.id);
+      // Find the matching order by itemId and closest timestamp
+      const activityDate = new Date(activity.date).getTime();
+      const matchingOrder = orders
+        .filter(o => o.itemId === activity.metadata!.itemId)
+        .sort((a, b) => {
+          const diffA = Math.abs(new Date(a.createdAt).getTime() - activityDate);
+          const diffB = Math.abs(new Date(b.createdAt).getTime() - activityDate);
+          return diffA - diffB;
+        })[0];
+      setSelectedOrderDetail(matchingOrder || null);
+    } catch (error) {
+      console.error('Failed to fetch order details:', error);
+      setSelectedOrderDetail(null);
+    } finally {
+      setLoadingOrderDetail(false);
+    }
+  };
+
   // Generate activity history
   type ActivityType = 'sprint_attended' | 'sprint_spoke' | 'meetup_attended' | 'meetup_spoke' | 'meetup_organized' | 'blog_submitted' | 'submission_approved' | 'badge_earned' | 'points_awarded' | 'store_redeemed';
   
@@ -253,6 +283,11 @@ export default function Profile() {
     date: string;
     link?: string;
     icon: React.ReactNode;
+    metadata?: {
+      itemId?: string;
+      itemName?: string;
+      points?: number;
+    };
   }
 
   const generateActivityHistory = (): ActivityHistoryItem[] => {
@@ -436,7 +471,12 @@ export default function Profile() {
             description: `Spent ${activity.points} points`,
             date: activity.timestamp,
             link: '/store',
-            icon: <ShoppingBag className="h-4 w-4" />
+            icon: <ShoppingBag className="h-4 w-4" />,
+            metadata: {
+              itemId: activity.itemId,
+              itemName: activity.itemName,
+              points: activity.points,
+            }
           });
         });
     }
@@ -875,6 +915,26 @@ export default function Profile() {
                                 <ExternalLink className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-1" />
                               </div>
                             </a>
+                          ) : activity.type === 'store_redeemed' ? (
+                            <button
+                              type="button"
+                              onClick={() => handleStoreActivityClick(activity)}
+                              className="block w-full text-left"
+                            >
+                              <div className="flex items-start gap-4 p-4 pr-24 rounded-lg border hover:bg-muted/50 transition-colors cursor-pointer">
+                                <div className="mt-1 text-primary">{activity.icon}</div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex flex-wrap items-center gap-2 mb-1">
+                                    {getActivityBadge()}
+                                    <span className="text-sm text-muted-foreground">
+                                      {format(parseISO(activity.date), 'MMM d, yyyy')}
+                                    </span>
+                                  </div>
+                                  <h4 className="font-semibold mb-1">{activity.title}</h4>
+                                  <p className="text-sm text-muted-foreground">{activity.description}</p>
+                                </div>
+                              </div>
+                            </button>
                           ) : (
                             <Link to={activity.link} className="block">
                               <div className="flex items-start gap-4 p-4 pr-24 rounded-lg border hover:bg-muted/50 transition-colors">
@@ -1062,6 +1122,92 @@ export default function Profile() {
       </main>
 
       <Footer />
+
+      {/* Order Detail Modal */}
+      <Dialog open={showOrderDetailDialog} onOpenChange={setShowOrderDetailDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Package className="h-5 w-5" />
+              Order Details
+            </DialogTitle>
+            <DialogDescription>
+              Details for your store redemption
+            </DialogDescription>
+          </DialogHeader>
+          {loadingOrderDetail ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : selectedOrderDetail ? (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 pb-3 border-b">
+                <div className="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center">
+                  <ShoppingBag className="h-5 w-5 text-emerald-500" />
+                </div>
+                <div>
+                  <h4 className="font-semibold">{selectedOrderDetail.itemName}</h4>
+                  <p className="text-sm text-muted-foreground capitalize">{selectedOrderDetail.itemType} item</p>
+                </div>
+              </div>
+              <div className="space-y-3 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Order ID</span>
+                  <span className="font-mono text-xs">#{selectedOrderDetail.id.slice(-8)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Status</span>
+                  <Badge variant={
+                    selectedOrderDetail.status === 'completed' || selectedOrderDetail.status === 'delivered' ? 'default' :
+                    selectedOrderDetail.status === 'cancelled' ? 'destructive' : 'secondary'
+                  } className={
+                    selectedOrderDetail.status === 'completed' || selectedOrderDetail.status === 'delivered' ? 'bg-emerald-500 hover:bg-emerald-600' : ''
+                  }>
+                    {selectedOrderDetail.status.charAt(0).toUpperCase() + selectedOrderDetail.status.slice(1)}
+                  </Badge>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Points Spent</span>
+                  <span className="font-semibold">{selectedOrderDetail.points}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Date</span>
+                  <span>{format(parseISO(selectedOrderDetail.createdAt), 'MMM d, yyyy')}</span>
+                </div>
+                {selectedOrderDetail.code && (
+                  <div className="flex items-center justify-between pt-2 border-t">
+                    <span className="text-muted-foreground">Code</span>
+                    <code className="bg-muted px-2 py-1 rounded text-xs font-mono">{selectedOrderDetail.code}</code>
+                  </div>
+                )}
+                {selectedOrderDetail.shippingAddress && selectedOrderDetail.itemType === 'physical' && (
+                  <div className="pt-2 border-t">
+                    <p className="text-muted-foreground mb-1">Shipping Address</p>
+                    <p className="text-xs">
+                      {selectedOrderDetail.shippingAddress.name && <>{selectedOrderDetail.shippingAddress.name}<br /></>}
+                      {selectedOrderDetail.shippingAddress.address && <>{selectedOrderDetail.shippingAddress.address}<br /></>}
+                      {selectedOrderDetail.shippingAddress.city && <>{selectedOrderDetail.shippingAddress.city}, </>}
+                      {selectedOrderDetail.shippingAddress.state} {selectedOrderDetail.shippingAddress.zipCode}
+                      {selectedOrderDetail.shippingAddress.phone && <><br />{selectedOrderDetail.shippingAddress.phone}</>}
+                    </p>
+                  </div>
+                )}
+                {selectedOrderDetail.adminNotes && (
+                  <div className="pt-2 border-t">
+                    <p className="text-muted-foreground mb-1">Notes</p>
+                    <p className="text-xs">{selectedOrderDetail.adminNotes}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <Package className="h-10 w-10 mx-auto mb-2 opacity-50" />
+              <p>Order details not found</p>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

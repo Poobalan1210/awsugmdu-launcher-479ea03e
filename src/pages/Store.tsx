@@ -161,7 +161,7 @@ export default function Store() {
                         <img 
                           src={item.image} 
                           alt={item.name}
-                          className="w-full h-full object-cover"
+                          className="w-full h-full object-contain p-2"
                         />
                       ) : (
                         <span role="img" aria-label={item.name} className="text-7xl">

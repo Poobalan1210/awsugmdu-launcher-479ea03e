@@ -9,6 +9,7 @@ export interface StoreItem {
   points: number;
   image: string;
   inStock: boolean;
+  quantity?: number; // For physical items
   category?: string;
   itemType: ItemType;
   availableCodes?: string[]; // For virtual items

@@ -8,9 +8,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Edit, Trash2, Package, ShoppingBag, Loader2 } from 'lucide-react';
+import { Plus, Edit, Trash2, Package, ShoppingBag, Loader2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { getStoreItems, createStoreItem, updateStoreItem, deleteStoreItem, getOrders, assignCodeToOrder, updateOrderStatus, type StoreItem, type Order } from '@/lib/store';
+import { uploadFileToS3 } from '@/lib/s3Upload';
 
 export default function StoreManagement() {
   const [items, setItems] = useState<StoreItem[]>([]);
@@ -22,6 +23,7 @@ export default function StoreManagement() {
   const [editingItem, setEditingItem] = useState<StoreItem | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [saving, setSaving] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   const [itemForm, setItemForm] = useState({
     name: '',
@@ -31,6 +33,7 @@ export default function StoreManagement() {
     itemType: 'physical' as 'physical' | 'virtual',
     category: 'general',
     inStock: true,
+    quantity: 0,
     availableCodes: [] as string[],
   });
 
@@ -93,6 +96,7 @@ export default function StoreManagement() {
       itemType: 'physical',
       category: 'general',
       inStock: true,
+      quantity: 0,
       availableCodes: [],
     });
     setShowItemDialog(true);
@@ -108,9 +112,26 @@ export default function StoreManagement() {
       itemType: item.itemType,
       category: item.category || 'general',
       inStock: item.inStock,
+      quantity: item.quantity || 0,
       availableCodes: item.availableCodes || [],
     });
     setShowItemDialog(true);
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setUploadingImage(true);
+      const url = await uploadFileToS3(file, 'meetup-posters');
+      setItemForm({ ...itemForm, image: url });
+      toast.success('Image uploaded');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to upload image');
+    } finally {
+      setUploadingImage(false);
+    }
   };
 
   const handleSaveItem = async () => {
@@ -249,7 +270,7 @@ export default function StoreManagement() {
                           <img 
                             src={item.image} 
                             alt={item.name}
-                            className="w-full h-full object-cover"
+                            className="w-full h-full object-contain"
                           />
                         ) : (
                           <span className="text-4xl">{item.image}</span>
@@ -285,6 +306,12 @@ export default function StoreManagement() {
                           {item.inStock ? 'In Stock' : 'Out of Stock'}
                         </Badge>
                       </div>
+                      {item.itemType === 'physical' && item.quantity !== undefined && (
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">Quantity:</span>
+                          <span className="font-semibold">{item.quantity}</span>
+                        </div>
+                      )}
                       {item.itemType === 'virtual' && (
                         <div className="flex items-center justify-between text-sm">
                           <span className="text-muted-foreground">Codes:</span>
@@ -453,13 +480,35 @@ export default function StoreManagement() {
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="image">Image (Emoji or URL)</Label>
-                <Input
-                  id="image"
-                  value={itemForm.image}
-                  onChange={(e) => setItemForm({ ...itemForm, image: e.target.value })}
-                  placeholder="💳 or https://..."
-                />
+                <Label htmlFor="image">Image</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="image"
+                    value={itemForm.image}
+                    onChange={(e) => setItemForm({ ...itemForm, image: e.target.value })}
+                    placeholder="💳 or https://..."
+                    className="flex-1"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    disabled={uploadingImage}
+                    onClick={() => document.getElementById('store-image-upload')?.click()}
+                  >
+                    {uploadingImage ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                  </Button>
+                  <input
+                    id="store-image-upload"
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleImageUpload}
+                  />
+                </div>
+                {itemForm.image?.startsWith('http') && (
+                  <img src={itemForm.image} alt="Preview" className="w-16 h-16 object-cover rounded mt-1" />
+                )}
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -487,6 +536,25 @@ export default function StoreManagement() {
                 />
               </div>
             </div>
+
+            {itemForm.itemType === 'physical' && (
+              <div className="grid gap-2">
+                <Label htmlFor="quantity">Quantity</Label>
+                <Input
+                  id="quantity"
+                  type="number"
+                  min={0}
+                  value={itemForm.quantity}
+                  onChange={(e) => {
+                    const qty = parseInt(e.target.value) || 0;
+                    setItemForm({ ...itemForm, quantity: qty, inStock: qty > 0 });
+                  }}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Item will be marked as {itemForm.quantity > 0 ? '"In Stock"' : '"Out of Stock"'} based on quantity
+                </p>
+              </div>
+            )}
 
             {itemForm.itemType === 'virtual' && (
               <div className="grid gap-2">

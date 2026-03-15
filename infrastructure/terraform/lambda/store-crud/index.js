@@ -135,13 +135,19 @@ async function listStoreItems() {
 }
 
 async function createStoreItem(data) {
+  const quantity = data.quantity !== undefined ? data.quantity : null;
+  const inStock = data.itemType === 'physical'
+    ? (quantity !== null ? quantity > 0 : (data.inStock !== undefined ? data.inStock : true))
+    : (data.availableCodes && data.availableCodes.length > 0 ? true : (data.inStock !== undefined ? data.inStock : true));
+
   const item = {
     id: `item_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
     name: data.name,
     description: data.description,
     points: data.points,
     image: data.image,
-    inStock: data.inStock !== undefined ? data.inStock : true,
+    inStock,
+    quantity: data.itemType === 'physical' ? (quantity !== null ? quantity : 0) : undefined,
     category: data.category || 'general',
     itemType: data.itemType || 'physical',
     availableCodes: data.availableCodes || [],
@@ -211,7 +217,7 @@ async function updateStoreItem(id, data) {
     expressionAttributeNames['#image'] = 'image';
     expressionAttributeValues[':image'] = data.image;
   }
-  if (data.inStock !== undefined) {
+  if (data.inStock !== undefined && data.quantity === undefined) {
     updateExpressions.push('#inStock = :inStock');
     expressionAttributeNames['#inStock'] = 'inStock';
     expressionAttributeValues[':inStock'] = data.inStock;
@@ -230,6 +236,17 @@ async function updateStoreItem(id, data) {
     updateExpressions.push('#availableCodes = :availableCodes');
     expressionAttributeNames['#availableCodes'] = 'availableCodes';
     expressionAttributeValues[':availableCodes'] = data.availableCodes;
+  }
+  if (data.quantity !== undefined) {
+    updateExpressions.push('#quantity = :quantity');
+    expressionAttributeNames['#quantity'] = 'quantity';
+    expressionAttributeValues[':quantity'] = data.quantity;
+    // Auto-update inStock based on quantity for physical items
+    if (data.itemType === 'physical' || (!data.itemType && data.quantity !== undefined)) {
+      updateExpressions.push('#inStock = :inStock');
+      expressionAttributeNames['#inStock'] = 'inStock';
+      expressionAttributeValues[':inStock'] = data.quantity > 0;
+    }
   }
 
   updateExpressions.push('#updatedAt = :updatedAt');
@@ -590,15 +607,57 @@ async function redeemItem(itemId, data) {
   const updateUserParams = {
     TableName: USERS_TABLE,
     Key: { userId },
-    UpdateExpression: 'SET #points = :points',
+    UpdateExpression: 'SET #points = :points, #activities = :activities, #pointActivities = :pointActivities',
     ExpressionAttributeNames: {
-      '#points': 'points'
+      '#points': 'points',
+      '#activities': 'activities',
+      '#pointActivities': 'pointActivities'
     },
     ExpressionAttributeValues: {
-      ':points': currentPoints - item.points
+      ':points': currentPoints - item.points,
+      ':activities': [
+        ...(user.activities || []),
+        {
+          type: 'store_redeemed',
+          itemId,
+          itemName: item.name,
+          points: item.points,
+          timestamp: new Date().toISOString()
+        }
+      ],
+      ':pointActivities': [
+        ...(user.pointActivities || []),
+        {
+          id: `pa-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          userId,
+          points: -item.points,
+          reason: `Redeemed store item: ${item.name}`,
+          type: 'store_redemption',
+          awardedAt: new Date().toISOString()
+        }
+      ]
     }
   };
   await docClient.send(new UpdateCommand(updateUserParams));
+
+  // Decrement quantity for physical items
+  if (item.itemType === 'physical' && item.quantity !== undefined && item.quantity > 0) {
+    const newQuantity = item.quantity - 1;
+    const updateItemParams = {
+      TableName: STORE_ITEMS_TABLE,
+      Key: { id: itemId },
+      UpdateExpression: 'SET #quantity = :quantity, #inStock = :inStock',
+      ExpressionAttributeNames: {
+        '#quantity': 'quantity',
+        '#inStock': 'inStock'
+      },
+      ExpressionAttributeValues: {
+        ':quantity': newQuantity,
+        ':inStock': newQuantity > 0
+      }
+    };
+    await docClient.send(new UpdateCommand(updateItemParams));
+  }
 
   // Create order
   const order = {

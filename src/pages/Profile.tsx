@@ -12,7 +12,7 @@ import { Progress } from '@/components/ui/progress';
 import { 
   Trophy, Calendar, Target, FileText, Medal, Zap, 
   Linkedin, Github, Twitter, ExternalLink, Building, User,
-  Mic, BookOpen, CheckCircle, Clock, Award, Shield
+  Mic, BookOpen, CheckCircle, Clock, Award, Shield, ShoppingBag
 } from 'lucide-react';
 import { mockBadges, communityRoles, CommunityRole, User as UserType } from '@/data/mockData';
 import { getSprints } from '@/lib/sprints';
@@ -243,7 +243,7 @@ export default function Profile() {
   };
 
   // Generate activity history
-  type ActivityType = 'sprint_attended' | 'sprint_spoke' | 'meetup_attended' | 'meetup_spoke' | 'meetup_organized' | 'blog_submitted' | 'submission_approved' | 'badge_earned' | 'points_awarded';
+  type ActivityType = 'sprint_attended' | 'sprint_spoke' | 'meetup_attended' | 'meetup_spoke' | 'meetup_organized' | 'blog_submitted' | 'submission_approved' | 'badge_earned' | 'points_awarded' | 'store_redeemed';
   
   interface ActivityHistoryItem {
     id: string;
@@ -423,6 +423,23 @@ export default function Profile() {
         icon: <Zap className="h-4 w-4" />
       });
     });
+
+    // Store redemptions
+    if (user.activities) {
+      user.activities
+        .filter(a => a.type === 'store_redeemed')
+        .forEach(activity => {
+          activities.push({
+            id: `store-${activity.itemId}-${activity.timestamp}`,
+            type: 'store_redeemed',
+            title: `Redeemed ${activity.itemName}`,
+            description: `Spent ${activity.points} points`,
+            date: activity.timestamp,
+            link: '/store',
+            icon: <ShoppingBag className="h-4 w-4" />
+          });
+        });
+    }
 
     // Sort by date (most recent first)
     return activities.sort((a, b) => {
@@ -789,6 +806,8 @@ export default function Profile() {
                               return <Badge variant="default" className="gap-1"><Medal className="h-3 w-3" /> Badge</Badge>;
                             case 'points_awarded':
                               return <Badge variant="default" className="gap-1 bg-amber-500 hover:bg-amber-600"><Zap className="h-3 w-3" /> Points</Badge>;
+                            case 'store_redeemed':
+                              return <Badge variant="default" className="gap-1 bg-emerald-500 hover:bg-emerald-600"><ShoppingBag className="h-3 w-3" /> Redeemed</Badge>;
                             default:
                               return null;
                           }

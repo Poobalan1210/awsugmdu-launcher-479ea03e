@@ -5109,7 +5109,7 @@ function BadgesTab({ allUsers }: { allUsers: UserType[] }) {
 
 export default function Admin() {
   const { user: authUser, refreshUser } = useAuth();
-  const [activeTab, setActiveTab] = useState('submissions');
+  const [activeTab, setActiveTab] = useState('sprints');
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [loadingSprints, setLoadingSprints] = useState(false);
   const [meetupCount, setMeetupCount] = useState(0);
@@ -5205,19 +5205,12 @@ export default function Admin() {
     }
   };
 
-  // Load sprints when component mounts or when sprints tab is active
+  // Load sprints/submissions when sprints tab is active
   useEffect(() => {
-    if (isAdmin && activeTab === 'sprints') {
+    if ((isAdmin || isSpeaker) && activeTab === 'sprints') {
       fetchSprints();
     }
-  }, [isAdmin, activeTab]);
-
-  // Load submissions when submissions tab is active
-  useEffect(() => {
-    if (isAdmin && activeTab === 'submissions') {
-      fetchSprints(); // Fetch sprints to get submissions
-    }
-  }, [isAdmin, activeTab]);
+  }, [isAdmin, isSpeaker, activeTab]);
 
   // Load users and meetup stats when component mounts
   useEffect(() => {
@@ -5308,9 +5301,9 @@ export default function Admin() {
 
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="mb-6 flex-wrap">
-              <TabsTrigger value="submissions" className="gap-2">
-                <MessageSquare className="h-4 w-4" />
-                Submissions
+              <TabsTrigger value="sprints" className="gap-2">
+                <Rocket className="h-4 w-4" />
+                Sprints
                 {pendingSubmissions.length > 0 && (
                   <Badge variant="destructive" className="ml-1 h-5 w-5 p-0 flex items-center justify-center">
                     {pendingSubmissions.length}
@@ -5319,10 +5312,6 @@ export default function Admin() {
               </TabsTrigger>
               {isAdmin && (
                 <>
-                  <TabsTrigger value="sprints" className="gap-2">
-                    <Rocket className="h-4 w-4" />
-                    Sprints
-                  </TabsTrigger>
                   <TabsTrigger value="meetups" className="gap-2">
                     <Calendar className="h-4 w-4" />
                     Meetups
@@ -5351,58 +5340,10 @@ export default function Admin() {
               )}
             </TabsList>
 
-            <TabsContent value="submissions" className="space-y-6">
-              <Card className="glass-card">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Clock className="h-5 w-5 text-amber-500" />
-                    Pending Reviews ({pendingSubmissions.length})
-                  </CardTitle>
-                  <CardDescription>
-                    Review and approve/reject submissions from participants
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {pendingSubmissions.length === 0 ? (
-                    <div className="text-center py-8">
-                      <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-4" />
-                      <p className="text-muted-foreground">All caught up! No pending submissions.</p>
-                    </div>
-                  ) : (
-                    pendingSubmissions.map(sub => (
-                      <SubmissionReview
-                        key={sub.id}
-                        submission={sub}
-                        onAction={(action, points, feedback) => handleSubmissionAction(sub.id, sub.sprintId, action, points, feedback)}
-                      />
-                    ))
-                  )}
-                </CardContent>
-              </Card>
-
-              <Card className="glass-card">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <CheckCircle className="h-5 w-5 text-emerald-500" />
-                    Reviewed ({reviewedSubmissions.length})
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {reviewedSubmissions.map(sub => (
-                    <SubmissionReview
-                      key={sub.id}
-                      submission={sub}
-                      onAction={() => { }}
-                    />
-                  ))}
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            {isAdmin && (
-              <>
-                <TabsContent value="sprints">
-                  <div className="flex justify-between items-center mb-6">
+            <TabsContent value="sprints" className="space-y-6">
+              {isAdmin && (
+                <div className="space-y-6">
+                  <div className="flex justify-between items-center">
                     <h2 className="text-xl font-semibold">Manage Sprints</h2>
                     <CreateSprintDialog onSuccess={fetchSprints} />
                   </div>
@@ -5470,8 +5411,58 @@ export default function Admin() {
                       )}
                     </div>
                   )}
-                </TabsContent>
+                </div>
+              )}
 
+              <Card className="glass-card">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Clock className="h-5 w-5 text-amber-500" />
+                    Pending Reviews ({pendingSubmissions.length})
+                  </CardTitle>
+                  <CardDescription>
+                    Review and approve/reject submissions from participants
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+                  {pendingSubmissions.length === 0 ? (
+                    <div className="text-center py-8">
+                      <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-4" />
+                      <p className="text-muted-foreground">All caught up! No pending submissions.</p>
+                    </div>
+                  ) : (
+                    pendingSubmissions.map(sub => (
+                      <SubmissionReview
+                        key={sub.id}
+                        submission={sub}
+                        onAction={(action, points, feedback) => handleSubmissionAction(sub.id, sub.sprintId, action, points, feedback)}
+                      />
+                    ))
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="glass-card">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <CheckCircle className="h-5 w-5 text-emerald-500" />
+                    Reviewed ({reviewedSubmissions.length})
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+                  {reviewedSubmissions.map(sub => (
+                    <SubmissionReview
+                      key={sub.id}
+                      submission={sub}
+                      onAction={() => { }}
+                    />
+                  ))}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {isAdmin && (
+              <>
                 <TabsContent value="meetups">
                   <MeetupsManagementTab allUsers={allUsers} />
                 </TabsContent>

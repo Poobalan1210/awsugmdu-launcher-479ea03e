@@ -20,6 +20,16 @@ resource "aws_dynamodb_table" "certification_groups" {
     projection_type = "ALL"
   }
 
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  deletion_protection_enabled = true
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
   tags = {
     Name = "${var.project_name}-certification-groups-table"
   }

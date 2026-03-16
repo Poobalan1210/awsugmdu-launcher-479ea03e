@@ -33,6 +33,16 @@ resource "aws_dynamodb_table" "colleges" {
 
   # Note: This is a sparse index - only items with champsLeadId will be indexed
 
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  deletion_protection_enabled = true
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
   tags = {
     Name = "${var.project_name}-colleges-table"
   }

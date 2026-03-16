@@ -12,11 +12,21 @@ terraform {
     }
   }
   
-  # Optional: Use S3 backend for state management
+  # Remote state management with S3 + DynamoDB locking
+  # Uncomment after creating the state bucket and lock table:
+  #   aws s3api create-bucket --bucket awsug-terraform-state --region us-east-1
+  #   aws s3api put-bucket-versioning --bucket awsug-terraform-state --versioning-configuration Status=Enabled
+  #   aws dynamodb create-table --table-name awsug-terraform-lock \
+  #     --attribute-definitions AttributeName=LockID,AttributeType=S \
+  #     --key-schema AttributeName=LockID,KeyType=HASH \
+  #     --billing-mode PAY_PER_REQUEST --region us-east-1
+  #
   # backend "s3" {
-  #   bucket = "awsug-terraform-state"
-  #   key    = "awsug-infrastructure/terraform.tfstate"
-  #   region = "us-east-1"
+  #   bucket         = "awsug-terraform-state"
+  #   key            = "awsug-infrastructure/terraform.tfstate"
+  #   region         = "us-east-1"
+  #   dynamodb_table = "awsug-terraform-lock"
+  #   encrypt        = true
   # }
 }
 
@@ -97,6 +107,16 @@ resource "aws_dynamodb_table" "users" {
     projection_type = "ALL"
   }
 
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  deletion_protection_enabled = true
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
   tags = {
     Name = "${var.project_name}-users-table"
   }
@@ -157,6 +177,16 @@ resource "aws_dynamodb_table" "meetups" {
     projection_type = "ALL"
   }
 
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  deletion_protection_enabled = true
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
   tags = {
     Name = "${var.project_name}-meetups-table"
   }
@@ -195,6 +225,16 @@ resource "aws_dynamodb_table" "sprints" {
     projection_type = "ALL"
   }
 
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  deletion_protection_enabled = true
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
   tags = {
     Name = "${var.project_name}-sprints-table"
   }
@@ -204,8 +244,22 @@ resource "aws_dynamodb_table" "sprints" {
 resource "aws_s3_bucket" "profile_photos" {
   bucket = "${var.project_name}-profile-photos-${data.aws_caller_identity.current.account_id}"
 
+  force_destroy = false
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
   tags = {
     Name = "${var.project_name}-profile-photos"
+  }
+}
+
+# Enable versioning for profile photos to protect against accidental overwrites/deletes
+resource "aws_s3_bucket_versioning" "profile_photos" {
+  bucket = aws_s3_bucket.profile_photos.id
+  versioning_configuration {
+    status = "Enabled"
   }
 }
 
@@ -213,8 +267,22 @@ resource "aws_s3_bucket" "profile_photos" {
 resource "aws_s3_bucket" "meetup_posters" {
   bucket = "${var.project_name}-meetup-posters-${data.aws_caller_identity.current.account_id}"
 
+  force_destroy = false
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
   tags = {
     Name = "${var.project_name}-meetup-posters"
+  }
+}
+
+# Enable versioning for meetup posters to protect against accidental overwrites/deletes
+resource "aws_s3_bucket_versioning" "meetup_posters" {
+  bucket = aws_s3_bucket.meetup_posters.id
+  versioning_configuration {
+    status = "Enabled"
   }
 }
 

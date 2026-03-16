@@ -20,6 +20,16 @@ resource "aws_dynamodb_table" "store_items" {
     projection_type = "ALL"
   }
 
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  deletion_protection_enabled = true
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
   tags = {
     Name = "${var.project_name}-store-items-table"
   }
@@ -56,6 +66,16 @@ resource "aws_dynamodb_table" "orders" {
     name     = "status-index"
     hash_key = "status"
     projection_type = "ALL"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  deletion_protection_enabled = true
+
+  lifecycle {
+    prevent_destroy = true
   }
 
   tags = {

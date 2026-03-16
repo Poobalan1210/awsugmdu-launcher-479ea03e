@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Menu, X, User, LogOut, Shield } from 'lucide-react';
+import { Menu, X, User, LogOut, Shield, Activity } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -61,6 +61,10 @@ export function Header() {
           {(isAdmin || isSpeaker) && <Link to="/admin" className={`px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-1 ${location.pathname.startsWith('/admin') ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}>
               <Shield className="h-4 w-4" />
               Admin
+            </Link>}
+          {isAdmin && <Link to="/dashboard" className={`px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-1 ${location.pathname === '/dashboard' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}>
+              <Activity className="h-4 w-4" />
+              Dashboard
             </Link>}
         </nav>
 
@@ -143,6 +147,10 @@ export function Header() {
             {(isAdmin || isSpeaker) && <Link to="/admin" onClick={() => setMobileMenuOpen(false)} className={`px-4 py-3 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${location.pathname.startsWith('/admin') ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}>
                 <Shield className="h-4 w-4" />
                 Admin Panel
+              </Link>}
+            {isAdmin && <Link to="/dashboard" onClick={() => setMobileMenuOpen(false)} className={`px-4 py-3 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${location.pathname === '/dashboard' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}>
+                <Activity className="h-4 w-4" />
+                Dashboard
               </Link>}
             {!isAuthenticated && !isLoading && (
               <div className="flex flex-col gap-2 pt-4 border-t border-border mt-2">

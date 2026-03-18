@@ -199,3 +199,30 @@ export async function markAttendance(meetupId: string, data: MarkAttendanceData)
   });
   return response.meetup;
 }
+
+
+// Post-event photos
+export async function addMeetupPhotos(meetupId: string, photoUrls: string[]): Promise<Meetup> {
+  const response = await callApi<MeetupResponse>(`/meetups/${meetupId}/photos`, {
+    method: 'POST',
+    body: JSON.stringify({ photoUrls }),
+  });
+  return response.meetup;
+}
+
+export async function removeMeetupPhoto(meetupId: string, photoUrl: string): Promise<Meetup> {
+  const response = await callApi<MeetupResponse>(`/meetups/${meetupId}/photos`, {
+    method: 'DELETE',
+    body: JSON.stringify({ photoUrl }),
+  });
+  return response.meetup;
+}
+
+// Post-event report (for college-champ sessions)
+export async function addMeetupReport(meetupId: string, url: string, fileName: string): Promise<Meetup> {
+  const response = await callApi<MeetupResponse>(`/meetups/${meetupId}/report`, {
+    method: 'POST',
+    body: JSON.stringify({ url, fileName }),
+  });
+  return response.meetup;
+}

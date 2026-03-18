@@ -700,6 +700,18 @@ resource "aws_api_gateway_resource" "meetups_id_end" {
   path_part   = "end"
 }
 
+resource "aws_api_gateway_resource" "meetups_id_photos" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  parent_id   = aws_api_gateway_resource.meetups_id.id
+  path_part   = "photos"
+}
+
+resource "aws_api_gateway_resource" "meetups_id_report" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  parent_id   = aws_api_gateway_resource.meetups_id.id
+  path_part   = "report"
+}
+
 resource "aws_api_gateway_resource" "upload" {
   rest_api_id = aws_api_gateway_rest_api.api.id
   parent_id   = aws_api_gateway_rest_api.api.root_resource_id
@@ -950,6 +962,43 @@ resource "aws_api_gateway_method" "meetups_id_end_patch" {
 resource "aws_api_gateway_method" "meetups_id_end_options" {
   rest_api_id   = aws_api_gateway_rest_api.api.id
   resource_id   = aws_api_gateway_resource.meetups_id_end.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# Photos methods
+resource "aws_api_gateway_method" "meetups_id_photos_post" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.meetups_id_photos.id
+  http_method   = "POST"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "meetups_id_photos_delete" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.meetups_id_photos.id
+  http_method   = "DELETE"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "meetups_id_photos_options" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.meetups_id_photos.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# Report methods
+resource "aws_api_gateway_method" "meetups_id_report_post" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.meetups_id_report.id
+  http_method   = "POST"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "meetups_id_report_options" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.meetups_id_report.id
   http_method   = "OPTIONS"
   authorization = "NONE"
 }
@@ -1487,6 +1536,146 @@ resource "aws_api_gateway_integration_response" "meetups_id_end_options" {
   }
 }
 
+# Photos integrations
+resource "aws_api_gateway_integration" "meetups_id_photos_post_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.meetups_id_photos.id
+  http_method = aws_api_gateway_method.meetups_id_photos_post.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.meetups_crud.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "meetups_id_photos_delete_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.meetups_id_photos.id
+  http_method = aws_api_gateway_method.meetups_id_photos_delete.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.meetups_crud.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "meetups_id_photos_options_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.meetups_id_photos.id
+  http_method = aws_api_gateway_method.meetups_id_photos_options.http_method
+
+  type = "MOCK"
+
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "meetups_id_photos_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.meetups_id_photos.id
+  http_method = aws_api_gateway_method.meetups_id_photos_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin" = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "meetups_id_photos_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.meetups_id_photos.id
+  http_method = aws_api_gateway_method.meetups_id_photos_options.http_method
+  status_code = aws_api_gateway_method_response.meetups_id_photos_options_200.status_code
+
+  depends_on = [aws_api_gateway_integration.meetups_id_photos_options_lambda]
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+  }
+}
+
+# Report integrations
+resource "aws_api_gateway_integration" "meetups_id_report_post_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.meetups_id_report.id
+  http_method = aws_api_gateway_method.meetups_id_report_post.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.meetups_crud.invoke_arn
+}
+
+resource "aws_api_gateway_integration" "meetups_id_report_options_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.meetups_id_report.id
+  http_method = aws_api_gateway_method.meetups_id_report_options.http_method
+
+  type = "MOCK"
+
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "meetups_id_report_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.meetups_id_report.id
+  http_method = aws_api_gateway_method.meetups_id_report_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin" = true
+  }
+}
+
+resource "aws_api_gateway_method_response" "meetups_id_report_post_200" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.meetups_id_report.id
+  http_method = aws_api_gateway_method.meetups_id_report_post.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin" = true
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "meetups_id_report_post" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.meetups_id_report.id
+  http_method = aws_api_gateway_method.meetups_id_report_post.http_method
+  status_code = aws_api_gateway_method_response.meetups_id_report_post_200.status_code
+
+  depends_on = [aws_api_gateway_integration.meetups_id_report_post_lambda]
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+  }
+}
+
+resource "aws_api_gateway_integration_response" "meetups_id_report_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.meetups_id_report.id
+  http_method = aws_api_gateway_method.meetups_id_report_options.http_method
+  status_code = aws_api_gateway_method_response.meetups_id_report_options_200.status_code
+
+  depends_on = [aws_api_gateway_integration.meetups_id_report_options_lambda]
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+  }
+}
+
 resource "aws_api_gateway_integration" "meetups_id_register_lambda" {
   rest_api_id = aws_api_gateway_rest_api.api.id
   resource_id = aws_api_gateway_resource.meetups_id_register.id
@@ -2011,6 +2200,11 @@ resource "aws_api_gateway_deployment" "api" {
       aws_api_gateway_integration.meetups_id_delete_lambda.id,
       aws_api_gateway_integration.meetups_id_end_lambda.id,
       aws_api_gateway_integration.meetups_id_end_options_lambda.id,
+      aws_api_gateway_integration.meetups_id_photos_post_lambda.id,
+      aws_api_gateway_integration.meetups_id_photos_delete_lambda.id,
+      aws_api_gateway_integration.meetups_id_photos_options_lambda.id,
+      aws_api_gateway_integration.meetups_id_report_post_lambda.id,
+      aws_api_gateway_integration.meetups_id_report_options_lambda.id,
       aws_api_gateway_integration.meetups_id_mark_attendance_lambda.id,
       aws_api_gateway_integration.meetups_id_mark_attendance_options_lambda.id,
       aws_api_gateway_integration.sprints_id_sessions_sessionid_register_lambda.id,
@@ -2049,6 +2243,13 @@ resource "aws_api_gateway_deployment" "api" {
     aws_api_gateway_integration.meetups_id_delete_lambda,
     aws_api_gateway_integration.meetups_id_publish_lambda,
     aws_api_gateway_integration.meetups_id_end_lambda,
+    aws_api_gateway_integration.meetups_id_photos_post_lambda,
+    aws_api_gateway_integration.meetups_id_photos_delete_lambda,
+    aws_api_gateway_integration.meetups_id_photos_options_lambda,
+    aws_api_gateway_integration.meetups_id_report_post_lambda,
+    aws_api_gateway_integration.meetups_id_report_options_lambda,
+    aws_api_gateway_integration_response.meetups_id_report_post,
+    aws_api_gateway_integration_response.meetups_id_report_options,
     aws_api_gateway_integration.meetups_id_register_lambda,
     aws_api_gateway_integration.meetups_id_participants_lambda,
     aws_api_gateway_integration.upload_lambda,

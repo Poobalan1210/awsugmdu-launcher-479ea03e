@@ -447,8 +447,8 @@ export default function Profile() {
       });
     });
 
-    // Point activities (adhoc awards, etc.)
-    pointActivities.forEach(activity => {
+    // Point activities (adhoc awards, etc.) - skip store redemptions as they appear under store_redeemed
+    pointActivities.filter(activity => activity.points >= 0).forEach(activity => {
       activities.push({
         id: `points-${activity.id}`,
         type: 'points_awarded',
@@ -865,6 +865,15 @@ export default function Profile() {
                             const badge = user.badges.find(b => `badge-${b.id}` === activity.id);
                             if (badge) return generateBadgeShare(user.name, badge);
                             return null;
+                          }
+
+                          if (activity.type === 'store_redeemed') {
+                            return generateProfileActivityShare(
+                              user.name,
+                              activity.type,
+                              activity.metadata?.itemName || activity.title.replace('Redeemed ', ''),
+                              '/store'
+                            );
                           }
                           
                           // For points_awarded, extract the points from the title string

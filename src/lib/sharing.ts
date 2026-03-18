@@ -184,6 +184,15 @@ export function generateProfileActivityShare(
       hashtags: [...hashtags, 'Achievement']
     };
   }
+
+  if (activityType === 'store_redeemed') {
+    return {
+      title: `${userName} redeemed ${activityTitle}`,
+      text: `I just redeemed "${activityTitle}" from the AWS User Group community store! 🛍️`,
+      url,
+      hashtags: [...hashtags, 'CommunityStore', 'Rewards']
+    };
+  }
   
   // Return null for unhandled types or ones handled differently (e.g., meetup_attended)
   return null;

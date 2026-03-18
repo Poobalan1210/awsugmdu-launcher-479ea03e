@@ -101,7 +101,7 @@ export interface User {
 }
 
 export interface UserActivity {
-  type: 'meetup_attended' | 'meetup_organized' | 'sprint_completed' | 'submission_approved' | 'badge_earned' | 'certification_earned';
+  type: 'meetup_attended' | 'meetup_organized' | 'sprint_completed' | 'submission_approved' | 'badge_earned' | 'certification_earned' | 'store_redeemed';
   meetupId?: string;
   meetupTitle?: string;
   sprintId?: string;
@@ -110,6 +110,8 @@ export interface UserActivity {
   timestamp: string;
   description?: string;
   role?: string;
+  itemId?: string;
+  itemName?: string;
 }
 
 // Badge criteria types for auto-awarding
@@ -247,6 +249,8 @@ export interface Meetup {
   speakerPoints?: number;
   volunteerPoints?: number;
   hostPoints?: number;
+  eventPhotos?: string[]; // URLs of post-event photos
+  eventReport?: { url: string; fileName: string }; // Post-event report (for college-champ sessions)
 }
 
 export interface MeetupPerson {

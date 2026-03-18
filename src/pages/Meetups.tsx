@@ -16,6 +16,8 @@ import {
   Linkedin, Github, CheckCircle, Search, Rocket, Award, GraduationCap
 } from 'lucide-react';
 import { PersonCard } from '@/components/common/PersonCard';
+import { PostEventUploads } from '@/components/meetups/PostEventUploads';
+import { EventPhotoGallery } from '@/components/meetups/EventPhotoGallery';
 import { Meetup } from '@/data/mockData';
 import { format, parseISO, isPast } from 'date-fns';
 import { getMeetups, registerForMeetup, getMeetupParticipants, getMeetup } from '@/lib/meetups';
@@ -482,6 +484,12 @@ function MeetupDetail({ meetup: initialMeetup, onBack }: { meetup: Meetup; onBac
               </CardContent>
             </Card>
           )}
+
+          {/* Event Photos - Public gallery for all users */}
+          <EventPhotoGallery meetup={meetup} />
+
+          {/* Post-Event Uploads - Admin only */}
+          <PostEventUploads meetup={meetup} />
         </div>
 
         {/* Right Column: Combined People Section (Scrollable) */}

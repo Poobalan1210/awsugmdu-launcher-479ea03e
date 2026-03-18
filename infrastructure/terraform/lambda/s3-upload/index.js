@@ -52,7 +52,7 @@ exports.handler = async (event) => {
       ? PROFILE_PHOTOS_BUCKET 
       : bucketType === 'college-logos'
       ? PROFILE_PHOTOS_BUCKET // Reuse profile photos bucket for college documents
-      : MEETUP_POSTERS_BUCKET;
+      : MEETUP_POSTERS_BUCKET; // Also used for meetup-photos and meetup-reports
     
     // Validate content type - allow documents for college-logos bucket
     const allowedImageTypes = [
@@ -75,7 +75,7 @@ exports.handler = async (event) => {
       'application/octet-stream'
     ];
     
-    const allowedTypes = bucketType === 'college-logos' 
+    const allowedTypes = (bucketType === 'college-logos' || bucketType === 'meetup-reports')
       ? [...allowedImageTypes, ...allowedDocumentTypes]
       : allowedImageTypes;
     
@@ -92,6 +92,10 @@ exports.handler = async (event) => {
       ? `profiles/${timestamp}-${sanitizedFileName}`
       : bucketType === 'college-logos'
       ? `college-documents/${timestamp}-${sanitizedFileName}`
+      : bucketType === 'meetup-photos'
+      ? `event-photos/${timestamp}-${sanitizedFileName}`
+      : bucketType === 'meetup-reports'
+      ? `event-reports/${timestamp}-${sanitizedFileName}`
       : `posters/${timestamp}-${sanitizedFileName}`;
     
     // Generate presigned URL (valid for 5 minutes)

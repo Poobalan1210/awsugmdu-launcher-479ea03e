@@ -125,6 +125,15 @@ exports.handler = async (event) => {
       } else if (method === 'PATCH' && id && action === 'end') {
         // PATCH /meetups/{id}/end - End a meetup event
         return await endMeetup(id, event);
+      } else if (method === 'POST' && id && action === 'photos') {
+        // POST /meetups/{id}/photos - Add post-event photos
+        return await addEventPhotos(id, event);
+      } else if (method === 'POST' && id && action === 'report') {
+        // POST /meetups/{id}/report - Add post-event report (for college-champ sessions)
+        return await addEventReport(id, event);
+      } else if (method === 'DELETE' && id && action === 'photos') {
+        // DELETE /meetups/{id}/photos - Remove a photo
+        return await removeEventPhoto(id, event);
       }
     }
 
@@ -1133,4 +1142,121 @@ async function endMeetup(id, event) {
       : `Meetup scheduled to end on ${endDate}`
   });
 }
+
+// Add post-event photos to a meetup
+async function addEventPhotos(id, event) {
+  const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
+  const { photoUrls } = body;
+
+  if (!photoUrls || !Array.isArray(photoUrls) || photoUrls.length === 0) {
+    return createResponse(400, { error: 'photoUrls array is required' });
+  }
+
+  // Check if meetup exists
+  const existing = await docClient.send(new GetCommand({
+    TableName: MEETUPS_TABLE,
+    Key: { id }
+  }));
+
+  if (!existing.Item) {
+    return createResponse(404, { error: 'Meetup not found' });
+  }
+
+  // Append new photos to existing ones
+  const existingPhotos = existing.Item.eventPhotos || [];
+  const updatedPhotos = [...existingPhotos, ...photoUrls];
+
+  await docClient.send(new UpdateCommand({
+    TableName: MEETUPS_TABLE,
+    Key: { id },
+    UpdateExpression: 'SET eventPhotos = :photos, updatedAt = :updatedAt',
+    ExpressionAttributeValues: {
+      ':photos': updatedPhotos,
+      ':updatedAt': new Date().toISOString()
+    }
+  }));
+
+  const updated = await docClient.send(new GetCommand({
+    TableName: MEETUPS_TABLE,
+    Key: { id }
+  }));
+
+  return createResponse(200, { meetup: updated.Item });
+}
+
+// Remove a photo from a meetup
+async function removeEventPhoto(id, event) {
+  const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
+  const { photoUrl } = body;
+
+  if (!photoUrl) {
+    return createResponse(400, { error: 'photoUrl is required' });
+  }
+
+  const existing = await docClient.send(new GetCommand({
+    TableName: MEETUPS_TABLE,
+    Key: { id }
+  }));
+
+  if (!existing.Item) {
+    return createResponse(404, { error: 'Meetup not found' });
+  }
+
+  const existingPhotos = existing.Item.eventPhotos || [];
+  const updatedPhotos = existingPhotos.filter(url => url !== photoUrl);
+
+  await docClient.send(new UpdateCommand({
+    TableName: MEETUPS_TABLE,
+    Key: { id },
+    UpdateExpression: 'SET eventPhotos = :photos, updatedAt = :updatedAt',
+    ExpressionAttributeValues: {
+      ':photos': updatedPhotos,
+      ':updatedAt': new Date().toISOString()
+    }
+  }));
+
+  const updated = await docClient.send(new GetCommand({
+    TableName: MEETUPS_TABLE,
+    Key: { id }
+  }));
+
+  return createResponse(200, { meetup: updated.Item });
+}
+
+// Add post-event report to a meetup (primarily for college-champ sessions)
+async function addEventReport(id, event) {
+  const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
+  const { url, fileName } = body;
+
+  if (!url || !fileName) {
+    return createResponse(400, { error: 'url and fileName are required' });
+  }
+
+  const existing = await docClient.send(new GetCommand({
+    TableName: MEETUPS_TABLE,
+    Key: { id }
+  }));
+
+  if (!existing.Item) {
+    return createResponse(404, { error: 'Meetup not found' });
+  }
+
+  await docClient.send(new UpdateCommand({
+    TableName: MEETUPS_TABLE,
+    Key: { id },
+    UpdateExpression: 'SET eventReport = :report, updatedAt = :updatedAt',
+    ExpressionAttributeValues: {
+      ':report': { url, fileName },
+      ':updatedAt': new Date().toISOString()
+    }
+  }));
+
+  const updated = await docClient.send(new GetCommand({
+    TableName: MEETUPS_TABLE,
+    Key: { id }
+  }));
+
+  return createResponse(200, { meetup: updated.Item });
+}
+
 

@@ -70,6 +70,7 @@ variable "allowed_cors_origins" {
     "http://localhost:3000",
     "http://localhost:5174",
     "https://awsugmdu.in",
+    "https://www.awsugmdu.in",
     "https://awsugmdu-launcher-479ea03e.vercel.app",
     "https://*.vercel.app"
   ]

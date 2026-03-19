@@ -50,7 +50,10 @@ export async function awardPoints(data: AwardPointsData): Promise<PointActivity>
 }
 
 // Get user's total points
-export async function getUserPoints(userId: string): Promise<number> {
-  const response = await callApi<{ points: number }>(`/users/${userId}/points`);
-  return response.points || 0;
+export async function getUserPoints(userId: string): Promise<{ points: number; redeemablePoints: number }> {
+  const response = await callApi<{ points: number; redeemablePoints: number }>(`/users/${userId}/points`);
+  return {
+    points: response.points || 0,
+    redeemablePoints: response.redeemablePoints ?? response.points ?? 0,
+  };
 }

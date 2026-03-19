@@ -594,8 +594,9 @@ async function redeemItem(itemId, data) {
 
   const user = userResult.Item;
   const currentPoints = user.points || 0;
+  const currentRedeemablePoints = user.redeemablePoints ?? currentPoints;
 
-  if (currentPoints < item.points) {
+  if (currentRedeemablePoints < item.points) {
     return {
       statusCode: 400,
       headers: corsHeaders,
@@ -603,18 +604,18 @@ async function redeemItem(itemId, data) {
     };
   }
 
-  // Deduct points from user
+  // Deduct points from redeemablePoints only (overall points stay the same)
   const updateUserParams = {
     TableName: USERS_TABLE,
     Key: { userId },
-    UpdateExpression: 'SET #points = :points, #activities = :activities, #pointActivities = :pointActivities',
+    UpdateExpression: 'SET #redeemablePoints = :redeemablePoints, #activities = :activities, #pointActivities = :pointActivities',
     ExpressionAttributeNames: {
-      '#points': 'points',
+      '#redeemablePoints': 'redeemablePoints',
       '#activities': 'activities',
       '#pointActivities': 'pointActivities'
     },
     ExpressionAttributeValues: {
-      ':points': currentPoints - item.points,
+      ':redeemablePoints': currentRedeemablePoints - item.points,
       ':activities': [
         ...(user.activities || []),
         {
@@ -625,17 +626,7 @@ async function redeemItem(itemId, data) {
           timestamp: new Date().toISOString()
         }
       ],
-      ':pointActivities': [
-        ...(user.pointActivities || []),
-        {
-          id: `pa-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-          userId,
-          points: -item.points,
-          reason: `Redeemed store item: ${item.name}`,
-          type: 'store_redemption',
-          awardedAt: new Date().toISOString()
-        }
-      ]
+      ':pointActivities': user.pointActivities || []
     }
   };
   await docClient.send(new UpdateCommand(updateUserParams));
@@ -737,7 +728,7 @@ AWS User Group MDU Team
     body: JSON.stringify({
       message: 'Item redeemed successfully',
       order,
-      remainingPoints: currentPoints - item.points
+      remainingPoints: currentRedeemablePoints - item.points
     })
   };
 }

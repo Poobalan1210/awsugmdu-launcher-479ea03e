@@ -847,7 +847,9 @@ async function reviewSubmission(sprintId, submissionId, event) {
       if (userResult.Item) {
         const user = userResult.Item;
         const currentPoints = user.points || 0;
+        const currentRedeemable = user.redeemablePoints ?? currentPoints;
         const newPoints = currentPoints + points;
+        const newRedeemable = currentRedeemable + points;
         const pointActivities = user.pointActivities || [];
         const activities = user.activities || [];
 
@@ -878,9 +880,10 @@ async function reviewSubmission(sprintId, submissionId, event) {
         await docClient.send(new UpdateCommand({
           TableName: USERS_TABLE,
           Key: { userId: user.userId },
-          UpdateExpression: 'SET points = :points, pointActivities = :pointActivities, activities = :activities, updatedAt = :updatedAt',
+          UpdateExpression: 'SET points = :points, redeemablePoints = :redeemablePoints, pointActivities = :pointActivities, activities = :activities, updatedAt = :updatedAt',
           ExpressionAttributeValues: {
             ':points': newPoints,
+            ':redeemablePoints': newRedeemable,
             ':pointActivities': pointActivities,
             ':activities': activities,
             ':updatedAt': new Date().toISOString()

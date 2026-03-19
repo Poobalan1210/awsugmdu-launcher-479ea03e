@@ -153,6 +153,7 @@ async function createUser(requestBody) {
       ...profileData,
       role: profileData.role || 'member',
       points: profileData.points || 0,
+      redeemablePoints: profileData.redeemablePoints ?? profileData.points ?? 0,
       rank: profileData.rank || 0,
       badges: profileData.badges || [],
       meetupVerified: profileData.meetupVerified || false,
@@ -239,7 +240,7 @@ async function updateUser(userId, requestBody) {
       'name', 'avatar', 'bio', 'designation', 'company', 'companyCity', 'country',
       'collegeName', 'collegeCity', 'isCollegeChamp', 'champCollegeId',
       'linkedIn', 'github', 'twitter', 'meetupEmail', 'userType',
-      'points', 'rank', 'badges', 'role', 'meetupVerified', 'meetupVerificationStatus'
+      'points', 'redeemablePoints', 'rank', 'badges', 'role', 'meetupVerified', 'meetupVerificationStatus'
     ];
     
     updatableFields.forEach(field => {

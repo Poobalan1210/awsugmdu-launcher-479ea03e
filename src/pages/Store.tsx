@@ -117,8 +117,8 @@ export default function Store() {
                       <Coins className="h-7 w-7 text-primary" />
                     </div>
                     <div>
-                      <p className="text-sm text-muted-foreground">Your Balance</p>
-                      <p className="text-3xl font-bold text-primary">{user.points.toLocaleString()}</p>
+                      <p className="text-sm text-muted-foreground">Available Balance</p>
+                      <p className="text-3xl font-bold text-primary">{user.redeemablePoints.toLocaleString()}</p>
                       <p className="text-sm text-muted-foreground">points</p>
                     </div>
                   </div>
@@ -184,10 +184,10 @@ export default function Store() {
                         </div>
                         <Button 
                           size="sm" 
-                          disabled={!user || !item.inStock || (user.points < item.points)}
+                          disabled={!user || !item.inStock || (user.redeemablePoints < item.points)}
                           onClick={() => handleRedeemClick(item)}
                         >
-                          {!user ? 'Sign In' : user.points < item.points ? 'Not Enough Points' : 'Redeem'}
+                          {!user ? 'Sign In' : user.redeemablePoints < item.points ? 'Not Enough Points' : 'Redeem'}
                         </Button>
                       </div>
                     </div>

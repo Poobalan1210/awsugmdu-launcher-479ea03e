@@ -874,7 +874,9 @@ async function markAttendance(id, event) {
 
       // Award points to user
       const currentPoints = user.points || 0;
+      const currentRedeemable = user.redeemablePoints ?? currentPoints;
       const newPoints = currentPoints + pointsToAward;
+      const newRedeemable = currentRedeemable + pointsToAward;
 
       // Create point activity
       const pointActivity = {
@@ -905,9 +907,10 @@ async function markAttendance(id, event) {
       await docClient.send(new UpdateCommand({
         TableName: USERS_TABLE,
         Key: { userId },
-        UpdateExpression: 'SET points = :points, activities = :activities, pointActivities = :pointActivities, updatedAt = :updatedAt',
+        UpdateExpression: 'SET points = :points, redeemablePoints = :redeemablePoints, activities = :activities, pointActivities = :pointActivities, updatedAt = :updatedAt',
         ExpressionAttributeValues: {
           ':points': newPoints,
+          ':redeemablePoints': newRedeemable,
           ':activities': userActivities,
           ':pointActivities': pointActivities,
           ':updatedAt': new Date().toISOString()
@@ -1026,7 +1029,9 @@ async function endMeetup(id, event) {
               if (userResult.Item) {
                 const user = userResult.Item;
                 const currentPoints = user.points || 0;
+                const currentRedeemable = user.redeemablePoints ?? currentPoints;
                 const newPoints = currentPoints + roleDef.requiredPoints;
+                const newRedeemable = currentRedeemable + roleDef.requiredPoints;
 
                 const pointActivity = {
                   id: `pa-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -1056,9 +1061,10 @@ async function endMeetup(id, event) {
                 await docClient.send(new UpdateCommand({
                   TableName: USERS_TABLE,
                   Key: { userId: person.userId },
-                  UpdateExpression: 'SET points = :points, activities = :activities, pointActivities = :pointActivities, updatedAt = :updatedAt',
+                  UpdateExpression: 'SET points = :points, redeemablePoints = :redeemablePoints, activities = :activities, pointActivities = :pointActivities, updatedAt = :updatedAt',
                   ExpressionAttributeValues: {
                     ':points': newPoints,
+                    ':redeemablePoints': newRedeemable,
                     ':activities': userActivities,
                     ':pointActivities': pointActivities,
                     ':updatedAt': now.toISOString()

@@ -87,6 +87,7 @@ export interface User {
   email: string;
   avatar: string;
   points: number;
+  redeemablePoints: number;
   rank: number;
   badges: Badge[];
   joinedDate: string;
@@ -373,6 +374,7 @@ export const mockUsers: User[] = [
     email: 'admin@awsug.com',
     avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Admin',
     points: 5000,
+    redeemablePoints: 5000,
     rank: 0,
     badges: [],
     joinedDate: '2023-01-01',
@@ -390,6 +392,7 @@ export const mockUsers: User[] = [
     email: 'priya@example.com',
     avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Priya',
     points: 2450,
+    redeemablePoints: 2450,
     rank: 1,
     badges: [],
     joinedDate: '2024-01-15',
@@ -407,6 +410,7 @@ export const mockUsers: User[] = [
     email: 'rahul@example.com',
     avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Rahul',
     points: 2100,
+    redeemablePoints: 2100,
     rank: 2,
     badges: [],
     joinedDate: '2024-02-20',
@@ -423,6 +427,7 @@ export const mockUsers: User[] = [
     email: 'ananya@example.com',
     avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Ananya',
     points: 1890,
+    redeemablePoints: 1890,
     rank: 3,
     badges: [],
     joinedDate: '2024-01-10',
@@ -439,6 +444,7 @@ export const mockUsers: User[] = [
     email: 'vikram@example.com',
     avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Vikram',
     points: 1650,
+    redeemablePoints: 1650,
     rank: 4,
     badges: [],
     joinedDate: '2024-03-05',
@@ -454,6 +460,7 @@ export const mockUsers: User[] = [
     email: 'sneha@example.com',
     avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sneha',
     points: 1420,
+    redeemablePoints: 1420,
     rank: 5,
     badges: [],
     joinedDate: '2024-02-28',
@@ -471,6 +478,7 @@ export const mockUsers: User[] = [
     email: 'arjun@example.com',
     avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Arjun',
     points: 1200,
+    redeemablePoints: 1200,
     rank: 6,
     badges: [],
     joinedDate: '2024-04-12',
@@ -485,6 +493,7 @@ export const mockUsers: User[] = [
     email: 'kavitha@example.com',
     avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Kavitha',
     points: 980,
+    redeemablePoints: 980,
     rank: 7,
     badges: [],
     joinedDate: '2024-03-22',
@@ -499,6 +508,7 @@ export const mockUsers: User[] = [
     email: 'deepak@example.com',
     avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Deepak',
     points: 850,
+    redeemablePoints: 850,
     rank: 8,
     badges: [],
     joinedDate: '2024-05-01',

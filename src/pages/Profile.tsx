@@ -575,8 +575,15 @@ export default function Profile() {
                     <div className="flex items-center gap-2 text-sm">
                       <Trophy className="h-4 w-4 text-primary" />
                       <span className="font-semibold">{user.points.toLocaleString()}</span>
-                      <span className="text-muted-foreground">points</span>
+                      <span className="text-muted-foreground">overall points</span>
                     </div>
+                    {isOwnProfile && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <Zap className="h-4 w-4 text-green-500" />
+                        <span className="font-semibold">{user.redeemablePoints.toLocaleString()}</span>
+                        <span className="text-muted-foreground">redeemable points</span>
+                      </div>
+                    )}
                     {user.rank > 0 && (
                       <div className="flex items-center gap-2 text-sm">
                         <Medal className="h-4 w-4 text-amber-500" />

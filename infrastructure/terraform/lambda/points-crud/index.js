@@ -144,7 +144,8 @@ async function getUserPoints(userId) {
   }
   
   const points = result.Item.points || 0;
-  return createResponse(200, { points });
+  const redeemablePoints = result.Item.redeemablePoints ?? points;
+  return createResponse(200, { points, redeemablePoints });
 }
 
 // Award points to user
@@ -210,9 +211,10 @@ async function awardPoints(event) {
   await docClient.send(new UpdateCommand({
     TableName: USERS_TABLE,
     Key: { userId },
-    UpdateExpression: 'SET points = :points, pointActivities = :pointActivities, activities = :activities, updatedAt = :updatedAt',
+    UpdateExpression: 'SET points = :points, redeemablePoints = :redeemablePoints, pointActivities = :pointActivities, activities = :activities, updatedAt = :updatedAt',
     ExpressionAttributeValues: {
       ':points': currentPoints + pointsNum,
+      ':redeemablePoints': (user.redeemablePoints || currentPoints) + pointsNum,
       ':pointActivities': pointActivities,
       ':activities': activities,
       ':updatedAt': new Date().toISOString()

@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
 import { User } from '@/data/mockData';
 import { getAllUsers } from '@/lib/userProfile';
+import { profilePath } from '@/lib/profileSlug';
 import { Link } from 'react-router-dom';
 import { ShareButton } from '@/components/common/ShareButton';
 import { generateLeaderboardShare } from '@/lib/sharing';
@@ -149,7 +150,7 @@ const Leaderboard = () => {
                         <div className="flex items-center justify-center w-10">
                           {getRankIcon(user.rank)}
                         </div>
-                        <Link to={`/profile/${user.id}`} className="flex items-center gap-4 flex-1 min-w-0">
+                        <Link to={profilePath(user.name, user.id)} className="flex items-center gap-4 flex-1 min-w-0">
                           <Avatar className="h-12 w-12 border-2 border-border">
                             <AvatarImage src={user.avatar} alt={user.name} />
                             <AvatarFallback>{user.name?.charAt(0) || '?'}</AvatarFallback>

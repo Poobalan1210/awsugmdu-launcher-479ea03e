@@ -24,6 +24,7 @@ import { getMeetupsByCertificationGroup } from '@/lib/meetups';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { listCertificationGroups, joinCertificationGroup, postGroupMessage, getCertificationGroup, addMessageReply, toggleMessageLike, toggleReplyLike } from '@/lib/certifications';
 import { API_BASE_URL } from '@/lib/aws-config';
+import { profilePath } from '@/lib/profileSlug';
 
 function GroupCard({ group, onSelect }: { group: CertificationGroup; onSelect: () => void }) {
   const { user } = useAuth();
@@ -570,7 +571,7 @@ function GroupDetail({ group: initialGroup, onBack }: { group: CertificationGrou
                     </Avatar>
                     <div className="flex-1">
                       <Link 
-                        to={`/profile/${owner.userId}`}
+                        to={profilePath(owner.name, owner.userId)}
                         className="font-medium hover:text-primary transition-colors"
                       >
                         {owner.name}
@@ -599,7 +600,7 @@ function GroupDetail({ group: initialGroup, onBack }: { group: CertificationGrou
                       </Avatar>
                       <div className="flex-1">
                         <Link 
-                          to={`/profile/${member.userId}`}
+                          to={profilePath(member.name, member.userId)}
                           className="font-medium hover:text-primary transition-colors"
                         >
                           {member.name}
@@ -695,7 +696,7 @@ function MessageCard({
     <Card className={`border ${isPinned ? 'border-primary/30 bg-primary/5' : ''}`}>
       <CardContent className="p-4">
         <div className="flex gap-4">
-          <Link to={`/profile/${message.userId}`}>
+          <Link to={profilePath(message.userName, message.userId)}>
             <Avatar className="h-10 w-10 cursor-pointer hover:ring-2 hover:ring-primary">
               <AvatarImage src={message.userAvatar} />
               <AvatarFallback>{message.userName.charAt(0)}</AvatarFallback>
@@ -703,7 +704,7 @@ function MessageCard({
           </Link>
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-1">
-              <Link to={`/profile/${message.userId}`} className="font-semibold hover:text-primary">
+              <Link to={profilePath(message.userName, message.userId)} className="font-semibold hover:text-primary">
                 {message.userName}
               </Link>
               <span className="text-sm text-muted-foreground">
@@ -842,7 +843,7 @@ function MessageCard({
                     
                     return (
                       <div key={reply.id} className="flex gap-3" ref={el => messageRefs.current[reply.id] = el}>
-                        <Link to={`/profile/${reply.userId}`}>
+                        <Link to={profilePath(reply.userName, reply.userId)}>
                           <Avatar className="h-7 w-7 cursor-pointer hover:ring-2 hover:ring-primary">
                             <AvatarImage src={reply.userAvatar} />
                             <AvatarFallback>{reply.userName.charAt(0)}</AvatarFallback>
@@ -850,7 +851,7 @@ function MessageCard({
                         </Link>
                         <div className="flex-1">
                           <div className="flex items-center gap-2 text-sm">
-                            <Link to={`/profile/${reply.userId}`} className="font-medium hover:text-primary">
+                            <Link to={profilePath(reply.userName, reply.userId)} className="font-medium hover:text-primary">
                               {reply.userName}
                             </Link>
                             <span className="text-muted-foreground">· {format(parseISO(reply.createdAt), 'MMM d')}</span>

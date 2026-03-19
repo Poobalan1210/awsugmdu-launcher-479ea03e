@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import { profilePath } from '@/lib/profileSlug';
 
 interface PersonCardProps {
   userId?: string;
@@ -58,7 +59,7 @@ export function PersonCard({
   if (isClickable) {
     return (
       <Link
-        to={`/profile/${userId}`}
+        to={profilePath(name, userId)}
         className={`flex items-start gap-3 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors cursor-pointer ${className}`}
       >
         {content}

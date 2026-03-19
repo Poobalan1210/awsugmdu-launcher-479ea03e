@@ -23,6 +23,7 @@ import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
 import { mockForumPosts, Sprint, Session, Meetup, User as UserType } from '@/data/mockData';
 import { getSprints, getSprint, registerForSprint, registerForSession, submitWork } from '@/lib/sprints';
+import { profilePath } from '@/lib/profileSlug';
 import { getMeetupsBySprint, registerForMeetup } from '@/lib/meetups';
 import { getAllUsers } from '@/lib/userProfile';
 import { uploadFileToS3 } from '@/lib/s3Upload';
@@ -403,7 +404,7 @@ function SessionCard({ session: initialSession, sprint, isExpanded, onToggle, on
                             <div className="flex items-center gap-2">
                               {member.userId ? (
                                 <Link 
-                                  to={`/profile/${member.userId}`}
+                                  to={profilePath(member.name, member.userId)}
                                   className="font-medium hover:text-primary transition-colors"
                                 >
                                   {member.name}

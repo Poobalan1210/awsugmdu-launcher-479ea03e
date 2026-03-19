@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { mockBadges, communityRoles, CommunityRole, User as UserType } from '@/data/mockData';
 import { getSprints } from '@/lib/sprints';
-import { getUserProfile } from '@/lib/userProfile';
+import { getUserProfile, getAllUsers } from '@/lib/userProfile';
 import { getAllColleges, College } from '@/lib/colleges';
 import { getUserRoles } from '@/lib/userRoles';
 import { format, parseISO } from 'date-fns';
@@ -27,9 +27,12 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { ShareButton } from '@/components/common/ShareButton';
 import { generateBadgeShare, generateProfileActivityShare, generateMeetupAttendanceShare } from '@/lib/sharing';
+import { getShareableProfileUrl, matchesSlug } from '@/lib/profileSlug';
+import { Share2, Copy, Check } from 'lucide-react';
+import { toast } from 'sonner';
 
 export default function Profile() {
-  const { userId } = useParams();
+  const { slug } = useParams();
   const { user: authUser, isLoading: authLoading } = useAuth();
   const [profileUser, setProfileUser] = useState<UserType | null>(null);
   const [loading, setLoading] = useState(true);
@@ -72,18 +75,24 @@ export default function Profile() {
     const fetchUser = async () => {
       setLoading(true);
       try {
-        if (userId) {
-          // Fetch specific user by ID from API
+        if (slug) {
+          // Resolve slug to a user by fetching all users and matching
           try {
-            const apiUser = await getUserProfile(userId);
-            setProfileUser({
-              ...apiUser,
-              id: (apiUser as any).userId || apiUser.id || userId,
-              points: apiUser.points ?? 0,
-              badges: apiUser.badges || [],
-            });
+            const allUsers = await getAllUsers();
+            const matched = allUsers.find(u => matchesSlug(slug, u.name, u.id));
+            if (matched) {
+              const apiUser = await getUserProfile(matched.id);
+              setProfileUser({
+                ...apiUser,
+                id: (apiUser as any).userId || apiUser.id || matched.id,
+                points: apiUser.points ?? 0,
+                badges: apiUser.badges || [],
+              });
+            } else {
+              setProfileUser(null);
+            }
           } catch (apiError) {
-            console.error('Failed to fetch user from API:', apiError);
+            console.error('Failed to resolve profile slug:', apiError);
             setProfileUser(null);
           }
         } else if (authUser) {
@@ -111,7 +120,7 @@ export default function Profile() {
       }
     };
     fetchUser();
-  }, [userId, authUser?.id]); // Depend on authUser.id to refetch when it changes
+  }, [slug, authUser?.id]); // Depend on slug to refetch when it changes
   
   // Fetch user roles from API
   useEffect(() => {
@@ -183,7 +192,7 @@ export default function Profile() {
   }, []);
   
   const user = profileUser;
-  const isOwnProfile = !userId || (authUser && userId === authUser.id);
+  const isOwnProfile = !slug || (authUser && profileUser && profileUser.id === authUser.id);
   
   // Show loading state while auth is loading or profile is loading
   if (loading || authLoading) {
@@ -621,6 +630,22 @@ export default function Profile() {
                         </a>
                       </Button>
                     )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const url = getShareableProfileUrl(user.name, user.id);
+                        navigator.clipboard.writeText(url).then(() => {
+                          toast.success('Profile link copied to clipboard!');
+                        }).catch(() => {
+                          // Fallback: show the URL
+                          toast.info(url);
+                        });
+                      }}
+                    >
+                      <Share2 className="h-4 w-4 mr-1" />
+                      Share Profile
+                    </Button>
                   </div>
                 </div>
 

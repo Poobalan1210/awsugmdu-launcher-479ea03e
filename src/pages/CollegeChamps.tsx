@@ -23,6 +23,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { SubmitTaskDialog } from '@/components/college-champs/SubmitTaskDialog';
 import { ShareButton } from '@/components/common/ShareButton';
 import { generateCollegeRankShare, generateCollegeActivityShare } from '@/lib/sharing';
+import { profilePath } from '@/lib/profileSlug';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -795,7 +796,7 @@ function CollegeDetailView({ college, rank }: { college: College, rank: number }
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <Link
-                              to={`/profile/${member.id}`}
+                              to={profilePath(member.name, member.id)}
                               className="font-semibold hover:text-primary transition-colors"
                             >
                               {member.name}

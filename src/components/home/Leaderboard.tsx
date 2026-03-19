@@ -3,6 +3,7 @@ import { motion, Variants } from 'framer-motion';
 import { Trophy, Medal, Award, TrendingUp, ArrowRight } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { profilePath } from '@/lib/profileSlug';
 import { Button } from '@/components/ui/button';
 import { User } from '@/data/mockData';
 import { useState, useEffect } from 'react';
@@ -148,7 +149,7 @@ export function Leaderboard() {
               {topUsers.map((user) => (
                 <motion.div key={user.id} variants={itemVariants}>
                   <Link
-                    to={`/profile/${user.id}`}
+                    to={profilePath(user.name, user.id)}
                     className={`flex items-center gap-4 p-3 rounded-lg border transition-all hover:scale-[1.02] ${getRankStyle(user.rank)}`}
                   >
                     <div className="flex items-center justify-center w-8">

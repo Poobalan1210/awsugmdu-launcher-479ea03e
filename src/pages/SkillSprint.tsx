@@ -20,7 +20,7 @@ import {
   Upload, X, Share2
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { Link } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { mockForumPosts, Sprint, Session, Meetup, User as UserType } from '@/data/mockData';
 import { getSprints, getSprint, registerForSprint, registerForSession, submitWork } from '@/lib/sprints';
 import { profilePath } from '@/lib/profileSlug';
@@ -29,9 +29,11 @@ import { getAllUsers } from '@/lib/userProfile';
 import { uploadFileToS3 } from '@/lib/s3Upload';
 import { format, parseISO, isPast } from 'date-fns';
 import { marked } from 'marked';
-import { generateSprintSubmissionShare } from '@/lib/sharing';
+import { generateSprintSubmissionShare, generateSprintShare } from '@/lib/sharing';
 import { useAuth } from '@/contexts/AuthContext';
 import { DiscussionForum } from '@/components/discussions/DiscussionForum';
+import { ShareButton } from '@/components/common/ShareButton';
+import { matchesSprintSlug } from '@/lib/sprintSlug';
 
 // Helper to parse markdown or HTML content
 function parseContent(content: string): string {
@@ -1258,6 +1260,9 @@ function SprintDetail({ sprint: initialSprint, onBack, defaultTab = 'sessions' }
       {/* Header */}
       <div className="flex items-center gap-4">
         <Button variant="ghost" onClick={onBack}>← Back</Button>
+        <div className="ml-auto">
+          <ShareButton data={generateSprintShare(sprint.title, sprint.id)} />
+        </div>
       </div>
 
       <div className="glass-card p-6 md:p-8 rounded-lg">
@@ -1446,31 +1451,39 @@ function SprintDetail({ sprint: initialSprint, onBack, defaultTab = 'sessions' }
 }
 
 export default function SkillSprint() {
+  const { sprintId: routeSprintId } = useParams();
   const [selectedSprint, setSelectedSprint] = useState<Sprint | null>(null);
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [sprintSessionCounts, setSprintSessionCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('sessions');
 
-  // Handle URL parameters for deep linking to posts/replies
+  // Handle URL parameters and route params for deep linking
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const sprintId = params.get('sprint');
+    const slugOrId = routeSprintId || params.get('sprint');
 
-    if (sprintId) {
-      // Find and select the sprint
-      const sprint = sprints.find(s => s.id === sprintId);
+    if (slugOrId && sprints.length > 0) {
+      // Try matching by slug first, then fall back to raw ID
+      const sprint = sprints.find(s => matchesSprintSlug(slugOrId, s.title, s.id)) 
+        || sprints.find(s => s.id === slugOrId);
       if (sprint) {
         setSelectedSprint(sprint);
-        // Check if we need to show the forum tab
         const postId = params.get('post');
         const replyId = params.get('reply');
         if (postId || replyId) {
           setActiveTab('forum');
         }
+      } else {
+        // Not found in list — could be a raw ID, try fetching directly
+        getSprint(slugOrId).then(fetchedSprint => {
+          setSelectedSprint(fetchedSprint);
+        }).catch(err => {
+          console.error('Error fetching sprint from URL:', err);
+        });
       }
     }
-  }, [sprints]);
+  }, [sprints, routeSprintId]);
 
   // Fetch sprints from API
   useEffect(() => {

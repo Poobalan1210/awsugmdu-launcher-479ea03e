@@ -1,4 +1,5 @@
 import { Badge } from '@/data/mockData';
+import { sprintPath } from '@/lib/sprintSlug';
 
 const BASE_URL = window.location.origin;
 
@@ -38,6 +39,19 @@ export function generateBadgeShare(
   };
 }
 
+// Generate share data for a sprint (shareable link to view the sprint)
+export function generateSprintShare(
+  sprintTitle: string,
+  sprintId: string
+): AchievementShareData {
+  return {
+    title: `${sprintTitle} - AWS UG Skill Sprint`,
+    text: `Check out the "${sprintTitle}" skill sprint on AWS User Group! Join us for hands-on learning 🚀`,
+    url: `${BASE_URL}${sprintPath(sprintTitle, sprintId)}`,
+    hashtags: ['AWSUG', 'SkillSprint', 'AWS', 'Learning'],
+  };
+}
+
 // Generate share data for sprint submission
 export function generateSprintSubmissionShare(
   userName: string,
@@ -47,7 +61,7 @@ export function generateSprintSubmissionShare(
   return {
     title: `${userName} completed ${sprintTitle}`,
     text: `I just completed the "${sprintTitle}" skill sprint challenge! 🚀`,
-    url: `${BASE_URL}/skill-sprint/${sprintId}`,
+    url: `${BASE_URL}${sprintPath(sprintTitle, sprintId)}`,
     hashtags: ['AWSUG', 'SkillSprint', 'AWS', 'Learning'],
   };
 }

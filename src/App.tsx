@@ -49,6 +49,11 @@ const App = () => (
                 <SkillSprint />
               </ProtectedRoute>
             } />
+            <Route path="/skill-sprint/:sprintId" element={
+              <ProtectedRoute>
+                <SkillSprint />
+              </ProtectedRoute>
+            } />
             <Route path="/college-champs" element={
               <ProtectedRoute>
                 <CollegeChamps />

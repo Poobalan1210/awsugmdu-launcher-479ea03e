@@ -145,6 +145,29 @@ async function createUser(requestBody) {
       };
     }
     
+    // Signup bonus points
+    const SIGNUP_BONUS_POINTS = 100;
+    const now = new Date().toISOString();
+
+    const signupPointActivity = {
+      id: `pa-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      userId,
+      points: SIGNUP_BONUS_POINTS,
+      reason: 'Welcome bonus for signing up',
+      type: 'signup',
+      awardedBy: 'system',
+      awardedAt: now,
+    };
+
+    const signupActivity = {
+      type: 'points_awarded',
+      points: SIGNUP_BONUS_POINTS,
+      reason: 'Welcome bonus for signing up',
+      pointType: 'signup',
+      awardedBy: 'system',
+      timestamp: now,
+    };
+
     // Default role is 'member' for all users
     const userProfile = {
       userId,
@@ -152,15 +175,17 @@ async function createUser(requestBody) {
       name,
       ...profileData,
       role: profileData.role || 'member',
-      points: profileData.points || 0,
-      redeemablePoints: profileData.redeemablePoints ?? profileData.points ?? 0,
+      points: (profileData.points || 0) + SIGNUP_BONUS_POINTS,
+      redeemablePoints: (profileData.redeemablePoints ?? profileData.points ?? 0) + SIGNUP_BONUS_POINTS,
       rank: profileData.rank || 0,
       badges: profileData.badges || [],
+      pointActivities: [signupPointActivity],
+      activities: [signupActivity],
       meetupVerified: profileData.meetupVerified || false,
       meetupVerificationStatus: profileData.meetupVerificationStatus || 'pending',
-      joinedDate: new Date().toISOString(),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      joinedDate: now,
+      createdAt: now,
+      updatedAt: now,
     };
     
     await docClient.send(new PutCommand({

@@ -158,7 +158,7 @@ async function awardPoints(event) {
   }
 
   // Validate type
-  const validTypes = ['adhoc', 'submission', 'badge', 'event'];
+  const validTypes = ['adhoc', 'submission', 'badge', 'event', 'signup'];
   if (!validTypes.includes(type)) {
     return createResponse(400, { error: 'Invalid type. Must be one of: adhoc, submission, badge, event' });
   }

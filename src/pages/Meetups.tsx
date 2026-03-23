@@ -248,6 +248,16 @@ function MeetupDetail({ meetup: initialMeetup, onBack }: { meetup: Meetup; onBac
       return;
     }
 
+    if (!(user as any).meetupVerified) {
+      toast.error('Verification required: Please verify your Meetup membership in your profile first.', {
+        action: {
+          label: 'Verify Now',
+          onClick: () => window.location.href = '/profile'
+        }
+      });
+      return;
+    }
+
     if (!meetup.meetupUrl) {
       toast.error('Meetup URL not available');
       return;

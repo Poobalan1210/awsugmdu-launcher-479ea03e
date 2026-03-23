@@ -19,6 +19,8 @@ export interface CreateUserProfileData {
   linkedIn?: string;
   github?: string;
   twitter?: string;
+  meetupVerified?: boolean;
+  meetupVerificationStatus?: string;
 }
 
 export async function createUserProfile(data: CreateUserProfileData): Promise<{ success: boolean; userId: string }> {

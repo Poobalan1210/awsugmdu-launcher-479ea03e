@@ -158,6 +158,16 @@ function SessionCard({ session: initialSession, sprint, isExpanded, onToggle, on
       return;
     }
 
+    if (!(user as any).meetupVerified) {
+      toast.error('Verification required: Please verify your Meetup membership in your profile first.', {
+        action: {
+          label: 'Verify Now',
+          onClick: () => window.location.href = '/profile'
+        }
+      });
+      return;
+    }
+
     if (!session.meetupUrl) {
       toast.error('Meetup URL not available');
       return;
@@ -508,6 +518,16 @@ function MeetupSessionCard({ meetup, isExpanded, onToggle }: {
   const handleRegister = async () => {
     if (!isAuthenticated || !user) {
       toast.error('Please log in to register for this session');
+      return;
+    }
+
+    if (!(user as any).meetupVerified) {
+      toast.error('Verification required: Please verify your Meetup membership in your profile first.', {
+        action: {
+          label: 'Verify Now',
+          onClick: () => window.location.href = '/profile'
+        }
+      });
       return;
     }
 
@@ -1074,6 +1094,16 @@ function JoinSprintDialog({ sprint, open, onOpenChange, onSuccess }: {
     
     if (!isAuthenticated || !user) {
       toast.error('Please log in to join this sprint');
+      return;
+    }
+
+    if (!(user as any).meetupVerified) {
+      toast.error('Verification required: Please verify your Meetup membership in your profile first.', {
+        action: {
+          label: 'Verify Now',
+          onClick: () => window.location.href = '/profile'
+        }
+      });
       return;
     }
 

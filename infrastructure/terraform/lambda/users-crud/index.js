@@ -145,28 +145,7 @@ async function createUser(requestBody) {
       };
     }
     
-    // Signup bonus points
-    const SIGNUP_BONUS_POINTS = 100;
     const now = new Date().toISOString();
-
-    const signupPointActivity = {
-      id: `pa-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      userId,
-      points: SIGNUP_BONUS_POINTS,
-      reason: 'Welcome bonus for signing up',
-      type: 'signup',
-      awardedBy: 'system',
-      awardedAt: now,
-    };
-
-    const signupActivity = {
-      type: 'points_awarded',
-      points: SIGNUP_BONUS_POINTS,
-      reason: 'Welcome bonus for signing up',
-      pointType: 'signup',
-      awardedBy: 'system',
-      timestamp: now,
-    };
 
     // Default role is 'member' for all users
     const userProfile = {
@@ -175,12 +154,12 @@ async function createUser(requestBody) {
       name,
       ...profileData,
       role: profileData.role || 'member',
-      points: (profileData.points || 0) + SIGNUP_BONUS_POINTS,
-      redeemablePoints: (profileData.redeemablePoints ?? profileData.points ?? 0) + SIGNUP_BONUS_POINTS,
+      points: profileData.points || 0,
+      redeemablePoints: profileData.redeemablePoints ?? profileData.points ?? 0,
       rank: profileData.rank || 0,
       badges: profileData.badges || [],
-      pointActivities: [signupPointActivity],
-      activities: [signupActivity],
+      pointActivities: [],
+      activities: [],
       meetupVerified: profileData.meetupVerified || false,
       meetupVerificationStatus: profileData.meetupVerificationStatus || 'pending',
       joinedDate: now,
@@ -260,12 +239,53 @@ async function updateUser(userId, requestBody) {
     const expressionAttributeNames = {};
     const expressionAttributeValues = {};
     
+    // Check if meetupVerified is being updated from false to true
+    if (body.meetupVerified === true && existingUser.Item.meetupVerified !== true) {
+      const existingPointActivities = existingUser.Item.pointActivities || [];
+      const hasLegacySignupBonus = existingPointActivities.some(a => a.type === 'signup');
+
+      // Only award verification points if the user hasn't received the legacy signup bonus
+      if (!hasLegacySignupBonus) {
+        const VERIFICATION_BONUS = 100;
+        const now = new Date().toISOString();
+        const newPoints = (existingUser.Item.points || 0) + VERIFICATION_BONUS;
+        const newRedeemable = (existingUser.Item.redeemablePoints || 0) + VERIFICATION_BONUS;
+        
+        const verificationPointActivity = {
+          id: `pa-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          userId,
+          points: VERIFICATION_BONUS,
+          reason: 'Meetup verification bonus',
+          type: 'meetup_verification',
+          awardedBy: 'system',
+          awardedAt: now,
+        };
+
+        const verificationActivity = {
+          type: 'points_awarded',
+          points: VERIFICATION_BONUS,
+          reason: 'Meetup verification bonus',
+          pointType: 'meetup_verification',
+          awardedBy: 'system',
+          timestamp: now,
+        };
+
+        const existingActivities = existingUser.Item.activities || [];
+        
+        body.points = newPoints;
+        body.redeemablePoints = newRedeemable;
+        body.pointActivities = [...existingPointActivities, verificationPointActivity];
+        body.activities = [...existingActivities, verificationActivity];
+      }
+    }
+    
     // Fields that can be updated
     const updatableFields = [
       'name', 'avatar', 'bio', 'designation', 'company', 'companyCity', 'country',
       'collegeName', 'collegeCity', 'isCollegeChamp', 'champCollegeId',
       'linkedIn', 'github', 'twitter', 'meetupEmail', 'userType',
-      'points', 'redeemablePoints', 'rank', 'badges', 'role', 'meetupVerified', 'meetupVerificationStatus'
+      'points', 'redeemablePoints', 'rank', 'badges', 'role', 'meetupVerified', 'meetupVerificationStatus',
+      'pointActivities', 'activities'
     ];
     
     updatableFields.forEach(field => {

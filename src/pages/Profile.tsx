@@ -13,11 +13,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { 
   Trophy, Calendar, Target, FileText, Medal, Zap, 
   Linkedin, Github, Twitter, ExternalLink, Building, User,
-  Mic, BookOpen, CheckCircle, Clock, Award, Shield, ShoppingBag, Loader2, Package
+  Mic, BookOpen, CheckCircle, Clock, Award, Shield, ShoppingBag, Loader2, Package, Users, AlertCircle
 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { submitMeetupVerification, normalizeMeetupProfileUrl, getMeetupGroupUrl } from '@/lib/meetup';
 import { mockBadges, communityRoles, CommunityRole, User as UserType } from '@/data/mockData';
 import { getSprints } from '@/lib/sprints';
-import { getUserProfile, getAllUsers } from '@/lib/userProfile';
+import { getUserProfile, getAllUsers, updateUserProfile } from '@/lib/userProfile';
 import { getAllColleges, College } from '@/lib/colleges';
 import { getUserRoles } from '@/lib/userRoles';
 import { format, parseISO } from 'date-fns';
@@ -47,6 +50,11 @@ export default function Profile() {
   const [showOrderDetailDialog, setShowOrderDetailDialog] = useState(false);
   const [loadingOrderDetail, setLoadingOrderDetail] = useState(false);
   
+  const [showMeetupDialog, setShowMeetupDialog] = useState(false);
+  const [meetupUrl, setMeetupUrl] = useState('');
+  const [meetupVerifying, setMeetupVerifying] = useState(false);
+  const [meetupError, setMeetupError] = useState<string | null>(null);
+
   // Fetch meetups from backend
   const { data: allMeetups = [] } = useQuery({
     queryKey: ['meetups'],
@@ -193,6 +201,44 @@ export default function Profile() {
   
   const user = profileUser;
   const isOwnProfile = !slug || (authUser && profileUser && profileUser.id === authUser.id);
+
+  const handleMeetupVerification = async () => {
+    if (!meetupUrl.trim() || !user) {
+      setMeetupError('Please provide your Meetup profile URL.');
+      return;
+    }
+
+    setMeetupVerifying(true);
+    setMeetupError(null);
+    
+    try {
+      const normalizedUrl = normalizeMeetupProfileUrl(meetupUrl);
+      const result = await submitMeetupVerification(user.email, normalizedUrl);
+      
+      if (result.isPending || result.isMember) {
+        // Update user profile in backend
+        await updateUserProfile(user.id, {
+          meetupVerified: result.isMember,
+          meetupVerificationStatus: result.isPending ? 'pending' : 'approved',
+          meetupEmail: normalizedUrl
+        });
+        
+        toast.success(result.isPending ? 
+          "Verification submitted for review!" : 
+          "Meetup membership verified! You earned 100 points."
+        );
+        setShowMeetupDialog(false);
+        // Reload page to reflect new point data and verification status
+        setTimeout(() => window.location.reload(), 1500);
+      } else {
+        setMeetupError(result.error || 'Please provide a valid Meetup profile URL.');
+      }
+    } catch (error) {
+      setMeetupError(error instanceof Error ? error.message : 'Verification failed');
+    } finally {
+      setMeetupVerifying(false);
+    }
+  };
   
   // Show loading state while auth is loading or profile is loading
   if (loading || authLoading) {
@@ -664,6 +710,38 @@ export default function Profile() {
             </CardContent>
           </Card>
         </motion.div>
+
+        {isOwnProfile && !(user as any).meetupVerified && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="mb-8"
+          >
+            <Card className="border-amber-500/50 bg-amber-500/5">
+              <CardContent className="p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 rounded-full bg-amber-500/20 text-amber-600 mt-1 md:mt-0">
+                    <AlertCircle className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-lg text-amber-600">Meetup Verification Required</h3>
+                    <p className="text-muted-foreground text-sm max-w-2xl">
+                      Verify your Meetup.com membership to complete your profile setup. Verification is required to earn your 100 signup points and to register for events like Meetups and Skill Sprints.
+                    </p>
+                  </div>
+                </div>
+                <Button 
+                  onClick={() => setShowMeetupDialog(true)}
+                  className="bg-amber-500 hover:bg-amber-600 text-white shrink-0"
+                >
+                  <Users className="h-4 w-4 mr-2" />
+                  Verify Meetup Account
+                </Button>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
 
         <Tabs defaultValue="badges" className="space-y-6">
           <TabsList className="grid w-full grid-cols-3 max-w-md">
@@ -1163,6 +1241,72 @@ export default function Profile() {
       </main>
 
       <Footer />
+
+      {/* Meetup Verification Modal */}
+      <Dialog open={showMeetupDialog} onOpenChange={setShowMeetupDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              Verify Meetup Membership
+            </DialogTitle>
+            <DialogDescription>
+              Provide your Meetup membership details URL to verify your account and earn 100 points.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="meetupUrl">Meetup Membership Details URL</Label>
+              <Input
+                id="meetupUrl"
+                placeholder="https://www.meetup.com/members/.../group/.../"
+                value={meetupUrl}
+                onChange={(e) => setMeetupUrl(e.target.value)}
+                disabled={meetupVerifying}
+              />
+            </div>
+
+            {meetupError && (
+              <p className="text-sm font-medium text-destructive">{meetupError}</p>
+            )}
+
+            <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/20 text-sm">
+              <p className="font-medium text-blue-600 mb-2">How to get your URL:</p>
+              <ol className="text-muted-foreground space-y-1 list-decimal list-inside">
+                <li>Go to <a href="https://www.meetup.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">meetup.com</a> in a web browser</li>
+                <li>Go to your profile page</li>
+                <li>Find "AWS User Group Madurai" in your groups</li>
+                <li>Click on "Membership Details" below the group name</li>
+                <li>Copy the URL from your browser's address bar</li>
+              </ol>
+            </div>
+            
+            <div className="flex flex-col gap-2 pt-2">
+              <Button 
+                onClick={handleMeetupVerification} 
+                disabled={meetupVerifying || !meetupUrl.trim()}
+                className="w-full"
+              >
+                {meetupVerifying ? (
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Verifying...</>
+                ) : (
+                  'Verify Membership'
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                asChild
+                className="w-full"
+              >
+                <a href={getMeetupGroupUrl()} target="_blank" rel="noopener noreferrer">
+                  Join AWS User Group Madurai on Meetup <ExternalLink className="h-4 w-4 ml-2" />
+                </a>
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Order Detail Modal */}
       <Dialog open={showOrderDetailDialog} onOpenChange={setShowOrderDetailDialog}>

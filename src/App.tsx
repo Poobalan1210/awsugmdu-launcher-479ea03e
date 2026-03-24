@@ -11,6 +11,7 @@ import Signup from "./pages/Signup";
 import Profile from "./pages/Profile";
 import SkillSprint from "./pages/SkillSprint";
 import CollegeChamps from "./pages/CollegeChamps";
+import CloudClubs from "./pages/CloudClubs";
 import CertificationCircle from "./pages/CertificationCircle";
 import Store from "./pages/Store";
 import Meetups from "./pages/Meetups";
@@ -57,6 +58,11 @@ const App = () => (
             <Route path="/college-champs" element={
               <ProtectedRoute>
                 <CollegeChamps />
+              </ProtectedRoute>
+            } />
+            <Route path="/cloud-clubs" element={
+              <ProtectedRoute>
+                <CloudClubs />
               </ProtectedRoute>
             } />
             <Route path="/certification-circle" element={

@@ -22,6 +22,7 @@ export interface CreateMeetupData {
   sprintId?: string;
   certificationGroupId?: string;
   collegeId?: string;
+  cloudClubId?: string;
   endDate?: string;
   sessionPoints?: number;
   speakerPoints?: number;

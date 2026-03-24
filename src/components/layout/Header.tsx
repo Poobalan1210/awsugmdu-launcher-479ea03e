@@ -19,6 +19,9 @@ const navItems = [{
   name: 'Certification Circle',
   path: '/certification-circle'
 }, {
+  name: 'Cloud Clubs',
+  path: '/cloud-clubs'
+}, {
   name: 'College Champs',
   path: '/college-champs'
 }, {

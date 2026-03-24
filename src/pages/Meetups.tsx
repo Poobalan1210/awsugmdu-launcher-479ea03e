@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import {
   Calendar, MapPin, Users, Video, Clock,
   ArrowLeft, ExternalLink, PlayCircle,
-  Linkedin, Github, CheckCircle, Search, Rocket, Award, GraduationCap
+  Linkedin, Github, CheckCircle, Search, Rocket, Award, GraduationCap, Cloud
 } from 'lucide-react';
 import { PersonCard } from '@/components/common/PersonCard';
 import { PostEventUploads } from '@/components/meetups/PostEventUploads';
@@ -73,6 +73,8 @@ function MeetupCard({ meetup, onSelect }: { meetup: Meetup; onSelect: () => void
         return { label: 'Certification Circle', variant: 'default' as const, icon: <Award className="h-3 w-3 mr-1" /> };
       case 'college-champ':
         return { label: 'College Champ', variant: 'default' as const, icon: <GraduationCap className="h-3 w-3 mr-1" /> };
+      case 'cloud-club':
+        return { label: 'Cloud Club', variant: 'default' as const, icon: <Cloud className="h-3 w-3 mr-1" /> };
       default:
         return { label: meetup.type, variant: 'secondary' as const, icon: null };
     }
@@ -201,6 +203,8 @@ function MeetupDetail({ meetup: initialMeetup, onBack }: { meetup: Meetup; onBac
         return { label: 'Certification Circle', variant: 'default' as const, icon: <Award className="h-3 w-3 mr-1" /> };
       case 'college-champ':
         return { label: 'College Champ', variant: 'default' as const, icon: <GraduationCap className="h-3 w-3 mr-1" /> };
+      case 'cloud-club':
+        return { label: 'Cloud Club', variant: 'default' as const, icon: <Cloud className="h-3 w-3 mr-1" /> };
       default:
         return { label: meetup.type, variant: 'secondary' as const, icon: null };
     }

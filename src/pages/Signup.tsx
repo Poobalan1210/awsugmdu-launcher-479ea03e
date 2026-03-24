@@ -19,6 +19,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getCurrentUser } from 'aws-amplify/auth';
 import logo from '@/assets/logo.png';
 import { getAllColleges, College } from '@/lib/colleges';
+import { getAllCloudClubs, CloudClub } from '@/lib/cloudClubs';
 import { submitMeetupVerification, normalizeMeetupProfileUrl, getMeetupGroupUrl } from '@/lib/meetup';
 import { createUserProfile } from '@/lib/userProfile';
 
@@ -32,10 +33,13 @@ interface OnboardingData {
   userType: UserType | '';
   meetupEmail: string;
   // Student fields
+  affiliationType: 'champ' | 'club' | 'other' | '';
   collegeName: string;
   collegeCity: string;
   isCollegeChamp: boolean;
   champCollegeId: string;
+  isCloudClub: boolean;
+  cloudClubId: string;
   // Professional fields
   designation: string;
   companyName: string;
@@ -69,17 +73,22 @@ export default function Signup() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [colleges, setColleges] = useState<College[]>([]);
+  const [cloudClubs, setCloudClubs] = useState<CloudClub[]>([]);
 
   useEffect(() => {
-    const fetchColleges = async () => {
+    const fetchCollegesAndClubs = async () => {
       try {
-        const data = await getAllColleges();
-        setColleges(data);
+        const [collegesData, cloudClubsData] = await Promise.all([
+          getAllColleges(),
+          getAllCloudClubs()
+        ]);
+        setColleges(collegesData);
+        setCloudClubs(cloudClubsData);
       } catch (error) {
-        console.error('Failed to fetch colleges:', error);
+        console.error('Failed to fetch data:', error);
       }
     };
-    fetchColleges();
+    fetchCollegesAndClubs();
   }, []);
 
   const [formData, setFormData] = useState<OnboardingData>({
@@ -89,10 +98,13 @@ export default function Signup() {
     profilePhoto: '',
     userType: '',
     meetupEmail: '',
+    affiliationType: '',
     collegeName: '',
     collegeCity: '',
     isCollegeChamp: false,
     champCollegeId: '',
+    isCloudClub: false,
+    cloudClubId: '',
     designation: '',
     companyName: '',
     companyCity: '',
@@ -267,6 +279,8 @@ export default function Signup() {
           collegeCity: formData.collegeCity || undefined,
           isCollegeChamp: formData.isCollegeChamp || undefined,
           champCollegeId: formData.champCollegeId || undefined,
+          isCloudClub: formData.isCloudClub || undefined,
+          cloudClubId: formData.cloudClubId || undefined,
           designation: formData.designation || undefined,
           companyName: formData.companyName || undefined,
           companyCity: formData.companyCity || undefined,
@@ -328,10 +342,13 @@ export default function Signup() {
         return formData.userType !== '' && formData.profilePhoto !== '';
       case 4:
         if (formData.userType === 'student') {
-          if (formData.isCollegeChamp) {
-            return formData.champCollegeId !== '';
+          if (!formData.affiliationType) return false;
+          if (formData.affiliationType === 'champ' && !formData.champCollegeId) return false;
+          if (formData.affiliationType === 'club' && !formData.cloudClubId) return false;
+          if (formData.affiliationType === 'other') {
+            return formData.collegeName.trim() !== '' && formData.collegeCity.trim() !== '';
           }
-          return formData.collegeName.trim() && formData.collegeCity.trim();
+          return true;
         } else {
           return formData.designation.trim() && formData.companyName.trim() && formData.companyCity.trim() && formData.country.trim();
         }
@@ -686,47 +703,66 @@ export default function Signup() {
                 <div className="space-y-4">
                   {formData.userType === 'student' ? (
                     <>
-                      {/* College Champs Toggle */}
+                      {/* College Affiliation RadioGroup */}
                       <div className="space-y-3">
-                        <Label className="text-base">Are you part of a College Champs college?</Label>
+                        <Label className="text-base">College Affiliation</Label>
                         <RadioGroup
-                          value={formData.isCollegeChamp ? 'yes' : 'no'}
+                          value={formData.affiliationType}
                           onValueChange={(value) => {
-                            updateFormData('isCollegeChamp', value === 'yes');
-                            if (value === 'no') {
-                              updateFormData('champCollegeId', '');
-                            }
+                            setFormData((prev) => ({
+                              ...prev,
+                              affiliationType: value,
+                              isCollegeChamp: value === 'champ',
+                              isCloudClub: value === 'club',
+                              champCollegeId: value === 'champ' ? prev.champCollegeId : '',
+                              cloudClubId: value === 'club' ? prev.cloudClubId : '',
+                              collegeName: value === 'other' ? prev.collegeName : '',
+                              collegeCity: value === 'other' ? prev.collegeCity : ''
+                            }));
                           }}
-                          className="flex gap-4"
+                          className="grid gap-3"
                         >
                           <Label
-                            htmlFor="champ-yes"
-                            className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all ${
-                              formData.isCollegeChamp
+                            htmlFor="affil-champ"
+                            className={`flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                              formData.affiliationType === 'champ'
                                 ? 'border-primary bg-primary/5'
                                 : 'border-muted hover:border-primary/50'
                             }`}
                           >
-                            <RadioGroupItem value="yes" id="champ-yes" />
-                            <span>Yes</span>
+                            <RadioGroupItem value="champ" id="affil-champ" />
+                            <span className="font-medium">College Champs</span>
                           </Label>
+
                           <Label
-                            htmlFor="champ-no"
-                            className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all ${
-                              !formData.isCollegeChamp
+                            htmlFor="affil-club"
+                            className={`flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                              formData.affiliationType === 'club'
                                 ? 'border-primary bg-primary/5'
                                 : 'border-muted hover:border-primary/50'
                             }`}
                           >
-                            <RadioGroupItem value="no" id="champ-no" />
-                            <span>No</span>
+                            <RadioGroupItem value="club" id="affil-club" />
+                            <span className="font-medium">Cloud Club</span>
+                          </Label>
+
+                          <Label
+                            htmlFor="affil-other"
+                            className={`flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                              formData.affiliationType === 'other'
+                                ? 'border-primary bg-primary/5'
+                                : 'border-muted hover:border-primary/50'
+                            }`}
+                          >
+                            <RadioGroupItem value="other" id="affil-other" />
+                            <span className="font-medium">Other College</span>
                           </Label>
                         </RadioGroup>
                       </div>
 
-                      {formData.isCollegeChamp ? (
-                        <div className="space-y-2">
-                          <Label htmlFor="champCollege">Select Your College</Label>
+                      {formData.affiliationType === 'champ' && (
+                        <div className="space-y-2 mt-4">
+                          <Label htmlFor="champCollege">Select Your College Champs College</Label>
                           <Select
                             value={formData.champCollegeId}
                             onValueChange={(value) => updateFormData('champCollegeId', value)}
@@ -746,8 +782,34 @@ export default function Signup() {
                             You'll be automatically added as a member of this college's Champs team.
                           </p>
                         </div>
-                      ) : (
-                        <>
+                      )}
+
+                      {formData.affiliationType === 'club' && (
+                        <div className="space-y-2 mt-4">
+                          <Label htmlFor="cloudClub">Select Your Cloud Club</Label>
+                          <Select
+                            value={formData.cloudClubId}
+                            onValueChange={(value) => updateFormData('cloudClubId', value)}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select your Cloud Club" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {cloudClubs.map((club) => (
+                                <SelectItem key={club.id} value={club.id}>
+                                  {club.name} ({club.shortName})
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <p className="text-xs text-muted-foreground">
+                            You'll be automatically added as a member of this Cloud Club.
+                          </p>
+                        </div>
+                      )}
+
+                      {formData.affiliationType === 'other' && (
+                        <div className="space-y-4 mt-6">
                           <div className="space-y-2">
                             <Label htmlFor="collegeName">College Name</Label>
                             <div className="relative">
@@ -777,7 +839,7 @@ export default function Signup() {
                               />
                             </div>
                           </div>
-                        </>
+                        </div>
                       )}
                     </>
                   ) : (

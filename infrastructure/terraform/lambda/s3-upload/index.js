@@ -50,8 +50,8 @@ exports.handler = async (event) => {
     // Validate bucket type
     const bucketName = bucketType === 'profile-photos' 
       ? PROFILE_PHOTOS_BUCKET 
-      : bucketType === 'college-logos'
-      ? PROFILE_PHOTOS_BUCKET // Reuse profile photos bucket for college documents
+      : bucketType === 'college-logos' || bucketType === 'cloud-club-logos' || bucketType === 'cloud-club-files'
+      ? PROFILE_PHOTOS_BUCKET // Reuse profile photos bucket for college and cloud club documents
       : MEETUP_POSTERS_BUCKET; // Also used for meetup-photos and meetup-reports
     
     // Validate content type - allow documents for college-logos bucket
@@ -75,7 +75,7 @@ exports.handler = async (event) => {
       'application/octet-stream'
     ];
     
-    const allowedTypes = (bucketType === 'college-logos' || bucketType === 'meetup-reports')
+    const allowedTypes = (bucketType === 'college-logos' || bucketType === 'meetup-reports' || bucketType === 'cloud-club-logos' || bucketType === 'cloud-club-files')
       ? [...allowedImageTypes, ...allowedDocumentTypes]
       : allowedImageTypes;
     
@@ -92,6 +92,10 @@ exports.handler = async (event) => {
       ? `profiles/${timestamp}-${sanitizedFileName}`
       : bucketType === 'college-logos'
       ? `college-documents/${timestamp}-${sanitizedFileName}`
+      : bucketType === 'cloud-club-logos'
+      ? `cloud-club-logos/${timestamp}-${sanitizedFileName}`
+      : bucketType === 'cloud-club-files'
+      ? `cloud-club-documents/${timestamp}-${sanitizedFileName}`
       : bucketType === 'meetup-photos'
       ? `event-photos/${timestamp}-${sanitizedFileName}`
       : bucketType === 'meetup-reports'

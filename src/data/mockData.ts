@@ -220,7 +220,7 @@ export interface AgendaItem {
   speakerId?: string;
 }
 
-export type MeetupType = 'virtual' | 'in-person' | 'hybrid' | 'skill-sprint' | 'certification-circle' | 'college-champ';
+export type MeetupType = 'virtual' | 'in-person' | 'hybrid' | 'skill-sprint' | 'certification-circle' | 'college-champ' | 'cloud-club';
 
 export interface Meetup {
   id: string;
@@ -246,6 +246,7 @@ export interface Meetup {
   endDate?: string; // Date when the event ends/ended (ISO date string)
   sprintId?: string; // Link to sprint if type is 'skill-sprint'
   collegeId?: string; // Link to college if type is 'college-champ'
+  cloudClubId?: string; // Link to cloud club if type is 'cloud-club'
   sessionPoints?: number; // Total points awarded to college for this session
   speakerPoints?: number;
   volunteerPoints?: number;

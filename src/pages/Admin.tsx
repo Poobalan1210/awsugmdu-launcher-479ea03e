@@ -21,7 +21,7 @@ import {
   Rocket, ExternalLink, MessageSquare, Award, Link2,
   Copy, Mail, Edit, Trash2, Eye, FileText, User, Video,
   Upload, X, UserPlus, Check, ChevronDown, GraduationCap,
-  Trophy, ListTodo, ClipboardCheck, Target, Shield, UserCog, Medal, Github, ShoppingBag, Loader2
+  Trophy, ListTodo, ClipboardCheck, Target, Shield, UserCog, Medal, Github, ShoppingBag, Loader2, Cloud
 } from 'lucide-react';
 import { mockSprints, mockMeetups, Submission, Sprint, Session, SessionPerson, User as UserType, predefinedTasks, mockColleges, getTaskById, communityRoles, mockUserRoles, CommunityRole, UserRoleAssignment, PointActivity, mockPointActivities, Meetup, mockBadges, Badge as BadgeType, BadgeAward, mockBadgeAwards, BadgeCriteriaType, criteriaTypeLabels, BadgeCriteria, mockUsers } from '@/data/mockData';
 import { createMeetup, updateMeetup, publishMeetup, getMeetups, CreateMeetupData, UpdateMeetupData, deleteMeetup, endMeetup } from '@/lib/meetups';
@@ -40,6 +40,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import StoreManagement from '@/components/admin/StoreManagement';
 import CertificationGroupsManagement from '@/components/admin/CertificationGroupsManagement';
 import { TaskSubmissionsPanel } from '@/components/college-champs/TaskSubmissionsPanel';
+import { CloudClubTaskSubmissionsPanel } from '@/components/cloud-clubs/TaskSubmissionsPanel';
 
 // Get all submissions across sprints
 const allSubmissions = mockSprints.flatMap(s =>
@@ -1638,6 +1639,7 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [certificationGroups, setCertificationGroups] = useState<CertificationGroup[]>([]);
   const [colleges, setColleges] = useState<College[]>([]);
+  const [cloudClubs, setCloudClubs] = useState<any[]>([]);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -1645,7 +1647,7 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
     date: '',
     time: '',
     duration: '',
-    type: 'virtual' as 'virtual' | 'in-person' | 'skill-sprint' | 'certification-circle' | 'college-champ',
+    type: 'virtual' as 'virtual' | 'in-person' | 'skill-sprint' | 'certification-circle' | 'college-champ' | 'cloud-club',
     location: '',
     meetingLink: '',
     meetupUrl: '',
@@ -1654,6 +1656,7 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
     sprintId: '',
     certificationGroupId: '',
     collegeId: '',
+    cloudClubId: '',
     sessionPoints: '',
     speakerPoints: '100',
     volunteerPoints: '75',
@@ -1677,6 +1680,7 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
       loadSprints();
       loadCertificationGroups();
       loadColleges();
+      loadCloudClubs();
     }
   }, [open]);
 
@@ -1708,6 +1712,16 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
     }
   };
 
+  const loadCloudClubs = async () => {
+    try {
+      const { getAllCloudClubs } = await import('@/lib/cloudClubs');
+      const allClubs = await getAllCloudClubs();
+      setCloudClubs(allClubs);
+    } catch (error) {
+      console.error('Error loading cloud clubs:', error);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -1726,6 +1740,12 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
     // Validate college selection if type is college-champ
     if (formData.type === 'college-champ' && !formData.collegeId) {
       toast.error('Please select a college for this session');
+      return;
+    }
+
+    // Validate cloud club selection if type is cloud-club
+    if (formData.type === 'cloud-club' && !formData.cloudClubId) {
+      toast.error('Please select a cloud club for this session');
       return;
     }
 
@@ -1754,7 +1774,8 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
         sprintId: (formData.type === 'skill-sprint' && formData.sprintId) ? formData.sprintId : undefined,
         certificationGroupId: (formData.type === 'certification-circle' && formData.certificationGroupId) ? formData.certificationGroupId : undefined,
         collegeId: (formData.type === 'college-champ' && formData.collegeId) ? formData.collegeId : undefined,
-        sessionPoints: (formData.type === 'college-champ' && formData.sessionPoints) ? parseInt(formData.sessionPoints) : undefined,
+        cloudClubId: (formData.type === 'cloud-club' && formData.cloudClubId) ? formData.cloudClubId : undefined,
+        sessionPoints: ((formData.type === 'college-champ' || formData.type === 'cloud-club') && formData.sessionPoints) ? parseInt(formData.sessionPoints) : undefined,
         endDate: formData.endDate || undefined
       };
 
@@ -1780,6 +1801,7 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
         sprintId: '',
         certificationGroupId: '',
         collegeId: '',
+        cloudClubId: '',
         sessionPoints: '',
         speakerPoints: '100',
         volunteerPoints: '75',
@@ -1827,13 +1849,14 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
             <Label>Event Type *</Label>
             <Select
               value={formData.type}
-              onValueChange={(value: 'virtual' | 'in-person' | 'skill-sprint' | 'certification-circle' | 'college-champ') =>
+              onValueChange={(value: 'virtual' | 'in-person' | 'skill-sprint' | 'certification-circle' | 'college-champ' | 'cloud-club') =>
                 setFormData({
                   ...formData,
                   type: value,
                   sprintId: value !== 'skill-sprint' ? '' : formData.sprintId,
                   certificationGroupId: value !== 'certification-circle' ? '' : formData.certificationGroupId,
-                  collegeId: value !== 'college-champ' ? '' : formData.collegeId
+                  collegeId: value !== 'college-champ' ? '' : formData.collegeId,
+                  cloudClubId: value !== 'cloud-club' ? '' : formData.cloudClubId
                 })
               }
             >
@@ -1844,12 +1867,14 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
                 <SelectItem value="skill-sprint">Skill Sprint Session</SelectItem>
                 <SelectItem value="certification-circle">Certification Circle Session</SelectItem>
                 <SelectItem value="college-champ">College Champ Session</SelectItem>
+                <SelectItem value="cloud-club">Cloud Club Session</SelectItem>
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
               {formData.type === 'skill-sprint' && 'This session will be linked to a sprint'}
               {formData.type === 'certification-circle' && 'This session will be part of the certification circle program'}
               {formData.type === 'college-champ' && 'This session will be part of the college champ program'}
+              {formData.type === 'cloud-club' && 'This session will be part of the cloud club program'}
               {formData.type === 'virtual' && 'A virtual community meetup event'}
               {formData.type === 'in-person' && 'An in-person community meetup event'}
             </p>
@@ -1968,6 +1993,55 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
             </>
           )}
 
+          {/* Cloud Club Selection - Only show if type is cloud-club */}
+          {formData.type === 'cloud-club' && (
+            <>
+              <div className="space-y-2">
+                <Label>Select Cloud Club *</Label>
+                <Select
+                  value={formData.cloudClubId}
+                  onValueChange={(value) => setFormData({ ...formData, cloudClubId: value })}
+                  required
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose a cloud club..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {cloudClubs.length === 0 ? (
+                      <SelectItem value="none" disabled>No cloud clubs available</SelectItem>
+                    ) : (
+                      cloudClubs.map((club) => (
+                        <SelectItem key={club.id} value={club.id}>
+                          {club.name} ({club.shortName})
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+                {cloudClubs.length === 0 && (
+                  <p className="text-xs text-amber-600">
+                    ⚠️ No cloud clubs found. Please register a cloud club first.
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label>Session Points *</Label>
+                <Input
+                  type="number"
+                  placeholder="e.g., 100"
+                  value={formData.sessionPoints}
+                  onChange={(e) => setFormData({ ...formData, sessionPoints: e.target.value })}
+                  min="0"
+                  required
+                />
+                <p className="text-xs text-muted-foreground">
+                  Points awarded to the cloud club's total score when this session is completed.
+                </p>
+              </div>
+            </>
+          )}
+
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Date *</Label>
@@ -2063,7 +2137,7 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
           )}
 
           {/* Meeting Link - show for virtual events */}
-          {(formData.type === 'virtual' || formData.type === 'skill-sprint' || formData.type === 'certification-circle' || formData.type === 'college-champ') && (
+          {(formData.type === 'virtual' || formData.type === 'skill-sprint' || formData.type === 'certification-circle' || formData.type === 'college-champ' || formData.type === 'cloud-club') && (
             <div className="space-y-2">
               <Label>Meeting Link</Label>
               <Input
@@ -3676,6 +3750,287 @@ function CreateCollegeDialog({ isOpen, onOpenChange, onSuccess, allUsers = [] }:
   );
 }
 
+// Create Cloud Club Dialog
+function CreateCloudClubDialog({ isOpen, onOpenChange, onSuccess, allUsers = [] }: {
+  isOpen: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSuccess: () => void;
+  allUsers?: UserType[];
+}) {
+  const [formData, setFormData] = useState({
+    id: '',
+    name: '',
+    shortName: '',
+    location: '',
+    clubLeadId: '',
+    logo: '',
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please upload an image file');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Image size must be less than 5MB');
+      return;
+    }
+
+    setUploadingLogo(true);
+    try {
+      const logoUrl = await uploadFileToS3(file, 'cloud-club-logos');
+      setFormData({ ...formData, logo: logoUrl });
+      toast.success('Logo uploaded successfully');
+    } catch (error) {
+      console.error('Error uploading logo:', error);
+      toast.error('Failed to upload logo');
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!formData.name || !formData.shortName || !formData.location || !formData.clubLeadId) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const { createCloudClub } = await import('@/lib/cloudClubs');
+
+      const selectedUser = allUsers.find(u => u.id === formData.clubLeadId);
+      if (!selectedUser) {
+        toast.error('Selected club captain not found');
+        return;
+      }
+
+      const clubId = formData.id || `cloudclub-${formData.shortName.toLowerCase().replace(/\s+/g, '-')}`;
+
+      await createCloudClub({
+        id: clubId,
+        name: formData.name,
+        shortName: formData.shortName,
+        location: formData.location,
+        clubLead: selectedUser.name,
+        clubLeadId: formData.clubLeadId,
+        logo: formData.logo || undefined,
+      });
+
+      toast.success(`${formData.name} has been created`);
+
+      setFormData({
+        id: '',
+        name: '',
+        shortName: '',
+        location: '',
+        clubLeadId: '',
+        logo: '',
+      });
+
+      onOpenChange(false);
+      onSuccess();
+    } catch (error) {
+      console.error('Error creating cloud club:', error);
+      toast.error('Failed to create cloud club');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <DialogTrigger asChild>
+        <Button className="gap-2 bg-teal-500 hover:bg-teal-600 text-white">
+          <Plus className="h-4 w-4" />
+          Add Cloud Club
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Add New Cloud Club</DialogTitle>
+          <DialogDescription>
+            Create a new cloud club in the program
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="name">Club Name *</Label>
+            <Input
+              id="name"
+              placeholder="e.g., Cloud Club at MIT"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              required
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="shortName">Short Name *</Label>
+            <Input
+              id="shortName"
+              placeholder="e.g., CC MIT"
+              value={formData.shortName}
+              onChange={(e) => setFormData({ ...formData, shortName: e.target.value })}
+              required
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="location">Location *</Label>
+            <Input
+              id="location"
+              placeholder="e.g., Boston"
+              value={formData.location}
+              onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+              required
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="clubLead">Club Captain *</Label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  className="w-full justify-between"
+                >
+                  {formData.clubLeadId ? (
+                    <div className="flex items-center gap-2">
+                      <Avatar className="h-6 w-6">
+                        <AvatarImage src={allUsers.find(u => u.id === formData.clubLeadId)?.avatar} />
+                        <AvatarFallback>
+                          {allUsers.find(u => u.id === formData.clubLeadId)?.name.charAt(0)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span>{allUsers.find(u => u.id === formData.clubLeadId)?.name}</span>
+                    </div>
+                  ) : (
+                    "Select a club captain"
+                  )}
+                  <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-full p-0" align="start">
+                <Command>
+                  <CommandInput placeholder="Search users..." />
+                  <CommandList>
+                    <CommandEmpty>No user found.</CommandEmpty>
+                    <CommandGroup>
+                      {allUsers.map((user) => (
+                        <CommandItem
+                          key={user.id}
+                          value={`${user.name} ${user.email}`}
+                          onSelect={() => {
+                            setFormData({ ...formData, clubLeadId: user.id });
+                          }}
+                        >
+                          <div className="flex items-center gap-2 w-full">
+                            <Avatar className="h-8 w-8">
+                              <AvatarImage src={user.avatar} />
+                              <AvatarFallback>{user.name.charAt(0)}</AvatarFallback>
+                            </Avatar>
+                            <div className="flex-1">
+                              <div className="font-medium">{user.name}</div>
+                              <div className="text-xs text-muted-foreground">{user.email}</div>
+                            </div>
+                            {formData.clubLeadId === user.id && (
+                              <Check className="h-4 w-4" />
+                            )}
+                          </div>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
+            <p className="text-xs text-muted-foreground">
+              The selected user will be automatically added as a member
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="logo">Club Logo</Label>
+            <div className="flex items-center gap-2">
+              {formData.logo && (
+                <img
+                  src={formData.logo}
+                  alt="Club logo preview"
+                  className="h-16 w-16 rounded-lg object-cover border"
+                />
+              )}
+              <div className="flex-1">
+                <Input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleLogoUpload}
+                  disabled={uploadingLogo}
+                  className="hidden"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadingLogo}
+                  className="w-full"
+                >
+                  {uploadingLogo ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Uploading...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="mr-2 h-4 w-4" />
+                      {formData.logo ? 'Change Logo' : 'Upload Logo'}
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Upload a club logo (max 5MB, JPG/PNG)
+            </p>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-4">
+             <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={isSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" className="bg-teal-500 hover:bg-teal-600 text-white" disabled={isSubmitting || uploadingLogo}>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Creating...
+                </>
+              ) : (
+                'Create Cloud Club'
+              )}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // Change Champs Lead Dialog
 function ChangeLeadDialog({ college, allUsers, onSuccess }: {
   college: College;
@@ -4308,6 +4663,1120 @@ function CollegeChampsTab() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+// Members Tab Component with integrated role management and points awarding
+
+// ================== CLOUD CLUBS MANAGEMENT ==================
+
+// Create/Edit Cloud Club Task Dialog
+function CreateCloudClubTaskDialog({ task, onClose, onSuccess }: { task?: any; onClose?: () => void; onSuccess?: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formData, setFormData] = useState({
+    title: task?.title || '',
+    description: task?.description || '',
+    points: task?.points || 100,
+    category: task?.category || 'learning',
+    order: task?.order || 1,
+    isDefault: task?.isDefault || false
+  });
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+
+    try {
+      if (task) {
+        const { updateCloudClubTask } = await import('@/lib/cloudClubs');
+        await updateCloudClubTask(task.id, formData);
+        toast.success('Task updated successfully!');
+      } else {
+        const { createCloudClubTask } = await import('@/lib/cloudClubs');
+        await createCloudClubTask(formData as any);
+        toast.success('Task created successfully!');
+      }
+
+      setOpen(false);
+      onClose?.();
+      onSuccess?.();
+    } catch (error) {
+      console.error('Error saving task:', error);
+      toast.error('Failed to save task');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const categoryOptions = [
+    { value: 'onboarding', label: 'Onboarding', color: 'bg-blue-500' },
+    { value: 'learning', label: 'Learning', color: 'bg-green-500' },
+    { value: 'community', label: 'Community', color: 'bg-purple-500' },
+    { value: 'event', label: 'Event', color: 'bg-amber-500' },
+    { value: 'special', label: 'Special', color: 'bg-pink-500' }
+  ];
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        {task ? (
+          <Button variant="ghost" size="sm" className="gap-1">
+            <Edit className="h-4 w-4" />
+          </Button>
+        ) : (
+          <Button className="gap-2">
+            <Plus className="h-4 w-4" />
+            Create Task
+          </Button>
+        )}
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{task ? 'Edit Task' : 'Create New Task'}</DialogTitle>
+          <DialogDescription>
+            {task ? 'Update task details' : 'Define a new predefined task for cloud clubs'}
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label>Title</Label>
+            <Input
+              value={formData.title}
+              onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+              required
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Description</Label>
+            <Textarea
+              value={formData.description}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              required
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Points</Label>
+              <Input
+                type="number"
+                value={formData.points}
+                onChange={(e) => setFormData({ ...formData, points: Number(e.target.value) })}
+                min={10}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Order</Label>
+              <Input
+                type="number"
+                value={formData.order}
+                onChange={(e) => setFormData({ ...formData, order: Number(e.target.value) })}
+                min={1}
+                required
+              />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label>Category</Label>
+            <Select
+              value={formData.category}
+              onValueChange={(value: any) => setFormData({ ...formData, category: value })}
+            >
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {categoryOptions.map(cat => (
+                  <SelectItem key={cat.value} value={cat.value}>
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full ${cat.color}`} />
+                      {cat.label}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label>Default Task</Label>
+                <p className="text-xs text-muted-foreground">
+                  Available to all clubs automatically
+                </p>
+              </div>
+              <Switch
+                checked={formData.isDefault}
+                onCheckedChange={(checked) => setFormData({ ...formData, isDefault: checked })}
+              />
+            </div>
+          </div>
+          <Button type="submit" className="w-full" disabled={isSubmitting}>
+            {isSubmitting ? 'Saving...' : task ? 'Update Task' : 'Create Task'}
+          </Button>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Change Cloud Club Lead Dialog
+function ChangeCloudClubLeadDialog({ club, allUsers, onSuccess }: { club: any; allUsers: UserType[]; onSuccess: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState<string>(club.clubLeadId || '');
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!selectedUserId) {
+      toast.error('Please select a user');
+      return;
+    }
+
+    const newLead = allUsers.find(u => u.id === selectedUserId);
+    if (!newLead) return;
+
+    setIsSubmitting(true);
+    try {
+      const { updateCloudClub } = await import('@/lib/cloudClubs');
+      await updateCloudClub(club.id, {
+        clubLead: newLead.name,
+        clubLeadId: newLead.id
+      });
+
+      toast.success(`${newLead.name} is now the captain of ${club.name}`);
+      setOpen(false);
+      onSuccess();
+    } catch (error) {
+      console.error('Error changing captain:', error);
+      toast.error('Failed to update captain');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline" className="gap-1">
+          <UserCog className="h-4 w-4" />
+          Change Captain
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Change Captain for {club.shortName}</DialogTitle>
+          <DialogDescription>
+            Select a new captain. They will be automatically added as a member if not already.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label>Select User</Label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  className="w-full justify-between"
+                >
+                  {selectedUserId ? (
+                    <div className="flex items-center gap-2">
+                      <Avatar className="h-6 w-6">
+                        <AvatarImage src={allUsers.find(u => u.id === selectedUserId)?.avatar} />
+                        <AvatarFallback>
+                          {allUsers.find(u => u.id === selectedUserId)?.name.charAt(0)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span>{allUsers.find(u => u.id === selectedUserId)?.name}</span>
+                    </div>
+                  ) : (
+                    "Search users..."
+                  )}
+                  <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                <Command>
+                  <CommandInput placeholder="Search users by name or email..." />
+                  <CommandList>
+                    <CommandEmpty>No user found.</CommandEmpty>
+                    <CommandGroup>
+                      {allUsers.map((user) => (
+                        <CommandItem
+                          key={user.id}
+                          value={`${user.name} ${user.email}`}
+                          onSelect={() => setSelectedUserId(user.id)}
+                        >
+                          <div className="flex items-center gap-2 w-full">
+                            <Avatar className="h-8 w-8">
+                              <AvatarImage src={user.avatar} />
+                              <AvatarFallback>{user.name.charAt(0)}</AvatarFallback>
+                            </Avatar>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium truncate">{user.name}</div>
+                              <div className="text-xs text-muted-foreground truncate">{user.email}</div>
+                            </div>
+                            {selectedUserId === user.id && (
+                              <Check className="h-4 w-4 text-primary shrink-0" />
+                            )}
+                          </div>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
+          </div>
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" onClick={() => setOpen(false)} className="flex-1">
+              Cancel
+            </Button>
+            <Button type="submit" disabled={isSubmitting || !selectedUserId} className="flex-1">
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Updating...
+                </>
+              ) : (
+                'Save Changes'
+              )}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Verify Cloud Club Task Dialog
+function VerifyCloudClubTaskDialog({ club, taskId, task, onSuccess }: { club: any; taskId: string; task: any; onSuccess: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [bonusPoints, setBonusPoints] = useState(0);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  if (!task) return null;
+
+  const handleVerify = async () => {
+    setIsSubmitting(true);
+    try {
+      const { completeClubTask } = await import('@/lib/cloudClubs');
+      await completeClubTask(club.id, taskId, bonusPoints, task.points);
+
+      toast.success(`Task verified for ${club.name}! ${task.points + bonusPoints} points awarded.`);
+      setOpen(false);
+      onSuccess();
+    } catch (error) {
+      console.error('Error verifying task:', error);
+      toast.error('Failed to verify task');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline" className="gap-1">
+          <ClipboardCheck className="h-4 w-4" />
+          Mark Complete
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Mark Task as Complete</DialogTitle>
+          <DialogDescription>
+            Mark "{task.title}" as completed for {club.name}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="bg-muted/50 p-4 rounded-lg">
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-medium">{task.title}</span>
+              <Badge>{task.points} pts</Badge>
+            </div>
+            <p className="text-sm text-muted-foreground">{task.description}</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Bonus Points (Optional)</Label>
+            <Input
+              type="number"
+              value={bonusPoints}
+              onChange={(e) => setBonusPoints(Number(e.target.value))}
+              min={0}
+              max={500}
+              placeholder="0"
+            />
+            <p className="text-xs text-muted-foreground">
+              Total: {task.points + bonusPoints} points
+            </p>
+          </div>
+
+          <Button onClick={handleVerify} className="w-full gap-1" disabled={isSubmitting}>
+            {isSubmitting ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Marking...
+              </>
+            ) : (
+              <>
+                <CheckCircle className="h-4 w-4" />
+                Mark Complete & Award Points
+              </>
+            )}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Cloud Club Management Card
+function CloudClubManagementCard({ club, onDelete, onUpdate, allUsers, allTasks }: {
+  club: any;
+  onDelete: () => void;
+  onUpdate: () => void;
+  allUsers: UserType[];
+  allTasks: any[];
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const completedTaskIds = (club.completedTasks || []).map((t: any) => t.taskId);
+  const clubTasks = allTasks.filter(t => t.isDefault || (club.assignedTaskIds || []).includes(t.id));
+  const pendingTasks = clubTasks.filter(t => !completedTaskIds.includes(t.id));
+  const completedTasksList = clubTasks.filter(t => completedTaskIds.includes(t.id));
+  const progressPercent = clubTasks.length > 0 ? (completedTasksList.length / clubTasks.length) * 100 : 0;
+
+  const lead = club.clubLeadId ? allUsers.find(u => u.id === club.clubLeadId) || null : null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+    >
+      <Card className="glass-card overflow-hidden">
+        <CardContent className="p-4">
+          {/* Header */}
+          <div className="flex items-center gap-4 mb-4 flex-wrap">
+            {club.logo ? (
+              <img
+                src={club.logo}
+                alt={`${club.name} logo`}
+                className="w-12 h-12 rounded-xl object-cover shadow-lg"
+              />
+            ) : (
+              <div
+                className="w-12 h-12 rounded-xl flex items-center justify-center bg-gradient-to-br from-teal-500 to-teal-700 text-white font-bold text-lg shadow-lg"
+              >
+                #{club.rank}
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <h3 className="font-semibold truncate">{club.name}</h3>
+                <Badge variant="outline" className="text-xs shrink-0">{club.shortName}</Badge>
+              </div>
+              <div className="flex items-center gap-3 text-sm text-muted-foreground flex-wrap">
+                <span className="flex items-center gap-1">
+                  <Trophy className="h-3 w-3 text-amber-500" />
+                  {club.totalPoints || 0} pts
+                </span>
+                <span className="flex items-center gap-1">
+                  <Target className="h-3 w-3" />
+                  {completedTasksList.length}/{clubTasks.length} tasks
+                </span>
+                <span className="flex items-center gap-1">
+                  <Users className="h-3 w-3" />
+                  {(club.members || []).length} members
+                </span>
+              </div>
+            </div>
+            <div className="flex gap-2 flex-wrap justify-end shrink-0">
+              <AssignCloudClubTasksDialog club={club} onSuccess={onUpdate} />
+              <AwardCloudClubPointsDialog club={club} onSuccess={onUpdate} />
+              <ChangeCloudClubLeadDialog club={club} allUsers={allUsers} onSuccess={onUpdate} />
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onDelete}
+                className="text-destructive hover:text-destructive"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setExpanded(!expanded)}
+              >
+                <ChevronDown className={`h-4 w-4 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+              </Button>
+            </div>
+          </div>
+
+          {/* Lead Info */}
+          {lead && (
+            <div className="flex items-center gap-2 p-2 rounded-lg bg-muted/30 mb-4">
+              <Avatar className="h-8 w-8">
+                <AvatarImage src={lead.avatar} />
+                <AvatarFallback>{lead.name.charAt(0)}</AvatarFallback>
+              </Avatar>
+              <div className="min-w-0">
+                <p className="text-sm font-medium truncate">{lead.name}</p>
+                <p className="text-xs text-muted-foreground">Captain</p>
+              </div>
+            </div>
+          )}
+
+          {/* Expanded Content */}
+          {expanded && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="space-y-6 pt-4 border-t"
+            >
+              {/* Progress */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium text-muted-foreground">Overall Progress</span>
+                  <span className="font-bold">{Math.round(progressPercent)}%</span>
+                </div>
+                <Progress value={progressPercent} className="h-2 bg-teal-500/20" />
+              </div>
+
+              <Tabs defaultValue="pending" className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="pending">Pending Tasks ({pendingTasks.length})</TabsTrigger>
+                  <TabsTrigger value="completed">Completed ({completedTasksList.length})</TabsTrigger>
+                </TabsList>
+                <TabsContent value="pending" className="mt-4 space-y-3">
+                  {pendingTasks.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground border rounded-lg bg-muted/10">
+                      <CheckCircle className="h-8 w-8 mx-auto mb-2 opacity-50 text-teal-500" />
+                      <p>All assigned tasks completed! 🎉</p>
+                    </div>
+                  ) : (
+                    pendingTasks.map(task => (
+                      <div key={task.id} className="flex items-start justify-between p-3 rounded-lg border bg-card gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            <span className="font-medium">{task.title}</span>
+                            <Badge variant="outline" className="text-[10px] capitalize">
+                              {task.category}
+                            </Badge>
+                            {task.isDefault && (
+                              <Badge variant="secondary" className="text-[10px]">Default</Badge>
+                            )}
+                          </div>
+                          <p className="text-sm text-muted-foreground line-clamp-2">{task.description}</p>
+                        </div>
+                        <div className="flex flex-col items-end gap-2 shrink-0">
+                          <Badge className="bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 shadow-none">
+                            {task.points} pts
+                          </Badge>
+                          <VerifyCloudClubTaskDialog 
+                            club={club} 
+                            taskId={task.id} 
+                            task={task} 
+                            onSuccess={onUpdate} 
+                          />
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </TabsContent>
+                <TabsContent value="completed" className="mt-4 space-y-3">
+                  {completedTasksList.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground border rounded-lg bg-muted/10">
+                      <Target className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                      <p>No tasks completed yet.</p>
+                    </div>
+                  ) : (
+                    completedTasksList.map(task => {
+                      const completion = (club.completedTasks || []).find((t: any) => t.taskId === task.id);
+                      const totalPoints = (completion?.taskPoints || task.points) + (completion?.bonusPoints || 0);
+
+                      return (
+                        <div key={task.id} className="flex items-center justify-between p-3 rounded-lg border bg-muted/50 gap-4">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                              <span className="font-medium line-through text-muted-foreground">{task.title}</span>
+                              <Badge variant="outline" className="text-[10px] capitalize opacity-70">
+                                {task.category}
+                              </Badge>
+                            </div>
+                            {completion?.completedAt && (
+                              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                                <CheckCircle className="h-3 w-3 text-teal-500" />
+                                Completed on {format(parseISO(completion.completedAt), 'MMM d, yyyy')}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex flex-col items-end gap-1 shrink-0">
+                            <Badge className="bg-teal-500/10 text-teal-600 hover:bg-teal-500/20 shadow-none">
+                              +{totalPoints} pts
+                            </Badge>
+                            {completion?.bonusPoints ? (
+                              <span className="text-[10px] text-muted-foreground">
+                                inc. {completion.bonusPoints} bonus
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </TabsContent>
+              </Tabs>
+            </motion.div>
+          )}
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
+}
+
+
+
+// Cloud Clubs Tab Content
+function CloudClubsTab() {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [clubs, setClubs] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [allUsers, setAllUsers] = useState<UserType[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [allTasks, setAllTasks] = useState<any[]>([]);
+  const [loadingTasks, setLoadingTasks] = useState(true);
+
+  useEffect(() => {
+    fetchClubs();
+    fetchUsers();
+    fetchTasks();
+  }, []);
+
+  const fetchUsers = async () => {
+    setLoadingUsers(true);
+    try {
+      const fetchedUsers = await getAllUsers();
+      setAllUsers(fetchedUsers);
+    } catch (error) {
+      console.error('Error fetching users:', error);
+      setAllUsers(mockUsers);
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
+  const fetchTasks = async () => {
+    try {
+      setLoadingTasks(true);
+      const { getAllCloudClubTasks } = await import('@/lib/cloudClubs');
+      const tasks = await getAllCloudClubTasks();
+      setAllTasks(tasks);
+    } catch (error) {
+      console.error('Error fetching tasks:', error);
+      toast.error('Failed to load cloud club tasks');
+    } finally {
+      setLoadingTasks(false);
+    }
+  };
+
+  const fetchClubs = async () => {
+    try {
+      setIsLoading(true);
+      const { getAllCloudClubs } = await import('@/lib/cloudClubs');
+      const data = await getAllCloudClubs();
+      setClubs(data);
+    } catch (error) {
+      console.error('Error fetching cloud clubs:', error);
+      toast.error('Failed to load cloud clubs');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDeleteClub = async (clubId: string, clubName: string) => {
+    if (!confirm(`Are you sure you want to delete ${clubName}? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const { deleteCloudClub } = await import('@/lib/cloudClubs');
+      await deleteCloudClub(clubId);
+      toast.success(`${clubName} has been deleted`);
+      fetchClubs();
+    } catch (error) {
+      console.error('Error deleting cloud club:', error);
+      toast.error('Failed to delete cloud club');
+    }
+  };
+
+  const handleDeleteTask = async (taskId: string, taskTitle: string) => {
+    if (!confirm(`Are you sure you want to delete "${taskTitle}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const { deleteCloudClubTask } = await import('@/lib/cloudClubs');
+      await deleteCloudClubTask(taskId);
+      toast.success('Task deleted successfully');
+      fetchTasks();
+    } catch (error) {
+      console.error('Error deleting task:', error);
+      toast.error('Failed to delete task');
+    }
+  };
+
+  const sortedClubs = [...clubs].sort((a: any, b: any) => (b.totalPoints || 0) - (a.totalPoints || 0));
+  const filteredClubs = sortedClubs.filter((c: any) =>
+    c.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    c.shortName?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const totalClubs = clubs.length;
+  const totalPoints = clubs.reduce((sum: number, c: any) => sum + (c.totalPoints || 0), 0);
+  const totalCompletedTasks = clubs.reduce((sum: number, c: any) => sum + (c.completedTasks?.length || 0), 0);
+
+  return (
+    <div className="space-y-6">
+      {/* Task Submissions Review */}
+      <Card className="glass-card">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Upload className="h-5 w-5 text-teal-500" />
+            Cloud Club Task Submissions
+          </CardTitle>
+          <CardDescription>Review and approve task submissions from cloud club captains</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <CloudClubTaskSubmissionsPanel onSubmissionReviewed={fetchClubs} />
+        </CardContent>
+      </Card>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card className="glass-card">
+          <CardContent className="p-4 text-center">
+            <div className="text-3xl font-bold text-teal-500">{totalClubs}</div>
+            <p className="text-sm text-muted-foreground">Total Clubs</p>
+          </CardContent>
+        </Card>
+        <Card className="glass-card">
+          <CardContent className="p-4 text-center">
+            <div className="text-3xl font-bold text-amber-500">{allTasks.length}</div>
+            <p className="text-sm text-muted-foreground">Predefined Tasks</p>
+          </CardContent>
+        </Card>
+        <Card className="glass-card">
+          <CardContent className="p-4 text-center">
+            <div className="text-3xl font-bold text-green-500">{totalCompletedTasks}</div>
+            <p className="text-sm text-muted-foreground">Tasks Completed</p>
+          </CardContent>
+        </Card>
+        <Card className="glass-card">
+          <CardContent className="p-4 text-center">
+            <div className="text-3xl font-bold text-emerald-500">{totalPoints.toLocaleString()}</div>
+            <p className="text-sm text-muted-foreground">Total Points Awarded</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Task Management */}
+      <Card className="glass-card">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <ListTodo className="h-5 w-5 text-teal-500" />
+                Predefined Tasks
+              </CardTitle>
+              <CardDescription>Manage tasks that cloud clubs need to complete</CardDescription>
+            </div>
+            <CreateCloudClubTaskDialog onSuccess={fetchTasks} />
+          </div>
+        </CardHeader>
+        <CardContent>
+          {loadingTasks ? (
+            <div className="text-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin mx-auto text-teal-500" />
+              <p className="text-sm text-muted-foreground mt-2">Loading tasks...</p>
+            </div>
+          ) : allTasks.length === 0 ? (
+            <div className="text-center py-8">
+              <ListTodo className="h-12 w-12 mx-auto text-muted-foreground/50" />
+              <p className="text-sm text-muted-foreground mt-2">No tasks found</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {allTasks.sort((a, b) => (a.order || 0) - (b.order || 0)).map(task => (
+                <div key={task.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-teal-500/10 flex items-center justify-center text-sm font-medium text-teal-600">
+                      {task.order}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">{task.title}</p>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-xs capitalize">{task.category}</Badge>
+                        <span className="text-xs text-muted-foreground">{task.points} pts</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <CreateCloudClubTaskDialog task={task} onSuccess={fetchTasks} />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => handleDeleteTask(task.id, task.title)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Cloud Club Management */}
+      <Card className="glass-card">
+        <CardHeader>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Cloud className="h-5 w-5 text-teal-500" />
+                Cloud Club Management
+              </CardTitle>
+              <CardDescription>Track progress and manage cloud clubs</CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              <Input
+                placeholder="Search clubs..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="max-w-xs"
+              />
+              <CreateCloudClubDialog
+                isOpen={isCreateDialogOpen}
+                onOpenChange={setIsCreateDialogOpen}
+                onSuccess={fetchClubs}
+                allUsers={allUsers}
+              />
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {isLoading ? (
+            <div className="text-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin mx-auto text-teal-500" />
+              <p className="text-sm text-muted-foreground mt-2">Loading cloud clubs...</p>
+            </div>
+          ) : filteredClubs.length === 0 ? (
+            <div className="text-center py-8">
+              <Cloud className="h-12 w-12 mx-auto text-muted-foreground/50" />
+              <p className="text-sm text-muted-foreground mt-2">No cloud clubs found</p>
+            </div>
+          ) : (
+            filteredClubs.map((club: any) => (
+              <CloudClubManagementCard
+                key={club.id}
+                club={club}
+                allUsers={allUsers}
+                allTasks={allTasks}
+                onDelete={() => handleDeleteClub(club.id, club.name)}
+                onUpdate={fetchClubs}
+              />
+            ))
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// Assign Tasks to Cloud Club Dialog
+function AssignCloudClubTasksDialog({ club, onSuccess }: { club: any; onSuccess: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [selectedTasks, setSelectedTasks] = useState<string[]>(club.assignedTaskIds || []);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [allTasks, setAllTasks] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      fetchTasks();
+    }
+  }, [open]);
+
+  const fetchTasks = async () => {
+    setIsLoading(true);
+    try {
+      const { getAllCloudClubTasks } = await import('@/lib/cloudClubs');
+      const tasks = await getAllCloudClubTasks();
+      setAllTasks(tasks);
+
+      const validAssignedTasks = (club.assignedTaskIds || []).filter((taskId: string) => {
+        const task = tasks.find(t => t.id === taskId);
+        return task && !task.isDefault;
+      });
+      setSelectedTasks(validAssignedTasks);
+    } catch (error) {
+      console.error('Error fetching tasks:', error);
+      toast.error('Failed to load tasks');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const assignableTasks = allTasks.filter(task => !task.isDefault);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+
+    try {
+      const { assignTasksToClub } = await import('@/lib/cloudClubs');
+      await assignTasksToClub(club.id, selectedTasks);
+
+      toast.success(`Tasks assigned to ${club.name}!`);
+      setOpen(false);
+      onSuccess();
+    } catch (error) {
+      console.error('Error assigning tasks:', error);
+      toast.error('Failed to assign tasks');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const toggleTask = (taskId: string) => {
+    setSelectedTasks(prev =>
+      prev.includes(taskId)
+        ? prev.filter(id => id !== taskId)
+        : [...prev, taskId]
+    );
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" className="gap-1">
+          <ListTodo className="h-4 w-4" />
+          Assign Tasks
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Assign Tasks to {club.shortName}</DialogTitle>
+          <DialogDescription>
+            Select additional tasks for this cloud club. Default tasks are automatically available to all clubs.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {isLoading ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <p>Loading tasks...</p>
+            </div>
+          ) : assignableTasks.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <Target className="h-12 w-12 mx-auto mb-2 opacity-50" />
+              <p>No assignable tasks available.</p>
+              <p className="text-sm">All tasks are marked as default.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Label>Available Tasks ({assignableTasks.length})</Label>
+              <div className="space-y-2 max-h-96 overflow-y-auto border rounded-lg p-3">
+                {assignableTasks.map(task => (
+                  <label
+                    key={task.id}
+                    className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${selectedTasks.includes(task.id)
+                      ? 'bg-primary/5 border-primary'
+                      : 'hover:bg-muted'
+                      }`}
+                  >
+                    <div className="flex items-center h-5">
+                      <input
+                        type="checkbox"
+                        checked={selectedTasks.includes(task.id)}
+                        onChange={() => toggleTask(task.id)}
+                        className="h-4 w-4 rounded border-gray-300"
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-medium">{task.title}</span>
+                        <Badge variant="outline" className="text-xs capitalize">
+                          {task.category}
+                        </Badge>
+                        {task.isDefault && (
+                          <Badge variant="secondary" className="text-xs">
+                            Default
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-sm text-muted-foreground">{task.description}</p>
+                    </div>
+                    <Badge className="flex-shrink-0">{task.points} pts</Badge>
+                  </label>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {selectedTasks.length} task(s) selected
+              </p>
+            </div>
+          )}
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setOpen(false)}
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={isSubmitting || assignableTasks.length === 0}
+              className="flex-1"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Assigning...
+                </>
+              ) : (
+                'Assign Tasks'
+              )}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Award Adhoc Points to Cloud Club Dialog
+function AwardCloudClubPointsDialog({ club, onSuccess }: { club: any; onSuccess: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formData, setFormData] = useState({
+    reason: '',
+    points: 50,
+  });
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!formData.reason || formData.points <= 0) {
+      toast.error('Please fill in all fields');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const { updateCloudClub } = await import('@/lib/cloudClubs');
+
+      const newTotalPoints = (club.totalPoints || 0) + formData.points;
+      
+      const newActivity = {
+        id: `pa-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        points: formData.points,
+        reason: formData.reason,
+        awardedAt: new Date().toISOString()
+      };
+
+      await updateCloudClub(club.id, {
+        totalPoints: newTotalPoints,
+        pointActivities: [...(club.pointActivities || []), newActivity]
+      });
+
+      toast.success(`${formData.points} points awarded to ${club.name}!`);
+      setOpen(false);
+      setFormData({ reason: '', points: 50 });
+      onSuccess();
+    } catch (error) {
+      console.error('Error awarding points:', error);
+      toast.error('Failed to award points');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline" className="gap-1">
+          <Award className="h-4 w-4" />
+          Award Points
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Award Points to {club.shortName}</DialogTitle>
+          <DialogDescription>
+            Grant ad-hoc points for special achievements or activities outside of predefined tasks.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-4 bg-muted/50 p-4 rounded-lg">
+            <div className="space-y-2">
+              <Label>Number of Points</Label>
+              <Input
+                type="number"
+                value={formData.points}
+                onChange={(e) => setFormData({ ...formData, points: Number(e.target.value) })}
+                min={1}
+                max={1000}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Reason</Label>
+              <Textarea
+                value={formData.reason}
+                onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
+                placeholder="e.g., Outstanding performance in recent hackathon"
+                required
+                rows={3}
+              />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setOpen(false)}
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={isSubmitting}
+              className="flex-1 gap-1"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Awarding...
+                </>
+              ) : (
+                <>
+                  <Award className="h-4 w-4" />
+                  Award Points
+                </>
+              )}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -5332,6 +6801,10 @@ export default function Admin() {
                     <GraduationCap className="h-4 w-4" />
                     College Champs
                   </TabsTrigger>
+                  <TabsTrigger value="cloud-clubs" className="gap-2">
+                    <Cloud className="h-4 w-4" />
+                    Cloud Clubs
+                  </TabsTrigger>
                   <TabsTrigger value="certifications" className="gap-2">
                     <Award className="h-4 w-4" />
                     Certifications
@@ -5481,6 +6954,10 @@ export default function Admin() {
 
                 <TabsContent value="college-champs">
                   <CollegeChampsTab />
+                </TabsContent>
+
+                <TabsContent value="cloud-clubs">
+                  <CloudClubsTab />
                 </TabsContent>
 
                 <TabsContent value="certifications">

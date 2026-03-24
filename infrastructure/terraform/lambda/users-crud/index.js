@@ -6,6 +6,7 @@ const docClient = DynamoDBDocumentClient.from(client);
 
 const USERS_TABLE = process.env.USERS_TABLE_NAME || 'awsug-users';
 const COLLEGES_TABLE = process.env.COLLEGES_TABLE_NAME || 'awsug-colleges';
+const CLOUD_CLUBS_TABLE = process.env.CLOUD_CLUBS_TABLE_NAME || 'awsug-cloud_clubs';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -201,6 +202,35 @@ async function createUser(requestBody) {
       }
     }
     
+    // If user selected Cloud Club, add them to the club's members list
+    if (profileData.isCloudClub && profileData.cloudClubId) {
+      try {
+        const club = await docClient.send(new GetCommand({
+          TableName: CLOUD_CLUBS_TABLE,
+          Key: { id: profileData.cloudClubId },
+        }));
+        
+        if (club.Item) {
+          const members = club.Item.members || [];
+          if (!members.includes(userId)) {
+            members.push(userId);
+            await docClient.send(new UpdateCommand({
+              TableName: CLOUD_CLUBS_TABLE,
+              Key: { id: profileData.cloudClubId },
+              UpdateExpression: 'SET members = :members, updatedAt = :updatedAt',
+              ExpressionAttributeValues: {
+                ':members': members,
+                ':updatedAt': new Date().toISOString(),
+              },
+            }));
+          }
+        }
+      } catch (clubError) {
+        console.error('Failed to add user to cloud club:', clubError);
+        // Non-blocking - profile was created successfully
+      }
+    }
+    
     return {
       statusCode: 201,
       headers: corsHeaders,
@@ -283,6 +313,7 @@ async function updateUser(userId, requestBody) {
     const updatableFields = [
       'name', 'avatar', 'bio', 'designation', 'company', 'companyCity', 'country',
       'collegeName', 'collegeCity', 'isCollegeChamp', 'champCollegeId',
+      'isCloudClub', 'cloudClubId',
       'linkedIn', 'github', 'twitter', 'meetupEmail', 'userType',
       'points', 'redeemablePoints', 'rank', 'badges', 'role', 'meetupVerified', 'meetupVerificationStatus',
       'pointActivities', 'activities'

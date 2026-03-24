@@ -405,7 +405,11 @@ resource "aws_iam_role_policy" "lambda_dynamodb" {
           aws_dynamodb_table.meetups.arn,
           "${aws_dynamodb_table.meetups.arn}/index/*",
           aws_dynamodb_table.sprints.arn,
-          "${aws_dynamodb_table.sprints.arn}/index/*"
+          "${aws_dynamodb_table.sprints.arn}/index/*",
+          "arn:aws:dynamodb:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:table/${var.project_name}-cloud_clubs",
+          "arn:aws:dynamodb:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:table/${var.project_name}-cloud_clubs/index/*",
+          "arn:aws:dynamodb:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:table/${var.project_name}-cloud-clubs",
+          "arn:aws:dynamodb:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:table/${var.project_name}-cloud-clubs/index/*"
         ]
       }
     ]
@@ -615,6 +619,7 @@ resource "aws_lambda_function" "users_crud" {
     variables = {
       USERS_TABLE_NAME   = aws_dynamodb_table.users.name
       COLLEGES_TABLE_NAME = aws_dynamodb_table.colleges.name
+      CLOUD_CLUBS_TABLE_NAME = aws_dynamodb_table.cloud_clubs.name
       ADMIN_EMAILS       = var.admin_emails
     }
   }
@@ -2228,6 +2233,7 @@ resource "aws_api_gateway_deployment" "api" {
       aws_api_gateway_integration.users_id_roles_get_lambda.id,
       aws_api_gateway_integration.users_points_activities_get_lambda.id,
       aws_api_gateway_integration.users_id_points_activities_get_lambda.id,
+      aws_lambda_function.cloud_clubs_crud.source_code_hash,
     ]))
   }
 
@@ -2330,6 +2336,50 @@ resource "aws_api_gateway_deployment" "api" {
     aws_api_gateway_integration.users_id_points_options_lambda,
     aws_api_gateway_integration.users_id_points_activities_get_lambda,
     aws_api_gateway_integration.users_id_points_activities_options_lambda,
+    # Cloud Clubs integrations
+    aws_api_gateway_integration.cloud_clubs_lambda,
+    aws_api_gateway_integration.cloud_clubs_post_lambda,
+    aws_api_gateway_integration.cloud_clubs_options,
+    aws_api_gateway_integration.cloud_clubs_id_lambda,
+    aws_api_gateway_integration.cloud_clubs_id_put_lambda,
+    aws_api_gateway_integration.cloud_clubs_id_delete_lambda,
+    aws_api_gateway_integration.cloud_clubs_id_options,
+    aws_api_gateway_integration.cloud_clubs_id_tasks_post_lambda,
+    aws_api_gateway_integration.cloud_clubs_id_tasks_options,
+    aws_api_gateway_integration.cloud_clubs_id_tasks_taskid_put_lambda,
+    aws_api_gateway_integration.cloud_clubs_id_tasks_taskid_delete_lambda,
+    aws_api_gateway_integration.cloud_clubs_id_tasks_taskid_options,
+    aws_api_gateway_integration.cloud_clubs_id_events_post_lambda,
+    aws_api_gateway_integration.cloud_clubs_id_events_options,
+    aws_api_gateway_integration.cloud_clubs_id_members_post_lambda,
+    aws_api_gateway_integration.cloud_clubs_id_members_delete_lambda,
+    aws_api_gateway_integration.cloud_clubs_id_members_options,
+    aws_api_gateway_integration.cloud_clubs_id_assign_tasks_post_lambda,
+    aws_api_gateway_integration.cloud_clubs_id_assign_tasks_options,
+    aws_api_gateway_integration.cloud_clubs_id_tasks_taskid_submit_post_lambda,
+    aws_api_gateway_integration.cloud_clubs_id_tasks_taskid_submit_options,
+    aws_api_gateway_integration.cloud_clubs_submissions_get_lambda,
+    aws_api_gateway_integration.cloud_clubs_submissions_options,
+    aws_api_gateway_integration.cloud_clubs_submissions_id_review_post_lambda,
+    aws_api_gateway_integration.cloud_clubs_submissions_id_review_options,
+    aws_api_gateway_integration.cloud_clubs_tasks_get_lambda,
+    aws_api_gateway_integration.cloud_clubs_tasks_post_lambda,
+    aws_api_gateway_integration.cloud_clubs_tasks_options,
+    aws_api_gateway_integration.cloud_clubs_tasks_id_put_lambda,
+    aws_api_gateway_integration.cloud_clubs_tasks_id_delete_lambda,
+    aws_api_gateway_integration.cloud_clubs_tasks_id_options,
+    aws_api_gateway_integration_response.cloud_clubs_options,
+    aws_api_gateway_integration_response.cloud_clubs_id_options,
+    aws_api_gateway_integration_response.cloud_clubs_id_tasks_options,
+    aws_api_gateway_integration_response.cloud_clubs_id_tasks_taskid_options,
+    aws_api_gateway_integration_response.cloud_clubs_id_events_options,
+    aws_api_gateway_integration_response.cloud_clubs_id_members_options,
+    aws_api_gateway_integration_response.cloud_clubs_id_assign_tasks_options,
+    aws_api_gateway_integration_response.cloud_clubs_id_tasks_taskid_submit_options,
+    aws_api_gateway_integration_response.cloud_clubs_submissions_options,
+    aws_api_gateway_integration_response.cloud_clubs_submissions_id_review_options,
+    aws_api_gateway_integration_response.cloud_clubs_tasks_options,
+    aws_api_gateway_integration_response.cloud_clubs_tasks_id_options,
   ]
 
   rest_api_id = aws_api_gateway_rest_api.api.id

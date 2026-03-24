@@ -12,6 +12,8 @@ export interface CreateUserProfileData {
   collegeCity?: string;
   isCollegeChamp?: boolean;
   champCollegeId?: string;
+  isCloudClub?: boolean;
+  cloudClubId?: string;
   designation?: string;
   companyName?: string;
   companyCity?: string;

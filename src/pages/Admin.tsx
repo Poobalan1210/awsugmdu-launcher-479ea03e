@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import * as React from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -20,8 +20,9 @@ import {
   Plus, Calendar, Users, CheckCircle, XCircle, Clock,
   Rocket, ExternalLink, MessageSquare, Award, Link2,
   Copy, Mail, Edit, Trash2, Eye, FileText, User, Video,
-  Upload, X, UserPlus, Check, ChevronDown, GraduationCap,
-  Trophy, ListTodo, ClipboardCheck, Target, Shield, UserCog, Medal, Github, ShoppingBag, Loader2, Cloud
+  Upload, X, UserPlus, Check, ChevronDown, ChevronUp, GraduationCap,
+  Trophy, ListTodo, ClipboardCheck, Target, Shield, UserCog, Medal, Github, ShoppingBag, Loader2, Cloud,
+  Star, Quote, Heart, Zap, CheckSquare, Square, List, Hash, Type
 } from 'lucide-react';
 import { mockSprints, mockMeetups, Submission, Sprint, Session, SessionPerson, User as UserType, predefinedTasks, mockColleges, getTaskById, communityRoles, mockUserRoles, CommunityRole, UserRoleAssignment, PointActivity, mockPointActivities, Meetup, mockBadges, Badge as BadgeType, BadgeAward, mockBadgeAwards, BadgeCriteriaType, criteriaTypeLabels, BadgeCriteria, mockUsers, SubmissionField } from '@/data/mockData';
 import { createMeetup, updateMeetup, publishMeetup, getMeetups, CreateMeetupData, UpdateMeetupData, deleteMeetup, endMeetup } from '@/lib/meetups';
@@ -55,196 +56,353 @@ function SubmissionReview({ submission, onAction }: {
   const [feedback, setFeedback] = useState('');
   const [showFeedback, setShowFeedback] = useState(false);
 
+  const isPending = submission.status === 'pending';
+
   return (
-    <Card className="glass-card">
-      <CardContent className="p-4">
-        <div className="flex flex-col lg:flex-row lg:items-start gap-4">
-          <div className="flex items-start gap-4 flex-1 min-w-0">
-            <Avatar className="h-12 w-12 flex-shrink-0">
-              <AvatarImage src={submission.userAvatar} />
-              <AvatarFallback>{submission.userName.charAt(0)}</AvatarFallback>
-            </Avatar>
-            <div className="flex-1 min-w-0">
-              <div className="flex flex-wrap items-center gap-2 mb-2">
-                <span className="font-semibold">{submission.userName}</span>
-                <Badge variant="outline" className="text-xs">{submission.sprintTitle}</Badge>
-                {(submission.isFirstTimeKiro || (submission.customFields && (submission.customFields.isFirstTimeKiro === 'Yes' || submission.customFields.isFirstTimeKiro === true))) && (
-                  <Badge variant="secondary" className="text-xs bg-blue-500/10 text-blue-500 border-blue-500/20">
-                    First Time Kiro
-                  </Badge>
-                )}
-                {/* Render other custom fields as badges if they are small */}
-                {submission.customFields && Object.entries(submission.customFields).map(([key, value]) => {
-                  if (key === 'isFirstTimeKiro') return null;
-                  if (typeof value === 'boolean') {
-                    return value ? (
-                      <Badge key={key} variant="secondary" className="text-xs bg-muted/50">
-                        {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
-                      </Badge>
-                    ) : null;
-                  }
-                  if (typeof value === 'string' && value.length < 20) {
-                    return (
-                      <Badge key={key} variant="secondary" className="text-xs bg-muted/50">
-                        <span className="text-muted-foreground mr-1">{key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}:</span>
-                        {value}
-                      </Badge>
-                    );
-                  }
-                  return null;
-                })}
-                <Badge variant={
-                  submission.status === 'approved' ? 'default' :
-                    submission.status === 'rejected' ? 'destructive' : 'secondary'
-                } className="capitalize">
-                  {submission.status}
-                </Badge>
-              </div>
-
-              {/* Comments */}
-              {submission.comments && (
-                <p className="text-sm text-muted-foreground mb-3">{submission.comments}</p>
-              )}
-
-              {/* Links */}
-              <div className="flex flex-wrap gap-3 text-sm mb-3">
-                {submission.blogUrl && (
-                  <a href={submission.blogUrl} target="_blank" rel="noopener noreferrer"
-                    className="text-primary hover:underline flex items-center gap-1 bg-primary/10 px-2 py-1 rounded">
-                    <FileText className="h-3 w-3" />
-                    AWS Builder Blog
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                )}
-                {submission.githubUrl && (
-                  <a href={submission.githubUrl} target="_blank" rel="noopener noreferrer"
-                    className="text-primary hover:underline flex items-center gap-1 bg-primary/10 px-2 py-1 rounded">
-                    <Github className="h-3 w-3" />
-                    GitHub Repository
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                )}
-              </div>
-
-              {/* Custom Fields (Longer content) */}
-              {submission.customFields && Object.entries(submission.customFields).some(([k, v]) => k !== 'isFirstTimeKiro' && ((typeof v === 'string' && v.length >= 20) || typeof v === 'object')) && (
-                <div className="space-y-2 mb-3 bg-muted/30 p-3 rounded-lg border border-border/50">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Additional Information</p>
-                  {Object.entries(submission.customFields).map(([key, value]) => {
-                    if (key === 'isFirstTimeKiro') return null;
-                    const displayKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
-                    if (typeof value === 'string' && value.length >= 20) {
-                      return (
-                        <div key={key} className="space-y-1">
-                          <p className="text-xs font-medium">{displayKey}:</p>
-                          <p className="text-sm text-muted-foreground whitespace-pre-wrap">{value}</p>
-                        </div>
-                      );
-                    }
-                    if (typeof value === 'object' && value !== null) {
-                       return (
-                        <div key={key} className="space-y-1">
-                          <p className="text-xs font-medium">{displayKey}:</p>
-                          <p className="text-sm text-muted-foreground">{JSON.stringify(value)}</p>
-                        </div>
-                      );
-                    }
-                    return null;
-                  })}
-                </div>
-              )}
-
-              {/* Supporting Documents */}
-              {submission.supportingDocuments && submission.supportingDocuments.length > 0 && (
-                <div className="mb-3">
-                  <p className="text-xs font-medium text-muted-foreground mb-2">Supporting Documents:</p>
-                  <div className="flex flex-wrap gap-2">
-                    {submission.supportingDocuments.map((docUrl, index) => (
-                      <a
-                        key={index}
-                        href={docUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-primary hover:underline flex items-center gap-1 bg-muted/50 px-2 py-1 rounded"
-                      >
-                        <FileText className="h-3 w-3" />
-                        Document {index + 1}
-                        <ExternalLink className="h-3 w-3" />
-                      </a>
-                    ))}
+    <Card className="glass-card overflow-hidden border-border/40 hover:border-primary/30 transition-all duration-300">
+      <CardContent className="p-0">
+        <Collapsible defaultOpen={false} className="w-full group/main-collapsible">
+          {/* Header & Trigger Section */}
+          <CollapsibleTrigger asChild>
+            <div className="p-4 border-b border-border/50 bg-muted/20 flex flex-wrap items-center justify-between gap-4 cursor-pointer hover:bg-muted/30 transition-colors">
+              <div className="flex items-center gap-3">
+                <Avatar className="h-10 w-10 ring-2 ring-background border border-border/50">
+                  <AvatarImage src={submission.userAvatar} />
+                  <AvatarFallback className="bg-primary/10 text-primary font-bold">
+                    {submission.userName.charAt(0)}
+                  </AvatarFallback>
+                </Avatar>
+                <div>
+                  <h4 className="font-semibold text-sm leading-tight text-foreground">{submission.userName}</h4>
+                  <div className="flex items-center gap-2 mt-1">
+                    <Badge variant="outline" className="text-[10px] py-0 px-1.5 h-4 bg-background/50 border-primary/20 text-primary uppercase tracking-wider font-semibold">
+                      {submission.sprintTitle}
+                    </Badge>
+                    <span className="text-[10px] text-muted-foreground">
+                      {format(parseISO(submission.submittedAt), 'MMM d, h:mm a')}
+                    </span>
                   </div>
                 </div>
-              )}
-
-              <p className="text-xs text-muted-foreground mt-2">
-                Submitted {format(parseISO(submission.submittedAt), 'MMM d, yyyy')}
-              </p>
-            </div>
-          </div>
-
-          {submission.status === 'pending' ? (
-            <div className="flex flex-col gap-3 lg:w-64">
-              <div className="flex items-center gap-2">
-                <Label className="text-xs">Points:</Label>
-                <Input
-                  type="number"
-                  value={points}
-                  onChange={(e) => setPoints(Number(e.target.value))}
-                  className="w-20 h-8"
-                  min={0}
-                  max={500}
-                />
               </div>
-              {showFeedback && (
-                <Textarea
-                  placeholder="Add feedback (optional)..."
-                  value={feedback}
-                  onChange={(e) => setFeedback(e.target.value)}
-                  className="text-xs min-h-[80px]"
-                />
-              )}
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  className="flex-1 bg-[#f97316] hover:bg-[#ea580c] h-8 text-xs text-white"
-                  onClick={() => onAction('approve', points, feedback)}
+
+              <div className="flex items-center gap-4">
+                <Badge
+                  variant={
+                    submission.status === 'approved' ? 'default' :
+                      submission.status === 'rejected' ? 'destructive' : 'secondary'
+                  }
+                  className={`capitalize font-semibold text-[10px] px-2 py-0.5 rounded-full ${
+                    submission.status === 'approved' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' :
+                    submission.status === 'rejected' ? 'bg-destructive/10 text-destructive border-destructive/20' :
+                    'bg-amber-500/10 text-amber-500 border-amber-500/20'
+                  }`}
                 >
-                  <CheckCircle className="h-3 w-3 mr-1" />
-                  Approve
-                </Button>
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  className="flex-1 h-8 text-xs"
-                  onClick={() => onAction('reject', 0, feedback)}
-                >
-                  <XCircle className="h-3 w-3 mr-1" />
-                  Reject
-                </Button>
+                  {submission.status}
+                </Badge>
+                <div className="h-8 w-8 rounded-full flex items-center justify-center hover:bg-background/50 transition-colors">
+                  <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform duration-300 group-data-[state=open]/main-collapsible:rotate-180" />
+                </div>
               </div>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setShowFeedback(!showFeedback)}
-                className="text-xs"
-              >
-                {showFeedback ? 'Hide' : 'Add'} Feedback
-              </Button>
             </div>
-          ) : (
-            <div className="flex flex-col items-end gap-2">
-              <Badge variant="outline" className="text-lg px-4 py-2">
-                <Award className="h-4 w-4 mr-2" />
-                {submission.points} pts
-              </Badge>
-              {submission.feedback && (
-                <p className="text-xs text-muted-foreground max-w-xs text-right">
-                  "{submission.feedback}"
-                </p>
-              )}
+          </CollapsibleTrigger>
+
+          <CollapsibleContent className="w-full">
+            <div className="p-5 flex flex-col lg:flex-row gap-6 border-t border-border/10">
+              <div className="flex-1 space-y-6">
+                {/* Submission Details (Custom Fields) */}
+                {(() => {
+                  const fields = { ...submission.customFields };
+                  if (submission.isFirstTimeKiro !== undefined && fields.isFirstTimeKiro === undefined) {
+                    fields.isFirstTimeKiro = submission.isFirstTimeKiro;
+                  }
+                  const fieldEntries = Object.entries(fields);
+                  
+                  if (fieldEntries.length === 0) return null;
+
+                  return (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2 px-1">
+                        <div className="h-4 w-1 bg-primary/40 rounded-full" />
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Technical details</p>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 p-5 bg-muted/20 rounded-2xl border border-border/40 shadow-inner-sm">
+                        {fieldEntries.map(([key, value]) => {
+                          const isKiro = key === 'isFirstTimeKiro';
+                          const displayKey = isKiro ? 'First Time Kiro' : key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+                          
+                          // Determine icon and formatting based on value type
+                          let Icon = List;
+                          let isLong = false;
+                          let displayValue = String(value);
+
+                          if (typeof value === 'boolean') {
+                            Icon = CheckSquare;
+                          } else if (typeof value === 'number') {
+                            Icon = Hash;
+                          } else if (typeof value === 'string') {
+                            isLong = value.length >= 40;
+                            Icon = value.length > 100 ? FileText : (value.length > 30 ? Type : List);
+                          } else if (Array.isArray(value)) {
+                            Icon = List;
+                            displayValue = value.join(', ');
+                          } else if (typeof value === 'object' && value !== null) {
+                            Icon = FileText;
+                            isLong = true;
+                            displayValue = JSON.stringify(value, null, 2);
+                          }
+
+                          return (
+                            <div key={key} className={`space-y-1.5 ${isLong ? 'md:col-span-2' : ''}`}>
+                              <Label className="text-[11px] font-bold text-muted-foreground/80 flex items-center gap-2">
+                                <Icon className="h-3 w-3 text-primary/60" />
+                                {displayKey}
+                              </Label>
+                              <div className={`p-2.5 rounded-lg border bg-background/50 transition-all duration-200 hover:border-primary/20 hover:bg-background/80 ${
+                                isKiro && (value === 'Yes' || value === true || value === 'First Time') ? 'border-primary/30 bg-primary/5' : 'border-border/60'
+                              }`}>
+                                {typeof value === 'boolean' ? (
+                                  <div className="flex items-center gap-2">
+                                    <div className={`h-2.5 w-2.5 rounded-full ${value ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]' : 'bg-muted'}`} />
+                                    <span className="text-sm font-semibold">{value ? 'Yes' : 'No'}</span>
+                                  </div>
+                                ) : typeof value === 'object' && value !== null ? (
+                                  <pre className="text-[10px] font-mono leading-tight overflow-x-auto text-foreground/80">
+                                    {displayValue}
+                                  </pre>
+                                ) : (
+                                  <p className="text-sm font-semibold text-foreground/90 whitespace-pre-wrap leading-relaxed">
+                                    {isKiro && (value === 'Yes' || value === true || value === 'First Time') && <Star className="inline-block h-3.5 w-3.5 mr-2 text-primary fill-primary/20 animate-pulse" />}
+                                    {displayValue}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Main Content (Comments) */}
+                {submission.comments && (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2 px-1">
+                      <div className="h-4 w-1 bg-amber-500/40 rounded-full" />
+                      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Builder Comments</p>
+                    </div>
+                    <div className="bg-muted/5 border border-border/30 rounded-xl p-4 relative overflow-hidden group">
+                      <div className="absolute top-0 left-0 w-1 h-full bg-primary/20 group-hover:bg-primary transition-colors" />
+                      <p className="text-sm leading-relaxed text-foreground/90 whitespace-pre-wrap">
+                        {submission.comments}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Resources (Links & Documents) */}
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+                  {(submission.blogUrl || submission.githubUrl) && (
+                    <div className="space-y-2">
+                      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest pl-1">Project Links</p>
+                      <div className="flex flex-col gap-2">
+                        {submission.blogUrl && (
+                          <a href={submission.blogUrl} target="_blank" rel="noopener noreferrer"
+                            className="flex items-center justify-between group/link bg-background border border-border/60 hover:border-primary/40 hover:bg-primary/5 p-2 rounded-lg transition-all duration-200">
+                            <div className="flex items-center gap-2">
+                              <div className="p-1.5 rounded-md bg-orange-500/10 text-orange-500">
+                                <FileText className="h-3.5 w-3.5" />
+                              </div>
+                              <span className="text-xs font-medium">AWS Builder Blog</span>
+                            </div>
+                            <ExternalLink className="h-3 w-3 text-muted-foreground group-hover/link:text-primary transition-colors" />
+                          </a>
+                        )}
+                        {submission.githubUrl && (
+                          <a href={submission.githubUrl} target="_blank" rel="noopener noreferrer"
+                            className="flex items-center justify-between group/link bg-background border border-border/60 hover:border-primary/40 hover:bg-primary/5 p-2 rounded-lg transition-all duration-200">
+                            <div className="flex items-center gap-2">
+                              <div className="p-1.5 rounded-md bg-foreground/10 text-foreground">
+                                <Github className="h-3.5 w-3.5" />
+                              </div>
+                              <span className="text-xs font-medium">GitHub Repository</span>
+                            </div>
+                            <ExternalLink className="h-3 w-3 text-muted-foreground group-hover/link:text-primary transition-colors" />
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {submission.supportingDocuments && submission.supportingDocuments.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest pl-1">Supporting Docs</p>
+                      <div className="flex flex-wrap gap-2">
+                        {submission.supportingDocuments.map((docUrl, index) => (
+                          <a
+                            key={index}
+                            href={docUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 bg-muted/40 hover:bg-muted/80 border border-transparent hover:border-border/60 px-3 py-1.5 rounded-full transition-all duration-200 group/doc"
+                          >
+                            <FileText className="h-3 w-3 text-primary group-hover/doc:scale-110 transition-transform" />
+                            <span className="text-[11px] font-medium">Doc {index + 1}</span>
+                            <ExternalLink className="h-2.5 w-2.5 text-muted-foreground" />
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Actions / Review Panel */}
+              <div className="lg:w-80 flex-shrink-0">
+                <div className={`h-full flex flex-col p-5 rounded-2xl border transition-all duration-500 ${
+                  isPending
+                    ? 'bg-primary/[0.03] border-primary/20 shadow-sm'
+                    : 'bg-emerald-500/[0.03] border-emerald-500/20 shadow-sm flex-center'
+                }`}>
+                  {isPending ? (
+                    <div className="space-y-5">
+                      <div className="flex items-center justify-between">
+                        <h5 className="text-xs font-bold uppercase tracking-wider text-primary">Reward Submission</h5>
+                        <Award className="h-4 w-4 text-primary animate-pulse" />
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between px-1">
+                          <Label className="text-[11px] font-bold">Award Points</Label>
+                          <span className="text-[11px] font-mono font-bold bg-primary/10 text-primary px-2 rounded-full">{points}</span>
+                        </div>
+                        <div className="flex gap-2">
+                           <div className="relative flex-1">
+                            <Input
+                              type="number"
+                              value={points}
+                              onChange={(e) => setPoints(Number(e.target.value))}
+                              className="h-10 text-sm pl-8 font-bold border-border/60 focus:ring-primary/20"
+                              min={0}
+                              max={1000}
+                            />
+                            <Star className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-amber-500" />
+                          </div>
+                          <div className="flex flex-col gap-1">
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              className="h-4 w-6 p-0 rounded-sm"
+                              onClick={() => setPoints(p => Math.min(1000, p + 5))}
+                            >
+                              <ChevronUp className="h-2 w-2" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              className="h-4 w-6 p-0 rounded-sm"
+                              onClick={() => setPoints(p => Math.max(0, p - 5))}
+                            >
+                              <ChevronDown className="h-2 w-2" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between px-1">
+                          <Label className="text-[11px] font-bold">Admin Feedback</Label>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setShowFeedback(!showFeedback);
+                            }}
+                            className={`h-6 text-[10px] font-bold ${showFeedback ? 'text-primary' : 'text-muted-foreground'}`}
+                          >
+                            {showFeedback ? 'Cancel' : 'Add Note +'}
+                          </Button>
+                        </div>
+                        <AnimatePresence>
+                          {showFeedback && (
+                            <motion.div
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: 'auto' }}
+                              exit={{ opacity: 0, height: 0 }}
+                            >
+                              <Textarea
+                                placeholder="Write a message to the builder..."
+                                value={feedback}
+                                onChange={(e) => setFeedback(e.target.value)}
+                                className="text-xs min-h-[90px] bg-background/50 border-border/60 resize-none focus:ring-primary/20"
+                              />
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3 pt-2">
+                         <Button
+                          size="sm"
+                          variant="destructive"
+                          className="h-10 text-xs font-bold border-b-2 border-destructive-foreground/20 active:border-b-0 active:translate-y-[1px]"
+                          onClick={(e) => { e.stopPropagation(); onAction('reject', 0, feedback); }}
+                        >
+                          <XCircle className="h-3.5 w-3.5 mr-1.5" />
+                          Reject
+                        </Button>
+                        <Button
+                          size="sm"
+                          className="h-10 text-xs font-bold bg-[#f97316] hover:bg-[#ea580c] border-b-2 border-amber-800/30 active:border-b-0 active:translate-y-[1px] text-white"
+                          onClick={(e) => { e.stopPropagation(); onAction('approve', points, feedback); }}
+                        >
+                          <CheckCircle className="h-3.5 w-3.5 mr-1.5" />
+                          Approve
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center text-center space-y-4 py-4">
+                      <div className="relative">
+                        <div className="absolute inset-0 bg-emerald-500/20 blur-xl rounded-full scale-150 animate-pulse" />
+                        <div className="relative h-20 w-20 rounded-full bg-emerald-500/10 border-2 border-emerald-500/30 flex items-center justify-center">
+                          <Award className="h-10 w-10 text-emerald-500" />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-[0.2em]">Awarded</p>
+                        <div className="flex items-baseline justify-center gap-1">
+                          <span className="text-3xl font-extrabold text-foreground">{submission.points}</span>
+                          <span className="text-xs font-bold text-muted-foreground uppercase">pts</span>
+                        </div>
+                      </div>
+
+                      {submission.feedback && (
+                        <div className="relative px-3 py-2 bg-background border border-border/40 rounded-lg max-w-[200px]">
+                          <div className="absolute -top-2 left-1/2 -translate-x-1/2 flex gap-1">
+                             <Quote className="h-3 w-3 text-emerald-500 fill-emerald-500/10" />
+                          </div>
+                          <p className="text-[11px] text-muted-foreground italic leading-tight">
+                            {submission.feedback}
+                          </p>
+                        </div>
+                      )}
+
+                      <div className="pt-2">
+                        <p className="text-[9px] text-muted-foreground flex items-center gap-1">
+                          <User className="h-2 w-2" />
+                          Reviewed by Admin
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
-          )}
-        </div>
+          </CollapsibleContent>
+        </Collapsible>
       </CardContent>
     </Card>
   );
@@ -636,9 +794,9 @@ function CreateSprintDialog({ onSuccess }: { onSuccess?: () => void }) {
       // Calculate start date (first day of month) and end date (last day of month)
       const year = parseInt(formData.year);
       const month = parseInt(formData.month);
-      const startDate = new Date(year, month - 1, 1).toISOString().split('T')[0];
+      const startDate = `${year}-${month.toString().padStart(2, '0')}-01`;
       const lastDay = new Date(year, month, 0).getDate();
-      const endDate = new Date(year, month - 1, lastDay).toISOString().split('T')[0];
+      const endDate = `${year}-${month.toString().padStart(2, '0')}-${lastDay.toString().padStart(2, '0')}`;
 
       const sprintData: CreateSprintData = {
         title: formData.title,
@@ -753,9 +911,9 @@ function EditSprintDialog({ sprint, onSuccess }: { sprint: Sprint; onSuccess?: (
     try {
       const year = parseInt(formData.year);
       const month = parseInt(formData.month);
-      const startDate = new Date(year, month - 1, 1).toISOString().split('T')[0];
+      const startDate = `${year}-${month.toString().padStart(2, '0')}-01`;
       const lastDay = new Date(year, month, 0).getDate();
-      const endDate = new Date(year, month - 1, lastDay).toISOString().split('T')[0];
+      const endDate = `${year}-${month.toString().padStart(2, '0')}-${lastDay.toString().padStart(2, '0')}`;
 
       const sprintData: UpdateSprintData = {
         title: formData.title,

@@ -1,6 +1,6 @@
 // Mock data for the AWS User Group website
 
-export type UserRole = 'organiser' | 'speaker' | 'member';
+export type UserRole = 'organiser' | 'speaker' | 'member' | 'admin';
 
 // Extended roles for community management
 export type CommunityRole = 'member' | 'volunteer' | 'organiser' | 'champ' | 'cloud_club_captain' | 'speaker' | 'admin';

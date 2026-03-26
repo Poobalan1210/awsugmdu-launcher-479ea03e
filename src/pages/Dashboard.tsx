@@ -653,7 +653,7 @@ function SprintsDashboard() {
 export default function Dashboard() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('champs');
-  const isAdmin = user?.role === 'organiser';
+  const isAdmin = user?.role === 'organiser' || user?.role === 'admin';
 
   if (!isAdmin) {
     return (

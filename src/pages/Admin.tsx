@@ -6640,7 +6640,7 @@ export default function Admin() {
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [allSubmissions, setAllSubmissions] = useState<Array<Submission & { sprintTitle: string; sprintId: string }>>([]);
   const [loadingSubmissions, setLoadingSubmissions] = useState(false);
-  const isAdmin = authUser?.role === 'organiser';
+  const isAdmin = authUser?.role === 'organiser' || authUser?.role === 'admin';
   const isSpeaker = authUser?.role === 'speaker';
 
   const pendingSubmissions = allSubmissions.filter(s => s.status === 'pending');

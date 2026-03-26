@@ -1,5 +1,5 @@
 import { callApi } from './api';
-import { Sprint, Session, Submission } from '@/data/mockData';
+import { Sprint, Session, Submission, SubmissionField } from '@/data/mockData';
 
 export interface CreateSprintData {
   title: string;
@@ -8,6 +8,7 @@ export interface CreateSprintData {
   startDate: string;
   endDate: string;
   githubRepo?: string;
+  submissionFormConfig?: SubmissionField[];
 }
 
 export interface UpdateSprintData extends Partial<CreateSprintData> {
@@ -91,6 +92,7 @@ export interface SubmitWorkData {
   comments?: string;
   supportingDocuments?: string[];
   isFirstTimeKiro?: boolean;
+  customFields?: Record<string, any>;
 }
 
 export interface SubmitWorkResponse {
@@ -110,19 +112,19 @@ export async function getSprint(id: string): Promise<Sprint> {
 }
 
 export async function createSprint(data: CreateSprintData): Promise<Sprint> {
-  const response = await callApi<SprintResponse>('/sprints', {
+  const response = await callApi<Sprint>(`/sprints`, {
     method: 'POST',
     body: JSON.stringify(data),
   });
-  return response.sprint;
+  return response;
 }
 
 export async function updateSprint(id: string, data: UpdateSprintData): Promise<Sprint> {
-  const response = await callApi<SprintResponse>(`/sprints/${id}`, {
+  const response = await callApi<Sprint>(`/sprints/${id}`, {
     method: 'PUT',
     body: JSON.stringify(data),
   });
-  return response.sprint;
+  return response;
 }
 
 export async function addSession(sprintId: string, data: CreateSessionData): Promise<AddSessionResponse> {

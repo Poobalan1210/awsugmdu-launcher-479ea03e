@@ -23,9 +23,9 @@ import {
   Upload, X, UserPlus, Check, ChevronDown, GraduationCap,
   Trophy, ListTodo, ClipboardCheck, Target, Shield, UserCog, Medal, Github, ShoppingBag, Loader2, Cloud
 } from 'lucide-react';
-import { mockSprints, mockMeetups, Submission, Sprint, Session, SessionPerson, User as UserType, predefinedTasks, mockColleges, getTaskById, communityRoles, mockUserRoles, CommunityRole, UserRoleAssignment, PointActivity, mockPointActivities, Meetup, mockBadges, Badge as BadgeType, BadgeAward, mockBadgeAwards, BadgeCriteriaType, criteriaTypeLabels, BadgeCriteria, mockUsers } from '@/data/mockData';
+import { mockSprints, mockMeetups, Submission, Sprint, Session, SessionPerson, User as UserType, predefinedTasks, mockColleges, getTaskById, communityRoles, mockUserRoles, CommunityRole, UserRoleAssignment, PointActivity, mockPointActivities, Meetup, mockBadges, Badge as BadgeType, BadgeAward, mockBadgeAwards, BadgeCriteriaType, criteriaTypeLabels, BadgeCriteria, mockUsers, SubmissionField } from '@/data/mockData';
 import { createMeetup, updateMeetup, publishMeetup, getMeetups, CreateMeetupData, UpdateMeetupData, deleteMeetup, endMeetup } from '@/lib/meetups';
-import { createSprint, addSession, getSprints, deleteSprint, deleteSession, CreateSprintData, CreateSessionData, reviewSubmission } from '@/lib/sprints';
+import { createSprint, updateSprint, addSession, getSprints, deleteSprint, deleteSession, CreateSprintData, UpdateSprintData, CreateSessionData, reviewSubmission } from '@/lib/sprints';
 import { uploadFileToS3 } from '@/lib/s3Upload';
 import { getAllUsers } from '@/lib/userProfile';
 import { callApi } from '@/lib/api';
@@ -68,11 +68,31 @@ function SubmissionReview({ submission, onAction }: {
               <div className="flex flex-wrap items-center gap-2 mb-2">
                 <span className="font-semibold">{submission.userName}</span>
                 <Badge variant="outline" className="text-xs">{submission.sprintTitle}</Badge>
-                {submission.isFirstTimeKiro && (
+                {(submission.isFirstTimeKiro || (submission.customFields && (submission.customFields.isFirstTimeKiro === 'Yes' || submission.customFields.isFirstTimeKiro === true))) && (
                   <Badge variant="secondary" className="text-xs bg-blue-500/10 text-blue-500 border-blue-500/20">
                     First Time Kiro
                   </Badge>
                 )}
+                {/* Render other custom fields as badges if they are small */}
+                {submission.customFields && Object.entries(submission.customFields).map(([key, value]) => {
+                  if (key === 'isFirstTimeKiro') return null;
+                  if (typeof value === 'boolean') {
+                    return value ? (
+                      <Badge key={key} variant="secondary" className="text-xs bg-muted/50">
+                        {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
+                      </Badge>
+                    ) : null;
+                  }
+                  if (typeof value === 'string' && value.length < 20) {
+                    return (
+                      <Badge key={key} variant="secondary" className="text-xs bg-muted/50">
+                        <span className="text-muted-foreground mr-1">{key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}:</span>
+                        {value}
+                      </Badge>
+                    );
+                  }
+                  return null;
+                })}
                 <Badge variant={
                   submission.status === 'approved' ? 'default' :
                     submission.status === 'rejected' ? 'destructive' : 'secondary'
@@ -105,6 +125,34 @@ function SubmissionReview({ submission, onAction }: {
                   </a>
                 )}
               </div>
+
+              {/* Custom Fields (Longer content) */}
+              {submission.customFields && Object.entries(submission.customFields).some(([k, v]) => k !== 'isFirstTimeKiro' && ((typeof v === 'string' && v.length >= 20) || typeof v === 'object')) && (
+                <div className="space-y-2 mb-3 bg-muted/30 p-3 rounded-lg border border-border/50">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Additional Information</p>
+                  {Object.entries(submission.customFields).map(([key, value]) => {
+                    if (key === 'isFirstTimeKiro') return null;
+                    const displayKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+                    if (typeof value === 'string' && value.length >= 20) {
+                      return (
+                        <div key={key} className="space-y-1">
+                          <p className="text-xs font-medium">{displayKey}:</p>
+                          <p className="text-sm text-muted-foreground whitespace-pre-wrap">{value}</p>
+                        </div>
+                      );
+                    }
+                    if (typeof value === 'object' && value !== null) {
+                       return (
+                        <div key={key} className="space-y-1">
+                          <p className="text-xs font-medium">{displayKey}:</p>
+                          <p className="text-sm text-muted-foreground">{JSON.stringify(value)}</p>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })}
+                </div>
+              )}
 
               {/* Supporting Documents */}
               {submission.supportingDocuments && submission.supportingDocuments.length > 0 && (
@@ -152,17 +200,25 @@ function SubmissionReview({ submission, onAction }: {
                   placeholder="Add feedback (optional)..."
                   value={feedback}
                   onChange={(e) => setFeedback(e.target.value)}
-                  rows={2}
-                  className="text-sm"
+                  className="text-xs min-h-[80px]"
                 />
               )}
               <div className="flex gap-2">
-                <Button size="sm" onClick={() => onAction('approve', points, feedback)} className="flex-1 gap-1">
-                  <CheckCircle className="h-4 w-4" />
+                <Button
+                  size="sm"
+                  className="flex-1 bg-[#f97316] hover:bg-[#ea580c] h-8 text-xs text-white"
+                  onClick={() => onAction('approve', points, feedback)}
+                >
+                  <CheckCircle className="h-3 w-3 mr-1" />
                   Approve
                 </Button>
-                <Button size="sm" variant="destructive" onClick={() => onAction('reject', 0, feedback)} className="flex-1 gap-1">
-                  <XCircle className="h-4 w-4" />
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  className="flex-1 h-8 text-xs"
+                  onClick={() => onAction('reject', 0, feedback)}
+                >
+                  <XCircle className="h-3 w-3 mr-1" />
                   Reject
                 </Button>
               </div>
@@ -322,6 +378,239 @@ function ViewParticipantsDialog({ sprint }: { sprint: Sprint }) {
   );
 }
 
+
+function SprintFormContent({ 
+  formData, 
+  setFormData, 
+  submissionFields, 
+  setSubmissionFields 
+}: { 
+  formData: any; 
+  setFormData: (data: any) => void;
+  submissionFields: SubmissionField[];
+  setSubmissionFields: (fields: SubmissionField[]) => void;
+}) {
+  return (
+    <div className="space-y-6 text-left">
+      {/* Basic Info */}
+      <div className="space-y-4">
+        <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Basic Information</h3>
+        <div className="space-y-2">
+          <Label className="text-sm font-medium">Sprint Title *</Label>
+          <Input
+            placeholder="e.g., Serverless January"
+            value={formData.title}
+            onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+            required
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">Month *</Label>
+            <Select
+              value={formData.month}
+              onValueChange={(value) => setFormData({ ...formData, month: value })}
+              required
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select month" />
+              </SelectTrigger>
+              <SelectContent>
+                {['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map((m, i) => (
+                  <SelectItem key={i + 1} value={(i + 1).toString()}>{m}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">Year *</Label>
+            <Select
+              value={formData.year}
+              onValueChange={(value) => setFormData({ ...formData, year: value })}
+              required
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select year" />
+              </SelectTrigger>
+              <SelectContent>
+                {Array.from({ length: 5 }, (_, i) => {
+                  const year = new Date().getFullYear() + i;
+                  return (
+                    <SelectItem key={year} value={year.toString()}>
+                      {year}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <div className="space-y-2">
+          <Label className="text-sm font-medium">Description *</Label>
+          <Textarea
+            rows={3}
+            value={formData.description}
+            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+            placeholder="Describe the sprint objectives and what participants will learn..."
+            required
+          />
+        </div>
+      </div>
+
+      {/* Resources */}
+      <div className="space-y-4 border-t pt-4">
+        <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Resources</h3>
+        <div className="space-y-2">
+          <Label className="text-sm font-medium">GitHub Repo URL</Label>
+          <Input
+            placeholder="https://github.com/..."
+            value={formData.githubRepo}
+            onChange={(e) => setFormData({ ...formData, githubRepo: e.target.value })}
+          />
+        </div>
+      </div>
+
+      {/* Submission Form Configuration */}
+      <div className="space-y-4 border-t pt-4">
+        <div className="flex justify-between items-center">
+          <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Custom Submission Fields</h3>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              const newField: SubmissionField = {
+                id: `field_${Date.now()}`,
+                label: '',
+                type: 'text',
+                required: false,
+                placeholder: ''
+              };
+              setSubmissionFields([...submissionFields, newField]);
+            }}
+          >
+            <Plus className="h-4 w-4 mr-2" /> Add Field
+          </Button>
+        </div>
+        
+        {submissionFields.length > 0 ? (
+          <div className="space-y-4">
+            {submissionFields.map((field, index) => (
+              <Card key={field.id} className="p-4 border-dashed bg-muted/20">
+                <div className="space-y-4">
+                  <div className="flex justify-between items-start">
+                    <div className="flex-1 grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label className="text-xs font-semibold">Field Label *</Label>
+                        <Input
+                          placeholder="e.g., Is this your first time?"
+                          value={field.label}
+                          onChange={(e) => {
+                            const newFields = [...submissionFields];
+                            newFields[index].label = e.target.value;
+                            setSubmissionFields(newFields);
+                          }}
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs font-semibold">Field Type *</Label>
+                        <Select
+                          value={field.type}
+                          onValueChange={(value: any) => {
+                            const newFields = [...submissionFields];
+                            newFields[index].type = value;
+                            if (value === 'radio' || value === 'select') {
+                              newFields[index].options = ['Option 1'];
+                            } else {
+                              delete newFields[index].options;
+                            }
+                            setSubmissionFields(newFields);
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="text">Text Input</SelectItem>
+                            <SelectItem value="textarea">Long Text</SelectItem>
+                            <SelectItem value="file">File Upload</SelectItem>
+                            <SelectItem value="radio">Radio Buttons</SelectItem>
+                            <SelectItem value="checkbox">Checkbox</SelectItem>
+                            <SelectItem value="select">Dropdown</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 p-0"
+                      onClick={() => {
+                        setSubmissionFields(submissionFields.filter((_, i) => i !== index));
+                      }}
+                    >
+                      <X className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                     <div className="space-y-2">
+                        <Label className="text-xs font-semibold">Placeholder (Optional)</Label>
+                        <Input
+                          placeholder="Short hint for users"
+                          value={field.placeholder || ''}
+                          onChange={(e) => {
+                            const newFields = [...submissionFields];
+                            newFields[index].placeholder = e.target.value;
+                            setSubmissionFields(newFields);
+                          }}
+                        />
+                      </div>
+                      <div className="flex items-center space-x-2 pt-8">
+                        <Switch
+                          id={`req-${field.id}`}
+                          checked={field.required}
+                          onCheckedChange={(checked) => {
+                            const newFields = [...submissionFields];
+                            newFields[index].required = checked;
+                            setSubmissionFields(newFields);
+                          }}
+                        />
+                        <Label htmlFor={`req-${field.id}`} className="text-xs font-medium">Required Field</Label>
+                      </div>
+                  </div>
+
+                  {(field.type === 'radio' || field.type === 'select') && (
+                    <div className="space-y-2">
+                      <Label className="text-xs font-semibold">Options (comma separated)</Label>
+                      <Input
+                        placeholder="Option 1, Option 2, Option 3"
+                        value={field.optionsRaw !== undefined ? field.optionsRaw : (field.options?.join(', ') || '')}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          const newFields = [...submissionFields];
+                          newFields[index].optionsRaw = val;
+                          newFields[index].options = val.split(',').map(s => s.trim()).filter(s => s !== '');
+                          setSubmissionFields(newFields);
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground italic text-center py-6 bg-muted/30 rounded-lg border border-dashed border-muted-foreground/30">
+            No custom fields added. Default fields will be used.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
 function CreateSprintDialog({ onSuccess }: { onSuccess?: () => void }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -332,6 +621,12 @@ function CreateSprintDialog({ onSuccess }: { onSuccess?: () => void }) {
     year: '',
     githubRepo: ''
   });
+  const [submissionFields, setSubmissionFields] = useState<SubmissionField[]>([
+    { id: 'blogUrl', label: 'AWS Builder Center Blog URL', type: 'text', placeholder: 'https://builder.aws.com/content/...', required: false },
+    { id: 'githubUrl', label: 'GitHub Repository URL', type: 'text', placeholder: 'https://github.com/username/project', required: false },
+    { id: 'supportingDocuments', label: 'Supporting Documents', type: 'file', placeholder: 'Screenshots, diagrams, or other supporting materials', required: false },
+    { id: 'comments', label: 'Comments', type: 'textarea', placeholder: 'Tell us about what you built and learned...', required: false }
+  ]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -351,7 +646,8 @@ function CreateSprintDialog({ onSuccess }: { onSuccess?: () => void }) {
         description: formData.description,
         startDate: startDate,
         endDate: endDate,
-        githubRepo: formData.githubRepo || undefined
+        githubRepo: formData.githubRepo || undefined,
+        submissionFormConfig: submissionFields.length > 0 ? submissionFields : undefined
       };
 
       await createSprint(sprintData);
@@ -367,6 +663,12 @@ function CreateSprintDialog({ onSuccess }: { onSuccess?: () => void }) {
         year: '',
         githubRepo: ''
       });
+      setSubmissionFields([
+        { id: 'blogUrl', label: 'AWS Builder Center Blog URL', type: 'text', placeholder: 'https://builder.aws.com/content/...', required: false },
+        { id: 'githubUrl', label: 'GitHub Repository URL', type: 'text', placeholder: 'https://github.com/username/project', required: false },
+        { id: 'supportingDocuments', label: 'Supporting Documents', type: 'file', placeholder: 'Screenshots, diagrams, or other supporting materials', required: false },
+        { id: 'comments', label: 'Comments', type: 'textarea', placeholder: 'Tell us about what you built and learned...', required: false }
+      ]);
     } catch (error) {
       console.error('Error creating sprint:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to create sprint');
@@ -388,93 +690,12 @@ function CreateSprintDialog({ onSuccess }: { onSuccess?: () => void }) {
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Basic Info */}
-          <div className="space-y-4">
-            <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Basic Information</h3>
-            <div className="space-y-2">
-              <Label>Sprint Title *</Label>
-              <Input
-                placeholder="e.g., Serverless January"
-                value={formData.title}
-                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                required
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Month *</Label>
-                <Select
-                  value={formData.month}
-                  onValueChange={(value) => setFormData({ ...formData, month: value })}
-                  required
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select month" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="1">January</SelectItem>
-                    <SelectItem value="2">February</SelectItem>
-                    <SelectItem value="3">March</SelectItem>
-                    <SelectItem value="4">April</SelectItem>
-                    <SelectItem value="5">May</SelectItem>
-                    <SelectItem value="6">June</SelectItem>
-                    <SelectItem value="7">July</SelectItem>
-                    <SelectItem value="8">August</SelectItem>
-                    <SelectItem value="9">September</SelectItem>
-                    <SelectItem value="10">October</SelectItem>
-                    <SelectItem value="11">November</SelectItem>
-                    <SelectItem value="12">December</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Year *</Label>
-                <Select
-                  value={formData.year}
-                  onValueChange={(value) => setFormData({ ...formData, year: value })}
-                  required
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select year" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Array.from({ length: 5 }, (_, i) => {
-                      const year = new Date().getFullYear() + i;
-                      return (
-                        <SelectItem key={year} value={year.toString()}>
-                          {year}
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>Description *</Label>
-              <Textarea
-                rows={3}
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                placeholder="Describe the sprint objectives and what participants will learn..."
-                required
-              />
-            </div>
-          </div>
-
-          {/* Resources */}
-          <div className="space-y-4 border-t pt-4">
-            <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Resources</h3>
-            <div className="space-y-2">
-              <Label>GitHub Repo URL</Label>
-              <Input
-                placeholder="https://github.com/..."
-                value={formData.githubRepo}
-                onChange={(e) => setFormData({ ...formData, githubRepo: e.target.value })}
-              />
-            </div>
-          </div>
-
+          <SprintFormContent
+            formData={formData}
+            setFormData={setFormData}
+            submissionFields={submissionFields}
+            setSubmissionFields={setSubmissionFields}
+          />
 
           <div className="flex gap-2 pt-4 border-t">
             <Button type="submit" className="flex-1" disabled={loading}>
@@ -487,6 +708,110 @@ function CreateSprintDialog({ onSuccess }: { onSuccess?: () => void }) {
                 <>
                   <Plus className="h-4 w-4 mr-2" />
                   Create Sprint
+                </>
+              )}
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function EditSprintDialog({ sprint, onSuccess }: { sprint: Sprint; onSuccess?: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  
+  // Initialize with sprint data
+  const startDateObj = parseISO(sprint.startDate);
+  const [formData, setFormData] = useState({
+    title: sprint.title,
+    description: sprint.description,
+    month: (startDateObj.getMonth() + 1).toString(),
+    year: startDateObj.getFullYear().toString(),
+    githubRepo: sprint.githubRepo || ''
+  });
+  
+  const [submissionFields, setSubmissionFields] = useState<SubmissionField[]>(
+    (sprint.submissionFormConfig && sprint.submissionFormConfig.length > 0)
+      ? sprint.submissionFormConfig
+      : [
+          { id: 'blogUrl', label: 'AWS Builder Center Blog URL', type: 'text', placeholder: 'https://builder.aws.com/content/...', required: false },
+          { id: 'githubUrl', label: 'GitHub Repository URL', type: 'text', placeholder: 'https://github.com/username/project', required: false },
+          { id: 'supportingDocuments', label: 'Supporting Documents', type: 'file', placeholder: 'Screenshots, diagrams, or other supporting materials', required: false },
+          { id: 'comments', label: 'Comments', type: 'textarea', placeholder: 'Tell us about what you built and learned...', required: false }
+        ]
+  );
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      const year = parseInt(formData.year);
+      const month = parseInt(formData.month);
+      const startDate = new Date(year, month - 1, 1).toISOString().split('T')[0];
+      const lastDay = new Date(year, month, 0).getDate();
+      const endDate = new Date(year, month - 1, lastDay).toISOString().split('T')[0];
+
+      const sprintData: UpdateSprintData = {
+        title: formData.title,
+        description: formData.description,
+        startDate: startDate,
+        endDate: endDate,
+        githubRepo: formData.githubRepo || undefined,
+        submissionFormConfig: submissionFields.length > 0 ? submissionFields : undefined
+      };
+
+      await updateSprint(sprint.id, sprintData);
+      toast.success('Sprint updated successfully!');
+      setOpen(false);
+      onSuccess?.();
+    } catch (error) {
+      console.error('Error updating sprint:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to update sprint');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" className="gap-1">
+          <Edit className="h-4 w-4" />
+          Edit
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Edit Skill Sprint</DialogTitle>
+          <DialogDescription>
+            Update sprint details and submission form configuration.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <SprintFormContent
+            formData={formData}
+            setFormData={setFormData}
+            submissionFields={submissionFields}
+            setSubmissionFields={setSubmissionFields}
+          />
+
+          <div className="flex gap-2 pt-4 border-t">
+            <Button type="submit" className="flex-1" disabled={loading}>
+              {loading ? (
+                <>
+                  <Clock className="h-4 w-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="h-4 w-4 mr-2" />
+                  Save Changes
                 </>
               )}
             </Button>
@@ -6922,10 +7247,7 @@ export default function Admin() {
                                   </div>
                                   <div className="flex flex-wrap gap-2">
                                     <ViewParticipantsDialog sprint={sprint} />
-                                    <Button variant="outline" size="sm" className="gap-1">
-                                      <Edit className="h-4 w-4" />
-                                      Edit
-                                    </Button>
+                                    <EditSprintDialog sprint={sprint} onSuccess={fetchSprints} />
                                     <Button
                                       variant="destructive"
                                       size="sm"

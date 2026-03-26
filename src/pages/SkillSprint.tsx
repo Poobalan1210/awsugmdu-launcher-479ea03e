@@ -773,7 +773,7 @@ function SubmitWorkForm({ sprint, onSuccess }: { sprint: Sprint; onSuccess?: () 
   const [blogUrl, setBlogUrl] = useState('');
   const [githubUrl, setGithubUrl] = useState('');
   const [comments, setComments] = useState('');
-  const [isFirstTimeKiro, setIsFirstTimeKiro] = useState<boolean | undefined>(undefined);
+  const [customFields, setCustomFields] = useState<Record<string, any>>({});
   const [supportingFiles, setSupportingFiles] = useState<File[]>([]);
   const [uploadingFiles, setUploadingFiles] = useState(false);
 
@@ -820,9 +820,14 @@ function SubmitWorkForm({ sprint, onSuccess }: { sprint: Sprint; onSuccess?: () 
       return;
     }
 
-    if (isFirstTimeKiro === undefined) {
-      toast.error('Please indicate if this is your first time using Kiro');
-      return;
+    // Validate custom fields
+    if (sprint.submissionFormConfig && sprint.submissionFormConfig.length > 0) {
+      for (const field of sprint.submissionFormConfig) {
+        if (field.required && !customFields[field.id] && customFields[field.id] !== false) {
+          toast.error(`Please fill in the required field: ${field.label}`);
+          return;
+        }
+      }
     }
 
     setLoading(true);
@@ -853,7 +858,11 @@ function SubmitWorkForm({ sprint, onSuccess }: { sprint: Sprint; onSuccess?: () 
         githubUrl: githubUrl || undefined,
         comments: comments || undefined,
         supportingDocuments: uploadedDocUrls.length > 0 ? uploadedDocUrls : undefined,
-        isFirstTimeKiro,
+        customFields: Object.keys(customFields).length > 0 ? {
+          ...customFields,
+          // Support both ways during transition if needed
+          isFirstTimeKiro: customFields.isFirstTimeKiro === 'Yes' || customFields.isFirstTimeKiro === true
+        } : undefined,
       });
 
       toast.success('Work submitted successfully! Awaiting review.');
@@ -887,7 +896,7 @@ function SubmitWorkForm({ sprint, onSuccess }: { sprint: Sprint; onSuccess?: () 
       setBlogUrl('');
       setGithubUrl('');
       setComments('');
-      setIsFirstTimeKiro(undefined);
+      setCustomFields({});
       setSupportingFiles([]);
       
       if (onSuccess) {
@@ -914,118 +923,163 @@ function SubmitWorkForm({ sprint, onSuccess }: { sprint: Sprint; onSuccess?: () 
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="space-y-2">
-            <Label htmlFor="blog-url">
-              AWS Builder Center Blog URL <span className="text-muted-foreground text-xs">(Optional)</span>
-            </Label>
-            <Input 
-              id="blog-url" 
-              type="url" 
-              placeholder="https://builder.aws.com/content/..." 
-              value={blogUrl}
-              onChange={(e) => setBlogUrl(e.target.value)}
-            />
-            <p className="text-xs text-muted-foreground">
-              Share your learning journey through an AWS Builder Center blog post
-            </p>
-          </div>
+          {/* Standard and Custom Fields */}
+          <div className="space-y-6">
+            {(sprint.submissionFormConfig && sprint.submissionFormConfig.length > 0 
+              ? sprint.submissionFormConfig 
+              : [
+                  { id: 'blogUrl', label: 'AWS Builder Center Blog URL', type: 'text', placeholder: 'https://builder.aws.com/content/...', required: false },
+                  { id: 'githubUrl', label: 'GitHub Repository URL', type: 'text', placeholder: 'https://github.com/username/project', required: false },
+                  { id: 'supportingDocuments', label: 'Supporting Documents', type: 'file', placeholder: 'Screenshots, diagrams, or other supporting materials', required: false },
+                  { id: 'comments', label: 'Comments', type: 'textarea', placeholder: 'Tell us about what you built and learned...', required: false }
+                ]
+            ).map((field) => (
+              <div key={field.id} className="space-y-3">
+                <Label htmlFor={field.id}>
+                  {field.label} {field.required && <span className="text-destructive">*</span>}
+                  {!field.required && <span className="text-muted-foreground text-xs ml-1">(Optional)</span>}
+                </Label>
+                
+                {field.type === 'text' && (
+                  <div className="space-y-2">
+                    <Input
+                      id={field.id}
+                      placeholder={field.placeholder}
+                      value={field.id === 'blogUrl' ? blogUrl : field.id === 'githubUrl' ? githubUrl : (customFields[field.id] || '')}
+                      onChange={(e) => {
+                        if (field.id === 'blogUrl') setBlogUrl(e.target.value);
+                        else if (field.id === 'githubUrl') setGithubUrl(e.target.value);
+                        else setCustomFields({ ...customFields, [field.id]: e.target.value });
+                      }}
+                      required={field.required}
+                    />
+                    {field.id === 'blogUrl' && (
+                      <p className="text-xs text-muted-foreground">
+                        Share your learning journey through an AWS Builder Center blog post
+                      </p>
+                    )}
+                    {field.id === 'githubUrl' && (
+                      <p className="text-xs text-muted-foreground">
+                        Link to your project repository
+                      </p>
+                    )}
+                  </div>
+                )}
 
-          <div className="space-y-2">
-            <Label htmlFor="github-url">
-              GitHub Repository URL <span className="text-muted-foreground text-xs">(Optional)</span>
-            </Label>
-            <Input 
-              id="github-url" 
-              type="url" 
-              placeholder="https://github.com/username/project" 
-              value={githubUrl}
-              onChange={(e) => setGithubUrl(e.target.value)}
-            />
-            <p className="text-xs text-muted-foreground">
-              Link to your project repository
-            </p>
-          </div>
+                {field.type === 'textarea' && (
+                  <Textarea
+                    id={field.id}
+                    placeholder={field.placeholder}
+                    value={field.id === 'comments' ? comments : (customFields[field.id] || '')}
+                    onChange={(e) => {
+                      if (field.id === 'comments') setComments(e.target.value);
+                      else setCustomFields({ ...customFields, [field.id]: e.target.value });
+                    }}
+                    required={field.required}
+                    rows={4}
+                  />
+                )}
 
-          <div className="space-y-2">
-            <Label htmlFor="supporting-docs">
-              Supporting Documents <span className="text-muted-foreground text-xs">(Optional)</span>
-            </Label>
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <Input 
-                  id="supporting-docs"
-                  type="file"
-                  multiple
-                  onChange={handleFileChange}
-                  className="hidden"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => document.getElementById('supporting-docs')?.click()}
-                  className="gap-2"
-                >
-                  <Upload className="h-4 w-4" />
-                  Upload Files
-                </Button>
-                <span className="text-xs text-muted-foreground">
-                  Screenshots, diagrams, or other supporting materials
-                </span>
-              </div>
-              
-              {supportingFiles.length > 0 && (
-                <div className="space-y-2">
-                  {supportingFiles.map((file, index) => (
-                    <div key={index} className="flex items-center justify-between p-2 rounded-lg bg-muted/50">
-                      <div className="flex items-center gap-2">
-                        <FileText className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-sm">{file.name}</span>
-                        <span className="text-xs text-muted-foreground">
-                          ({(file.size / 1024).toFixed(1)} KB)
-                        </span>
-                      </div>
+                {field.type === 'file' && (
+                 <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Input 
+                        id={field.id}
+                        type="file"
+                        multiple
+                        onChange={handleFileChange}
+                        className="hidden"
+                      />
                       <Button
                         type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => removeFile(index)}
+                        variant="outline"
+                        onClick={() => document.getElementById(field.id)?.click()}
+                        className="gap-2"
                       >
-                        <X className="h-4 w-4" />
+                        <Upload className="h-4 w-4" />
+                        Upload Files
                       </Button>
+                      <span className="text-xs text-muted-foreground">
+                        {field.placeholder || "Screenshots, diagrams, or other supporting materials"}
+                      </span>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+                    
+                    {supportingFiles.length > 0 && (
+                      <div className="space-y-2">
+                        {supportingFiles.map((file, index) => (
+                          <div key={index} className="flex items-center justify-between p-2 rounded-lg bg-muted/50">
+                            <div className="flex items-center gap-2">
+                              <FileText className="h-4 w-4 text-muted-foreground" />
+                              <span className="text-sm">{file.name}</span>
+                              <span className="text-xs text-muted-foreground">
+                                ({(file.size / 1024).toFixed(1)} KB)
+                              </span>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => removeFile(index)}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
 
-          <div className="space-y-2">
-            <Label htmlFor="comments">Comments</Label>
-            <Textarea 
-              id="comments" 
-              placeholder="Tell us about what you built and learned..."
-              rows={4}
-              value={comments}
-              onChange={(e) => setComments(e.target.value)}
-            />
-          </div>
+                {field.type === 'radio' && field.options && (
+                  <RadioGroup
+                    value={customFields[field.id] === undefined ? "" : customFields[field.id]}
+                    onValueChange={(value) => setCustomFields({ ...customFields, [field.id]: value })}
+                    className="flex flex-wrap items-center gap-6"
+                  >
+                    {field.options.map((option) => (
+                      <div key={option} className="flex items-center space-x-2">
+                        <RadioGroupItem value={option} id={`${field.id}-${option}`} />
+                        <Label htmlFor={`${field.id}-${option}`} className="font-normal cursor-pointer">
+                          {option}
+                        </Label>
+                      </div>
+                    ))}
+                  </RadioGroup>
+                )}
 
-          <div className="space-y-3">
-            <Label>Is this your first time using Kiro? *</Label>
-            <RadioGroup 
-              value={isFirstTimeKiro === undefined ? "" : isFirstTimeKiro ? "yes" : "no"}
-              onValueChange={(value) => setIsFirstTimeKiro(value === "yes")}
-              className="flex items-center gap-6"
-            >
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="yes" id="kiro-yes" />
-                <Label htmlFor="kiro-yes" className="font-normal cursor-pointer">Yes</Label>
+                {field.type === 'select' && field.options && (
+                  <select
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    value={customFields[field.id] || ''}
+                    onChange={(e) => setCustomFields({ ...customFields, [field.id]: e.target.value })}
+                    required={field.required}
+                  >
+                    <option value="" disabled>{field.placeholder || "Select an option"}</option>
+                    {field.options.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                
+                {field.type === 'checkbox' && (
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id={field.id}
+                      className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                      checked={!!customFields[field.id]}
+                      onChange={(e) => setCustomFields({ ...customFields, [field.id]: e.target.checked })}
+                    />
+                    <Label htmlFor={field.id} className="font-normal cursor-pointer">
+                      {field.placeholder || field.label}
+                    </Label>
+                  </div>
+                )}
               </div>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="no" id="kiro-no" />
-                <Label htmlFor="kiro-no" className="font-normal cursor-pointer">No</Label>
-              </div>
-            </RadioGroup>
+            ))}
+            
           </div>
 
           <Button type="submit" className="w-full" disabled={loading || uploadingFiles}>

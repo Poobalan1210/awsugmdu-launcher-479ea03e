@@ -249,7 +249,8 @@ async function createSprint(event) {
     description,
     startDate,
     endDate,
-    githubRepo
+    githubRepo,
+    submissionFormConfig
   } = body;
   
   // Validation
@@ -297,6 +298,7 @@ async function createSprint(event) {
     submissions: [],
     registeredUsers: [],
     githubRepo: githubRepo || undefined,
+    submissionFormConfig: submissionFormConfig || undefined,
     createdAt: now,
     updatedAt: now
   };
@@ -329,7 +331,7 @@ async function updateSprint(id, event) {
   const expressionAttributeValues = {};
   
   const allowedFields = [
-    'title', 'theme', 'description', 'startDate', 'endDate', 'githubRepo', 'status'
+    'title', 'theme', 'description', 'startDate', 'endDate', 'githubRepo', 'status', 'submissionFormConfig'
   ];
   
   allowedFields.forEach(field => {
@@ -680,7 +682,8 @@ async function submitWork(id, event) {
     githubUrl,
     comments,
     supportingDocuments,
-    isFirstTimeKiro
+    isFirstTimeKiro,
+    customFields
   } = body;
   
   if (!userId || !userName) {
@@ -747,6 +750,7 @@ async function submitWork(id, event) {
     ...(comments && { comments }),
     ...(supportingDocuments && supportingDocuments.length > 0 && { supportingDocuments }),
     ...(isFirstTimeKiro !== undefined && { isFirstTimeKiro }),
+    ...(customFields && { customFields }),
     submittedAt: new Date().toISOString(),
     points: 0,
     status: 'pending'

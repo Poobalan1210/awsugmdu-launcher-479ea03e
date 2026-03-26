@@ -136,6 +136,16 @@ export interface BadgeCriteria {
   description: string; // Human-readable criteria description
 }
 
+export interface SubmissionField {
+  id: string;
+  label: string;
+  type: 'text' | 'textarea' | 'radio' | 'checkbox' | 'select' | 'file';
+  options?: string[];
+  optionsRaw?: string; // Temporary storage for comma-separated options during editing
+  required: boolean;
+  placeholder?: string;
+}
+
 export interface Badge {
   id: string;
   name: string;
@@ -158,6 +168,7 @@ export interface Sprint {
   submissions: Submission[];
   githubRepo?: string;
   registeredUsers: string[];
+  submissionFormConfig?: SubmissionField[];
 }
 
 export interface SessionPerson {
@@ -211,6 +222,7 @@ export interface Submission {
   comments?: string;
   supportingDocuments?: string[];
   isFirstTimeKiro?: boolean;
+  customFields?: Record<string, any>;
   submittedAt: string;
   points: number;
   status: 'pending' | 'approved' | 'rejected';

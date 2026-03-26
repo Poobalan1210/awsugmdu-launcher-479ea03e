@@ -1101,48 +1101,50 @@ function SubmitWorkForm({ sprint, onSuccess }: { sprint: Sprint; onSuccess?: () 
         {sprint.submissions && sprint.submissions.length > 0 && (
           <div className="mt-8 pt-8 border-t">
             <h3 className="font-semibold mb-4">Community Submissions</h3>
-            <div className="space-y-3">
-              {sprint.submissions.map((sub) => (
-                <div key={sub.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-                  <div className="flex items-center gap-3">
-                    <Avatar className="h-8 w-8">
-                      <AvatarImage src={sub.userAvatar} />
-                      <AvatarFallback>{sub.userName.charAt(0)}</AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <p className="font-medium text-sm">{sub.userName}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {format(parseISO(sub.submittedAt), 'MMM d, yyyy')}
-                      </p>
+            <div className="max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+              <div className="space-y-3">
+                {sprint.submissions.map((sub) => (
+                  <div key={sub.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+                    <div className="flex items-center gap-3">
+                      <Avatar className="h-8 w-8">
+                        <AvatarImage src={sub.userAvatar} />
+                        <AvatarFallback>{sub.userName.charAt(0)}</AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <p className="font-medium text-sm">{sub.userName}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {format(parseISO(sub.submittedAt), 'MMM d, yyyy')}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {sub.blogUrl && (
+                        <a 
+                          href={sub.blogUrl} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline"
+                        >
+                          <FileText className="h-4 w-4" />
+                        </a>
+                      )}
+                      {sub.githubUrl && (
+                        <a 
+                          href={sub.githubUrl} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline"
+                        >
+                          <Github className="h-4 w-4" />
+                        </a>
+                      )}
+                      <Badge variant={sub.status === 'approved' ? 'default' : 'secondary'}>
+                        {sub.status === 'approved' ? `+${sub.points} pts` : sub.status}
+                      </Badge>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {sub.blogUrl && (
-                      <a 
-                        href={sub.blogUrl} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="text-primary hover:underline"
-                      >
-                        <FileText className="h-4 w-4" />
-                      </a>
-                    )}
-                    {sub.githubUrl && (
-                      <a 
-                        href={sub.githubUrl} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="text-primary hover:underline"
-                      >
-                        <Github className="h-4 w-4" />
-                      </a>
-                    )}
-                    <Badge variant={sub.status === 'approved' ? 'default' : 'secondary'}>
-                      {sub.status === 'approved' ? `+${sub.points} pts` : sub.status}
-                    </Badge>
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           </div>
         )}

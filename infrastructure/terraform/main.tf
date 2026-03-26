@@ -2420,7 +2420,9 @@ resource "aws_cognito_user_pool" "user_pool" {
 
   # Email configuration
   email_configuration {
-    email_sending_account = "COGNITO_DEFAULT"
+    email_sending_account = "DEVELOPER"
+    source_arn            = "arn:aws:ses:us-east-1:333105300941:identity/awsugmdu.in"
+    from_email_address    = "info@awsugmdu.in"
   }
 
   # Tags

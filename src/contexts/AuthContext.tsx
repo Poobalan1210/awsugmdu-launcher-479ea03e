@@ -14,6 +14,7 @@ import { uploadData } from 'aws-amplify/storage';
 import { User } from '@/data/mockData';
 import { createUserProfile, getUserProfile } from '@/lib/userProfile';
 import { isOrganiserEmail } from '@/lib/adminUtils';
+import { getUserRoles } from '@/lib/userRoles';
 
 interface AuthContextType {
   user: User | null;
@@ -37,11 +38,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Fetch user profile from DynamoDB
   const fetchUserProfile = async (userId: string, email: string): Promise<User | null> => {
     try {
-      // Fetch full profile from DynamoDB via API
-      const profile = await getUserProfile(userId);
+      // Fetch full profile and roles concurrently
+      const [profile, communityRoles] = await Promise.all([
+        getUserProfile(userId),
+        getUserRoles(userId).catch(() => [])
+      ]);
       
-      // Determine role: organiser emails get organiser role, otherwise use DB role or default to member
-      const role = isOrganiserEmail(email) ? 'organiser' : (profile.role || 'member');
+      const communityRoleValues = (communityRoles as any[]).map(r => r.role);
+      
+      // Determine role: organiser emails or community role assignments get priority
+      let role = profile.role || 'member';
+      
+      if (isOrganiserEmail(email) || communityRoleValues.includes('organiser')) {
+        role = 'organiser';
+      } else if (communityRoleValues.includes('admin')) {
+        role = 'admin';
+      }
       
       // Transform DynamoDB profile to User interface
       return {

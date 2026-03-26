@@ -90,6 +90,7 @@ export interface SubmitWorkData {
   githubUrl?: string;
   comments?: string;
   supportingDocuments?: string[];
+  isFirstTimeKiro?: boolean;
 }
 
 export interface SubmitWorkResponse {

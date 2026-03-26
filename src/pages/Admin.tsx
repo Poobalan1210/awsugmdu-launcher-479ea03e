@@ -68,6 +68,11 @@ function SubmissionReview({ submission, onAction }: {
               <div className="flex flex-wrap items-center gap-2 mb-2">
                 <span className="font-semibold">{submission.userName}</span>
                 <Badge variant="outline" className="text-xs">{submission.sprintTitle}</Badge>
+                {submission.isFirstTimeKiro && (
+                  <Badge variant="secondary" className="text-xs bg-blue-500/10 text-blue-500 border-blue-500/20">
+                    First Time Kiro
+                  </Badge>
+                )}
                 <Badge variant={
                   submission.status === 'approved' ? 'default' :
                     submission.status === 'rejected' ? 'destructive' : 'secondary'

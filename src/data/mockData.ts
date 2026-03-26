@@ -19,7 +19,7 @@ export interface PointActivity {
   userId: string;
   points: number;
   reason: string;
-  type: 'adhoc' | 'submission' | 'badge' | 'event';
+  type: 'adhoc' | 'submission' | 'badge' | 'event' | 'signup' | 'meetup_verification';
   awardedBy?: string;
   awardedAt: string;
 }
@@ -101,6 +101,8 @@ export interface User {
   activities?: UserActivity[];
   meetupVerified?: boolean;
   meetupVerificationStatus?: 'pending' | 'approved' | 'rejected';
+  meetupEmail?: string;
+  pointActivities?: PointActivity[];
   userId?: string;
 }
 
@@ -208,6 +210,7 @@ export interface Submission {
   description?: string;
   comments?: string;
   supportingDocuments?: string[];
+  isFirstTimeKiro?: boolean;
   submittedAt: string;
   points: number;
   status: 'pending' | 'approved' | 'rejected';

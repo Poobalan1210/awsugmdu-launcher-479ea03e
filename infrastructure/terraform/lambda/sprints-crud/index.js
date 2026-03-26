@@ -679,7 +679,8 @@ async function submitWork(id, event) {
     blogUrl,
     githubUrl,
     comments,
-    supportingDocuments
+    supportingDocuments,
+    isFirstTimeKiro
   } = body;
   
   if (!userId || !userName) {
@@ -745,6 +746,7 @@ async function submitWork(id, event) {
     ...(githubUrl && { githubUrl }),
     ...(comments && { comments }),
     ...(supportingDocuments && supportingDocuments.length > 0 && { supportingDocuments }),
+    ...(isFirstTimeKiro !== undefined && { isFirstTimeKiro }),
     submittedAt: new Date().toISOString(),
     points: 0,
     status: 'pending'

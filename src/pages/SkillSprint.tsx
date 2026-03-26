@@ -10,6 +10,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { 
@@ -772,6 +773,7 @@ function SubmitWorkForm({ sprint, onSuccess }: { sprint: Sprint; onSuccess?: () 
   const [blogUrl, setBlogUrl] = useState('');
   const [githubUrl, setGithubUrl] = useState('');
   const [comments, setComments] = useState('');
+  const [isFirstTimeKiro, setIsFirstTimeKiro] = useState<boolean | undefined>(undefined);
   const [supportingFiles, setSupportingFiles] = useState<File[]>([]);
   const [uploadingFiles, setUploadingFiles] = useState(false);
 
@@ -818,6 +820,11 @@ function SubmitWorkForm({ sprint, onSuccess }: { sprint: Sprint; onSuccess?: () 
       return;
     }
 
+    if (isFirstTimeKiro === undefined) {
+      toast.error('Please indicate if this is your first time using Kiro');
+      return;
+    }
+
     setLoading(true);
     try {
       // Upload supporting documents if any
@@ -846,6 +853,7 @@ function SubmitWorkForm({ sprint, onSuccess }: { sprint: Sprint; onSuccess?: () 
         githubUrl: githubUrl || undefined,
         comments: comments || undefined,
         supportingDocuments: uploadedDocUrls.length > 0 ? uploadedDocUrls : undefined,
+        isFirstTimeKiro,
       });
 
       toast.success('Work submitted successfully! Awaiting review.');
@@ -879,6 +887,7 @@ function SubmitWorkForm({ sprint, onSuccess }: { sprint: Sprint; onSuccess?: () 
       setBlogUrl('');
       setGithubUrl('');
       setComments('');
+      setIsFirstTimeKiro(undefined);
       setSupportingFiles([]);
       
       if (onSuccess) {
@@ -999,6 +1008,24 @@ function SubmitWorkForm({ sprint, onSuccess }: { sprint: Sprint; onSuccess?: () 
               value={comments}
               onChange={(e) => setComments(e.target.value)}
             />
+          </div>
+
+          <div className="space-y-3">
+            <Label>Is this your first time using Kiro? *</Label>
+            <RadioGroup 
+              value={isFirstTimeKiro === undefined ? "" : isFirstTimeKiro ? "yes" : "no"}
+              onValueChange={(value) => setIsFirstTimeKiro(value === "yes")}
+              className="flex items-center gap-6"
+            >
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="yes" id="kiro-yes" />
+                <Label htmlFor="kiro-yes" className="font-normal cursor-pointer">Yes</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="no" id="kiro-no" />
+                <Label htmlFor="kiro-no" className="font-normal cursor-pointer">No</Label>
+              </div>
+            </RadioGroup>
           </div>
 
           <Button type="submit" className="w-full" disabled={loading || uploadingFiles}>

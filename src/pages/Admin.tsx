@@ -6889,103 +6889,126 @@ export default function Admin() {
                           </CardContent>
                         </Card>
                       ) : (
-                        sprints.map(sprint => (
-                          <Card key={sprint.id} className="glass-card">
-                            <CardContent className="p-4">
-                              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                                <div className="flex-1">
-                                  <div className="flex items-center gap-2 mb-2">
-                                    <h3 className="font-semibold text-lg">{sprint.title}</h3>
-                                    <Badge variant={sprint.status === 'active' ? 'default' : 'secondary'} className="capitalize">
-                                      {sprint.status}
-                                    </Badge>
+                          sprints.map(sprint => {
+                          const sprintSubmissions = allSubmissions.filter(sub => sub.sprintId === sprint.id);
+                          const sprintPending = sprintSubmissions.filter(sub => sub.status === 'pending');
+                          const sprintReviewed = sprintSubmissions.filter(sub => sub.status !== 'pending');
+
+                          return (
+                            <Card key={sprint.id} className="glass-card">
+                              <CardContent className="p-4">
+                                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <h3 className="font-semibold text-lg">{sprint.title}</h3>
+                                      <Badge variant={sprint.status === 'active' ? 'default' : 'secondary'} className="capitalize">
+                                        {sprint.status}
+                                      </Badge>
+                                    </div>
+                                    <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                                      <span className="flex items-center gap-1">
+                                        <Users className="h-4 w-4" />
+                                        {sprint.participants} participants
+                                      </span>
+                                      <span className="flex items-center gap-1">
+                                        <Calendar className="h-4 w-4" />
+                                        {format(parseISO(sprint.startDate), 'MMM d')} - {format(parseISO(sprint.endDate), 'MMM d, yyyy')}
+                                      </span>
+                                      <span className="flex items-center gap-1">
+                                        <MessageSquare className="h-4 w-4" />
+                                        {sprintSubmissions.length} submissions
+                                      </span>
+                                    </div>
                                   </div>
-                                  <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
-                                    <span className="flex items-center gap-1">
-                                      <Users className="h-4 w-4" />
-                                      {sprint.participants} participants
-                                    </span>
-                                    <span className="flex items-center gap-1">
-                                      <Calendar className="h-4 w-4" />
-                                      {format(parseISO(sprint.startDate), 'MMM d')} - {format(parseISO(sprint.endDate), 'MMM d, yyyy')}
-                                    </span>
-                                    <span className="flex items-center gap-1">
-                                      <MessageSquare className="h-4 w-4" />
-                                      {sprint.submissions.length} submissions
-                                    </span>
+                                  <div className="flex flex-wrap gap-2">
+                                    <ViewParticipantsDialog sprint={sprint} />
+                                    <Button variant="outline" size="sm" className="gap-1">
+                                      <Edit className="h-4 w-4" />
+                                      Edit
+                                    </Button>
+                                    <Button
+                                      variant="destructive"
+                                      size="sm"
+                                      className="gap-1"
+                                      onClick={() => handleDeleteSprint(sprint.id, sprint.title)}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                      Delete
+                                    </Button>
                                   </div>
                                 </div>
-                                <div className="flex flex-wrap gap-2">
-                                  <ViewParticipantsDialog sprint={sprint} />
-                                  <Button variant="outline" size="sm" className="gap-1">
-                                    <Edit className="h-4 w-4" />
-                                    Edit
-                                  </Button>
-                                  <Button
-                                    variant="destructive"
-                                    size="sm"
-                                    className="gap-1"
-                                    onClick={() => handleDeleteSprint(sprint.id, sprint.title)}
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                    Delete
-                                  </Button>
-                                </div>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        ))
+
+                                <Collapsible>
+                                  <CollapsibleTrigger asChild>
+                                    <Button variant="ghost" className="w-full flex justify-between items-center py-4 border-t rounded-none hover:bg-muted/50 group">
+                                      <div className="flex items-center gap-2 font-semibold">
+                                        <ListTodo className="h-4 w-4 text-primary" />
+                                        Submissions & Reviews ({sprintSubmissions.length})
+                                      </div>
+                                      <ChevronDown className="h-4 w-4 transition-transform duration-200 group-data-[state=open]:rotate-180" />
+                                    </Button>
+                                  </CollapsibleTrigger>
+                                  <CollapsibleContent className="space-y-8 pt-6">
+                                    {/* Pending Reviews for this sprint */}
+                                    <div>
+                                      <div className="flex items-center justify-between mb-4">
+                                        <h4 className="text-sm font-semibold flex items-center gap-2">
+                                          <Clock className="h-4 w-4 text-amber-500" />
+                                          Pending Reviews ({sprintPending.length})
+                                        </h4>
+                                      </div>
+                                      <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+                                        {sprintPending.length === 0 ? (
+                                          <div className="bg-muted/30 rounded-lg py-6 text-center">
+                                            <Check className="h-8 w-8 text-green-500 mx-auto mb-2" />
+                                            <p className="text-sm text-muted-foreground italic">All submissions for this sprint have been reviewed.</p>
+                                          </div>
+                                        ) : (
+                                          sprintPending.map(sub => (
+                                            <SubmissionReview
+                                              key={sub.id}
+                                              submission={sub}
+                                              onAction={(action, points, feedback) => handleSubmissionAction(sub.id, sub.sprintId, action, points, feedback)}
+                                            />
+                                          ))
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {/* Reviewed for this sprint */}
+                                    <div>
+                                      <h4 className="text-sm font-semibold flex items-center gap-2 mb-4">
+                                        <CheckCircle className="h-4 w-4 text-emerald-500" />
+                                        Reviewed ({sprintReviewed.length})
+                                      </h4>
+                                      <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+                                        {sprintReviewed.length === 0 ? (
+                                          <div className="bg-muted/30 rounded-lg py-6 text-center">
+                                            <p className="text-sm text-muted-foreground italic">No reviewed submissions for this sprint yet.</p>
+                                          </div>
+                                        ) : (
+                                          sprintReviewed.map(sub => (
+                                            <SubmissionReview
+                                              key={sub.id}
+                                              submission={sub}
+                                              onAction={() => { }}
+                                            />
+                                          ))
+                                        )}
+                                      </div>
+                                    </div>
+                                  </CollapsibleContent>
+                                </Collapsible>
+                              </CardContent>
+                            </Card>
+                          );
+                        })
                       )}
                     </div>
                   )}
                 </div>
               )}
 
-              <Card className="glass-card">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Clock className="h-5 w-5 text-amber-500" />
-                    Pending Reviews ({pendingSubmissions.length})
-                  </CardTitle>
-                  <CardDescription>
-                    Review and approve/reject submissions from participants
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
-                  {pendingSubmissions.length === 0 ? (
-                    <div className="text-center py-8">
-                      <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-4" />
-                      <p className="text-muted-foreground">All caught up! No pending submissions.</p>
-                    </div>
-                  ) : (
-                    pendingSubmissions.map(sub => (
-                      <SubmissionReview
-                        key={sub.id}
-                        submission={sub}
-                        onAction={(action, points, feedback) => handleSubmissionAction(sub.id, sub.sprintId, action, points, feedback)}
-                      />
-                    ))
-                  )}
-                </CardContent>
-              </Card>
-
-              <Card className="glass-card">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <CheckCircle className="h-5 w-5 text-emerald-500" />
-                    Reviewed ({reviewedSubmissions.length})
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
-                  {reviewedSubmissions.map(sub => (
-                    <SubmissionReview
-                      key={sub.id}
-                      submission={sub}
-                      onAction={() => { }}
-                    />
-                  ))}
-                </CardContent>
-              </Card>
             </TabsContent>
 
             {isAdmin && (

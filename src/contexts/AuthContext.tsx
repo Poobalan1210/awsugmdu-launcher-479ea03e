@@ -45,12 +45,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       // Transform DynamoDB profile to User interface
       return {
-        id: (profile as any).userId || profile.id,
+        id: profile.userId || profile.id,
         email: profile.email,
         name: profile.name,
         avatar: profile.avatar || '',
         points: profile.points || 0,
-        redeemablePoints: (profile as any).redeemablePoints ?? profile.points ?? 0,
+        redeemablePoints: profile.redeemablePoints ?? profile.points ?? 0,
         rank: profile.rank || 0,
         badges: profile.badges || [],
         joinedDate: profile.joinedDate || new Date().toISOString(),
@@ -61,6 +61,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         linkedIn: profile.linkedIn,
         github: profile.github,
         twitter: profile.twitter,
+        meetupVerified: profile.meetupVerified,
+        meetupVerificationStatus: profile.meetupVerificationStatus,
       } as User;
     } catch (error: any) {
       console.error('Failed to fetch user profile:', error);

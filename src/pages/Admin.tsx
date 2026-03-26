@@ -497,7 +497,7 @@ function CreateSprintDialog({ onSuccess }: { onSuccess?: () => void }) {
 
 // Helper function to convert User to SessionPerson
 const userToSessionPerson = (user: UserType): SessionPerson => ({
-  userId: (user as any).userId || user.id, // Use userId from API or id from mock data
+  userId: user.userId || user.id, // Use userId from API or id from mock data
   name: user.name,
   photo: user.avatar,
   email: user.email,
@@ -5781,7 +5781,7 @@ function AwardCloudClubPointsDialog({ club, onSuccess }: { club: any; onSuccess:
 }
 
 // Members Tab Component with integrated role management and points awarding
-function MembersTab({ allUsers }: { allUsers: UserType[] }) {
+function MembersTab({ allUsers, onRefresh }: { allUsers: UserType[]; onRefresh?: () => void }) {
   const { user: authUser, refreshUser } = useAuth();
   const [userRoles, setUserRoles] = useState<UserRoleAssignment[]>(mockUserRoles);
   const [pointActivities, setPointActivities] = useState<PointActivity[]>(mockPointActivities);
@@ -6022,6 +6022,55 @@ function MembersTab({ allUsers }: { allUsers: UserType[] }) {
                                   </div>
                                   <p className="text-xs text-muted-foreground">points</p>
                                 </div>
+                              </div>
+
+                              {/* Meetup Verification */}
+                              <div>
+                                <h4 className="font-medium mb-3 flex items-center gap-2">
+                                  <Link2 className="h-4 w-4 text-primary" />
+                                  Meetup Verification
+                                </h4>
+                                {user.meetupVerified ? (
+                                  <div className="flex items-center gap-2 p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
+                                    <CheckCircle className="h-5 w-5 text-green-500" />
+                                    <div>
+                                      <p className="text-sm font-medium text-green-700">Account Verified</p>
+                                      <p className="text-xs text-green-600/80">User can join sprints and register for meetups</p>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="flex flex-col gap-3 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+                                    <div className="flex items-center gap-2">
+                                      <Clock className="h-5 w-5 text-amber-500" />
+                                      <div>
+                                        <p className="text-sm font-medium text-amber-700">Verification Required</p>
+                                        <p className="text-xs text-amber-600/80">User is currently blocked from joining sprints</p>
+                                      </div>
+                                    </div>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="w-full bg-white hover:bg-amber-50 border-amber-200 text-amber-700"
+                                      onClick={async () => {
+                                        try {
+                                          const { updateUserProfile } = await import('@/lib/userProfile');
+                                          await updateUserProfile(user.id, {
+                                            meetupVerified: true,
+                                            meetupVerificationStatus: 'approved'
+                                          });
+                                          toast.success(`${user.name} has been verified!`);
+                                          onRefresh?.();
+                                        } catch (error) {
+                                          console.error('Error verifying user:', error);
+                                          toast.error('Failed to verify user');
+                                        }
+                                      }}
+                                    >
+                                      <CheckCircle className="h-4 w-4 mr-2" />
+                                      Manually Verify Meetup Membership
+                                    </Button>
+                                  </div>
+                                )}
                               </div>
 
                               {/* Current Roles */}
@@ -6945,7 +6994,7 @@ export default function Admin() {
                 </TabsContent>
 
                 <TabsContent value="members">
-                  <MembersTab allUsers={allUsers} />
+                  <MembersTab allUsers={allUsers} onRefresh={fetchUsers} />
                 </TabsContent>
 
                 <TabsContent value="badges">

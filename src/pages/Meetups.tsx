@@ -252,7 +252,7 @@ function MeetupDetail({ meetup: initialMeetup, onBack }: { meetup: Meetup; onBac
       return;
     }
 
-    if (!(user as any).meetupVerified) {
+    if (!user.meetupVerified) {
       toast.error('Verification required: Please verify your Meetup membership in your profile first.', {
         action: {
           label: 'Verify Now',

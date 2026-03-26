@@ -711,7 +711,7 @@ export default function Profile() {
           </Card>
         </motion.div>
 
-        {isOwnProfile && !(user as any).meetupVerified && (
+        {isOwnProfile && !user.meetupVerified && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}

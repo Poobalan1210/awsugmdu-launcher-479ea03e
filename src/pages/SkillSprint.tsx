@@ -158,7 +158,7 @@ function SessionCard({ session: initialSession, sprint, isExpanded, onToggle, on
       return;
     }
 
-    if (!(user as any).meetupVerified) {
+    if (!user.meetupVerified) {
       toast.error('Verification required: Please verify your Meetup membership in your profile first.', {
         action: {
           label: 'Verify Now',
@@ -521,7 +521,7 @@ function MeetupSessionCard({ meetup, isExpanded, onToggle }: {
       return;
     }
 
-    if (!(user as any).meetupVerified) {
+    if (!user.meetupVerified) {
       toast.error('Verification required: Please verify your Meetup membership in your profile first.', {
         action: {
           label: 'Verify Now',
@@ -1097,7 +1097,7 @@ function JoinSprintDialog({ sprint, open, onOpenChange, onSuccess }: {
       return;
     }
 
-    if (!(user as any).meetupVerified) {
+    if (!user.meetupVerified) {
       toast.error('Verification required: Please verify your Meetup membership in your profile first.', {
         action: {
           label: 'Verify Now',

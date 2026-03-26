@@ -99,6 +99,9 @@ export interface User {
   github?: string;
   twitter?: string;
   activities?: UserActivity[];
+  meetupVerified?: boolean;
+  meetupVerificationStatus?: 'pending' | 'approved' | 'rejected';
+  userId?: string;
 }
 
 export interface UserActivity {

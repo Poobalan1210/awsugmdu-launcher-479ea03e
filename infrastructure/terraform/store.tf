@@ -106,7 +106,7 @@ resource "aws_lambda_function" "store_crud" {
       STORE_ITEMS_TABLE_NAME = aws_dynamodb_table.store_items.name
       ORDERS_TABLE_NAME      = aws_dynamodb_table.orders.name
       USERS_TABLE_NAME       = aws_dynamodb_table.users.name
-      SES_FROM_EMAIL         = "your-new-email@example.com"
+      SES_FROM_EMAIL         = "info@awsugmdu.in"
     }
   }
 

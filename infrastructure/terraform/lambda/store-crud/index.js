@@ -19,7 +19,7 @@ const corsHeaders = {
 // Email sending function
 async function sendEmail(to, subject, htmlBody, textBody) {
   const params = {
-    Source: process.env.SES_FROM_EMAIL || 'noreply@awsugmdu.com',
+    Source: process.env.SES_FROM_EMAIL || 'info@awsugmdu.in',
     Destination: {
       ToAddresses: [to]
     },

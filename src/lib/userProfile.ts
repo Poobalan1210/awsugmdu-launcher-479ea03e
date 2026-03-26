@@ -1,5 +1,6 @@
 import { callApi } from './api';
 import { User } from '@/data/mockData';
+import { isOrganiserEmail } from './adminUtils';
 
 export interface CreateUserProfileData {
   userId: string;
@@ -68,6 +69,15 @@ export async function getAllUsers(): Promise<User[]> {
   return users.map(user => ({
     ...user,
     id: user.userId || user.id, // Use userId if available, fallback to id
-    avatar: user.avatar || user.profilePicture // Also handle avatar/profilePicture
+    avatar: user.avatar || user.profilePicture, // Also handle avatar/profilePicture
+    // Support legacy verification status (older users with signup bonus)
+    meetupVerified: !!user.meetupVerified || 
+                    user.meetupVerificationStatus === 'approved' || 
+                    (user.pointActivities && user.pointActivities.some(pa => 
+                      pa.type === 'signup' || 
+                      pa.type === 'meetup_verification' ||
+                      pa.reason?.toLowerCase().includes('meetup')
+                    )) || 
+                    isOrganiserEmail(user.email)
   }));
 }

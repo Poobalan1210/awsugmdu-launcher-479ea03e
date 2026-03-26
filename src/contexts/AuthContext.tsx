@@ -61,8 +61,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         linkedIn: profile.linkedIn,
         github: profile.github,
         twitter: profile.twitter,
-        meetupVerified: profile.meetupVerified,
+        meetupVerified: !!profile.meetupVerified || 
+                        profile.meetupVerificationStatus === 'approved' || 
+                        (profile.pointActivities && profile.pointActivities.some((pa: any) => 
+                          pa.type === 'signup' || 
+                          pa.type === 'meetup_verification' ||
+                          pa.reason?.toLowerCase().includes('meetup')
+                        )) || 
+                        isOrganiserEmail(profile.email),
         meetupVerificationStatus: profile.meetupVerificationStatus,
+        meetupEmail: profile.meetupEmail,
+        pointActivities: profile.pointActivities || [],
       } as User;
     } catch (error: any) {
       console.error('Failed to fetch user profile:', error);

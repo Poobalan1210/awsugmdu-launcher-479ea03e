@@ -48,8 +48,9 @@ const allSubmissions = mockSprints.flatMap(s =>
   s.submissions.map(sub => ({ ...sub, sprintTitle: s.title, sprintId: s.id }))
 );
 
-function SubmissionReview({ submission, onAction }: {
+function SubmissionReview({ submission, submissionFormConfig, onAction }: {
   submission: Submission & { sprintTitle: string };
+  submissionFormConfig?: SubmissionField[];
   onAction: (action: 'approve' | 'reject', points?: number, feedback?: string) => void
 }) {
   const [points, setPoints] = useState(100);
@@ -111,12 +112,20 @@ function SubmissionReview({ submission, onAction }: {
               <div className="flex-1 space-y-6">
                 {/* Submission Details (Custom Fields) */}
                 {(() => {
-                  const fields = { ...submission.customFields };
-                  if (submission.isFirstTimeKiro !== undefined && fields.isFirstTimeKiro === undefined) {
+                  const customFields = submission.customFields || {};
+                  const fields = { ...customFields };
+                  
+                  // Only add legacy field if no Kiro question exists in custom fields/config
+                  const hasKiroInCustom = Object.keys(fields).some(k => 
+                    k.toLowerCase().includes('kiro') || 
+                    submissionFormConfig?.find(f => f.id === k)?.label.toLowerCase().includes('kiro')
+                  );
+                  
+                  if (submission.isFirstTimeKiro !== undefined && fields.isFirstTimeKiro === undefined && !hasKiroInCustom) {
                     fields.isFirstTimeKiro = submission.isFirstTimeKiro;
                   }
-                  const fieldEntries = Object.entries(fields);
                   
+                  const fieldEntries = Object.entries(fields);
                   if (fieldEntries.length === 0) return null;
 
                   return (
@@ -127,8 +136,9 @@ function SubmissionReview({ submission, onAction }: {
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 p-5 bg-muted/20 rounded-2xl border border-border/40 shadow-inner-sm">
                         {fieldEntries.map(([key, value]) => {
-                          const isKiro = key === 'isFirstTimeKiro';
-                          const displayKey = isKiro ? 'First Time Kiro' : key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+                          const configField = submissionFormConfig?.find(f => f.id === key);
+                          const isKiro = key === 'isFirstTimeKiro' || configField?.label.toLowerCase().includes('kiro');
+                          const displayKey = configField?.label || key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
                           
                           // Determine icon and formatting based on value type
                           let Icon = List;
@@ -213,7 +223,7 @@ function SubmissionReview({ submission, onAction }: {
                               <div className="p-1.5 rounded-md bg-orange-500/10 text-orange-500">
                                 <FileText className="h-3.5 w-3.5" />
                               </div>
-                              <span className="text-xs font-medium">AWS Builder Blog</span>
+                              <span className="text-xs font-medium">Blog Post</span>
                             </div>
                             <ExternalLink className="h-3 w-3 text-muted-foreground group-hover/link:text-primary transition-colors" />
                           </a>
@@ -780,7 +790,7 @@ function CreateSprintDialog({ onSuccess }: { onSuccess?: () => void }) {
     githubRepo: ''
   });
   const [submissionFields, setSubmissionFields] = useState<SubmissionField[]>([
-    { id: 'blogUrl', label: 'AWS Builder Center Blog URL', type: 'text', placeholder: 'https://builder.aws.com/content/...', required: false },
+    { id: 'blogUrl', label: 'Blog URL', type: 'text', placeholder: 'AWS Builder Center preferred', required: false },
     { id: 'githubUrl', label: 'GitHub Repository URL', type: 'text', placeholder: 'https://github.com/username/project', required: false },
     { id: 'supportingDocuments', label: 'Supporting Documents', type: 'file', placeholder: 'Screenshots, diagrams, or other supporting materials', required: false },
     { id: 'comments', label: 'Comments', type: 'textarea', placeholder: 'Tell us about what you built and learned...', required: false }
@@ -897,7 +907,7 @@ function EditSprintDialog({ sprint, onSuccess }: { sprint: Sprint; onSuccess?: (
     (sprint.submissionFormConfig && sprint.submissionFormConfig.length > 0)
       ? sprint.submissionFormConfig
       : [
-          { id: 'blogUrl', label: 'AWS Builder Center Blog URL', type: 'text', placeholder: 'https://builder.aws.com/content/...', required: false },
+          { id: 'blogUrl', label: 'Blog URL', type: 'text', placeholder: 'AWS Builder Center preferred', required: false },
           { id: 'githubUrl', label: 'GitHub Repository URL', type: 'text', placeholder: 'https://github.com/username/project', required: false },
           { id: 'supportingDocuments', label: 'Supporting Documents', type: 'file', placeholder: 'Screenshots, diagrams, or other supporting materials', required: false },
           { id: 'comments', label: 'Comments', type: 'textarea', placeholder: 'Tell us about what you built and learned...', required: false }
@@ -7448,6 +7458,7 @@ export default function Admin() {
                                             <SubmissionReview
                                               key={sub.id}
                                               submission={sub}
+                                              submissionFormConfig={sprint.submissionFormConfig}
                                               onAction={(action, points, feedback) => handleSubmissionAction(sub.id, sub.sprintId, action, points, feedback)}
                                             />
                                           ))
@@ -7471,6 +7482,7 @@ export default function Admin() {
                                             <SubmissionReview
                                               key={sub.id}
                                               submission={sub}
+                                              submissionFormConfig={sprint.submissionFormConfig}
                                               onAction={() => { }}
                                             />
                                           ))

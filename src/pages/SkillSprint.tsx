@@ -796,11 +796,11 @@ function SubmitWorkForm({ sprint, onSuccess }: { sprint: Sprint; onSuccess?: () 
       return;
     }
 
-    // Validate AWS Builder Center URL
+    // Validate standard fields first or as part of form config
     if (blogUrl) {
-      const builderUrlPattern = /^https:\/\/builder\.aws\.com\/content\/[a-zA-Z0-9]+\/.+$/;
-      if (!builderUrlPattern.test(blogUrl)) {
-        toast.error('Please provide a valid AWS Builder Center URL (e.g., https://builder.aws.com/content/...)');
+      const urlPattern = /^https?:\/\/.+\..+$/;
+      if (!urlPattern.test(blogUrl)) {
+        toast.error('Please provide a valid URL for the blog post');
         return;
       }
     }
@@ -816,14 +816,22 @@ function SubmitWorkForm({ sprint, onSuccess }: { sprint: Sprint; onSuccess?: () 
 
     // At least one URL is required
     if (!blogUrl && !githubUrl) {
-      toast.error('Please provide at least one of: AWS Builder Center blog URL or GitHub repository URL');
+      toast.error('Please provide at least one of: Blog URL or GitHub repository URL');
       return;
     }
 
-    // Validate custom fields
+    // Validate custom/configured fields
     if (sprint.submissionFormConfig && sprint.submissionFormConfig.length > 0) {
       for (const field of sprint.submissionFormConfig) {
-        if (field.required && !customFields[field.id] && customFields[field.id] !== false) {
+        // Get the value based on field ID (handles both standard and custom fields)
+        let value;
+        if (field.id === 'blogUrl') value = blogUrl;
+        else if (field.id === 'githubUrl') value = githubUrl;
+        else if (field.id === 'comments') value = comments;
+        else if (field.id === 'supportingDocuments') value = supportingFiles.length > 0;
+        else value = customFields[field.id];
+
+        if (field.required && !value && value !== false) {
           toast.error(`Please fill in the required field: ${field.label}`);
           return;
         }
@@ -858,11 +866,7 @@ function SubmitWorkForm({ sprint, onSuccess }: { sprint: Sprint; onSuccess?: () 
         githubUrl: githubUrl || undefined,
         comments: comments || undefined,
         supportingDocuments: uploadedDocUrls.length > 0 ? uploadedDocUrls : undefined,
-        customFields: Object.keys(customFields).length > 0 ? {
-          ...customFields,
-          // Support both ways during transition if needed
-          isFirstTimeKiro: customFields.isFirstTimeKiro === 'Yes' || customFields.isFirstTimeKiro === true
-        } : undefined,
+        customFields: Object.keys(customFields).length > 0 ? customFields : undefined,
       });
 
       toast.success('Work submitted successfully! Awaiting review.');
@@ -918,7 +922,7 @@ function SubmitWorkForm({ sprint, onSuccess }: { sprint: Sprint; onSuccess?: () 
           Submit Your Work
         </CardTitle>
         <CardDescription>
-          Share your AWS Builder Center blog post and/or GitHub repository to earn points
+          Share your blog post and/or GitHub repository to earn points
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -928,7 +932,7 @@ function SubmitWorkForm({ sprint, onSuccess }: { sprint: Sprint; onSuccess?: () 
             {(sprint.submissionFormConfig && sprint.submissionFormConfig.length > 0 
               ? sprint.submissionFormConfig 
               : [
-                  { id: 'blogUrl', label: 'AWS Builder Center Blog URL', type: 'text', placeholder: 'https://builder.aws.com/content/...', required: false },
+                  { id: 'blogUrl', label: 'Blog URL', type: 'text', placeholder: 'AWS Builder Center preferred', required: false },
                   { id: 'githubUrl', label: 'GitHub Repository URL', type: 'text', placeholder: 'https://github.com/username/project', required: false },
                   { id: 'supportingDocuments', label: 'Supporting Documents', type: 'file', placeholder: 'Screenshots, diagrams, or other supporting materials', required: false },
                   { id: 'comments', label: 'Comments', type: 'textarea', placeholder: 'Tell us about what you built and learned...', required: false }
@@ -955,7 +959,7 @@ function SubmitWorkForm({ sprint, onSuccess }: { sprint: Sprint; onSuccess?: () 
                     />
                     {field.id === 'blogUrl' && (
                       <p className="text-xs text-muted-foreground">
-                        Share your learning journey through an AWS Builder Center blog post
+                        Share your learning journey through a blog post (AWS Builder Center preferred)
                       </p>
                     )}
                     {field.id === 'githubUrl' && (

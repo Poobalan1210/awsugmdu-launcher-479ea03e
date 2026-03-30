@@ -1,12 +1,23 @@
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
-const { DynamoDBDocumentClient, PutCommand, GetCommand, UpdateCommand, QueryCommand, ScanCommand } = require('@aws-sdk/lib-dynamodb');
+const { DynamoDBDocumentClient, PutCommand, GetCommand, UpdateCommand, QueryCommand, ScanCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
+const { CognitoIdentityProviderClient, AdminDeleteUserCommand } = require('@aws-sdk/client-cognito-identity-provider');
+const { S3Client, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 
 const client = new DynamoDBClient({ region: process.env.AWS_REGION });
 const docClient = DynamoDBDocumentClient.from(client);
+const cognitoClient = new CognitoIdentityProviderClient({ region: process.env.AWS_REGION });
+const s3Client = new S3Client({ region: process.env.AWS_REGION });
 
 const USERS_TABLE = process.env.USERS_TABLE_NAME || 'awsug-users';
 const COLLEGES_TABLE = process.env.COLLEGES_TABLE_NAME || 'awsug-colleges';
 const CLOUD_CLUBS_TABLE = process.env.CLOUD_CLUBS_TABLE_NAME || 'awsug-cloud_clubs';
+const MEETUPS_TABLE = process.env.MEETUPS_TABLE_NAME || 'awsug-meetups';
+const SPRINTS_TABLE = process.env.SPRINTS_TABLE_NAME || 'awsug-sprints';
+const DISCUSSIONS_TABLE = process.env.DISCUSSIONS_TABLE_NAME || 'awsug-discussions';
+const ORDERS_TABLE = process.env.ORDERS_TABLE_NAME || 'awsug-orders';
+const USER_POOL_ID = process.env.COGNITO_USER_POOL_ID;
+const PROFILE_PHOTOS_BUCKET = process.env.PROFILE_PHOTOS_BUCKET;
+const MEETUP_POSTERS_BUCKET = process.env.MEETUP_POSTERS_BUCKET;
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -56,7 +67,7 @@ exports.handler = async (event) => {
         return await updateUser(userId, requestBody);
       
       case 'DELETE':
-        // Delete user (admin only)
+        // Delete user (complete wipe)
         if (!userId) {
           return {
             statusCode: 400,
@@ -365,21 +376,268 @@ async function updateUser(userId, requestBody) {
 
 async function deleteUser(userId) {
   try {
+    console.log(`Starting complete wipe for user: ${userId}`);
+    
+    // 0. Fetch user profile first to get identifying file links
+    const userResult = await docClient.send(new GetCommand({
+      TableName: USERS_TABLE,
+      Key: { userId }
+    }));
+    const userProfile = userResult.Item;
+    
+    // 1. Clean up Meetups
+    await cleanupTableEntries(MEETUPS_TABLE, userId, ['registeredUsers', 'speakers', 'hosts', 'volunteers']);
+    
+    // 2. Clean up Sprints (includes S3 deletion for submissions)
+    await cleanupTableEntries(SPRINTS_TABLE, userId, ['registeredUsers', 'submissions']);
+    
+    // 3. Clean up Colleges
+    await cleanupTableEntries(COLLEGES_TABLE, userId, ['members']);
+    
+    // 4. Clean up Cloud Clubs
+    await cleanupTableEntries(CLOUD_CLUBS_TABLE, userId, ['members']);
+    
+    // 5. Clean up Orders
+    await deleteUserOrders(userId);
+    
+    // 6. Clean up Discussions
+    await cleanupDiscussions(userId);
+    
+    // 7. Clean up S3 assets (Avatar)
+    if (userProfile?.avatar) {
+      await deleteS3ObjectFromUrl(userProfile.avatar);
+    }
+    
+    // 8. Delete from Cognito
+    if (USER_POOL_ID) {
+      try {
+        await cognitoClient.send(new AdminDeleteUserCommand({
+          UserPoolId: USER_POOL_ID,
+          Username: userId
+        }));
+        console.log(`Deleted user ${userId} from Cognito`);
+      } catch (cognitoError) {
+        console.error(`Error deleting user ${userId} from Cognito:`, cognitoError);
+        // If user doesn't exist in Cognito, continue
+      }
+    }
+    
+    // 9. Delete from Users table
     await docClient.send(new DeleteCommand({
       TableName: USERS_TABLE,
       Key: { userId },
     }));
+    
+    console.log(`Successfully completed wipe for user: ${userId}`);
     
     return {
       statusCode: 200,
       headers: corsHeaders,
       body: JSON.stringify({ 
         success: true,
-        message: 'User deleted successfully',
+        message: 'Account and all associated data deleted successfully',
       }),
     };
   } catch (error) {
-    console.error('Error deleting user:', error);
+    console.error('Error during user deletion:', error);
     throw error;
+  }
+}
+
+/**
+ * Helper to delete an S3 object from its public/CloudFront URL
+ */
+async function deleteS3ObjectFromUrl(url) {
+  try {
+    if (!url || typeof url !== 'string') return;
+    
+    console.log(`Attempting to delete S3 asset: ${url}`);
+    
+    let bucketName = '';
+    let key = '';
+    
+    // Extract key from URL
+    // Examples:
+    // https://awsug-profile-photos.s3.region.amazonaws.com/profiles/123-file.png
+    // https://d123.cloudfront.net/profiles/123-file.png
+    
+    const urlObj = new URL(url);
+    const path = urlObj.pathname.startsWith('/') ? urlObj.pathname.substring(1) : urlObj.pathname;
+    
+    if (url.includes('profile-photos')) {
+      bucketName = PROFILE_PHOTOS_BUCKET;
+    } else if (url.includes('meetup-posters')) {
+      bucketName = MEETUP_POSTERS_BUCKET;
+    } else {
+      // Fallback: try to guess bucket from hostname or just check common prefixes
+      if (path.startsWith('profiles/') || path.startsWith('college-documents/') || path.startsWith('cloud-club-')) {
+        bucketName = PROFILE_PHOTOS_BUCKET;
+      } else if (path.startsWith('posters/') || path.startsWith('event-')) {
+        bucketName = MEETUP_POSTERS_BUCKET;
+      }
+    }
+    
+    if (bucketName && path) {
+      await s3Client.send(new DeleteObjectCommand({
+        Bucket: bucketName,
+        Key: path
+      }));
+      console.log(`Deleted S3 object: ${bucketName}/${path}`);
+    }
+  } catch (error) {
+    console.error(`Failed to delete S3 asset ${url}:`, error);
+  }
+}
+
+/**
+ * Generic function to remove userId from arrays in table items
+ */
+async function cleanupTableEntries(tableName, userId, arrayFields) {
+  try {
+    console.log(`Cleaning up ${tableName} for user ${userId}`);
+    const result = await docClient.send(new ScanCommand({
+      TableName: tableName
+    }));
+    
+    for (const item of (result.Items || [])) {
+      let needsUpdate = false;
+      const updates = {};
+      
+      for (const field of arrayFields) {
+        if (item[field] && Array.isArray(item[field])) {
+          const originalLength = item[field].length;
+          
+          // Handle S3 document deletion for Sprint Submissions
+          if (tableName === SPRINTS_TABLE && field === 'submissions') {
+            const userSubmissions = item[field].filter(s => s.userId === userId);
+            for (const sub of userSubmissions) {
+              if (sub.supportingDocuments && Array.isArray(sub.supportingDocuments)) {
+                for (const doc of sub.supportingDocuments) {
+                  if (doc.url) await deleteS3ObjectFromUrl(doc.url);
+                }
+              }
+            }
+          }
+          
+          // Filter out user from arrays
+          item[field] = item[field].filter(entry => {
+            const entryId = typeof entry === 'string' ? entry : entry.userId;
+            return entryId !== userId;
+          });
+          
+          if (item[field].length !== originalLength) {
+            needsUpdate = true;
+            updates[field] = item[field];
+          }
+        }
+      }
+      
+      if (needsUpdate) {
+        const updateExpressions = Object.keys(updates).map(f => `#${f} = :${f}`);
+        const expressionAttributeNames = {};
+        const expressionAttributeValues = {};
+        
+        Object.keys(updates).forEach(f => {
+          expressionAttributeNames[`#${f}`] = f;
+          expressionAttributeValues[`:${f}`] = updates[f];
+        });
+        
+        await docClient.send(new UpdateCommand({
+          TableName: tableName,
+          Key: { id: item.id },
+          UpdateExpression: `SET ${updateExpressions.join(', ')}`,
+          ExpressionAttributeNames: expressionAttributeNames,
+          ExpressionAttributeValues: expressionAttributeValues
+        }));
+      }
+    }
+  } catch (error) {
+    console.error(`Error cleaning up ${tableName}:`, error);
+    // Don't fail the whole process if one table cleanup fails
+  }
+}
+
+async function deleteUserOrders(userId) {
+  try {
+    console.log(`Deleting orders for user ${userId}`);
+    const result = await docClient.send(new QueryCommand({
+      TableName: ORDERS_TABLE,
+      IndexName: 'userId-index', // Assuming this GSI exists based on common patterns
+      KeyConditionExpression: 'userId = :userId',
+      ExpressionAttributeValues: { ':userId': userId }
+    }));
+    
+    for (const order of (result.Items || [])) {
+      await docClient.send(new DeleteCommand({
+        TableName: ORDERS_TABLE,
+        Key: { id: order.id }
+      }));
+    }
+  } catch (error) {
+    console.error(`Error deleting orders:`, error);
+  }
+}
+
+async function cleanupDiscussions(userId) {
+  try {
+    console.log(`Cleaning up discussions for user ${userId}`);
+    const result = await docClient.send(new ScanCommand({
+      TableName: DISCUSSIONS_TABLE
+    }));
+    
+    for (const post of (result.Items || [])) {
+      // 1. Delete posts made by user
+      if (post.userId === userId) {
+        await docClient.send(new DeleteCommand({
+          TableName: DISCUSSIONS_TABLE,
+          Key: { id: post.id }
+        }));
+        continue;
+      }
+      
+      // 2. Remove from replies and likedBy in others' posts
+      let needsUpdate = false;
+      const updates = {};
+      
+      if (post.replies && Array.isArray(post.replies)) {
+        const originalLength = post.replies.length;
+        post.replies = post.replies.filter(r => r.userId !== userId);
+        if (post.replies.length !== originalLength) {
+          needsUpdate = true;
+          updates.replies = post.replies;
+        }
+      }
+      
+      if (post.likedBy && Array.isArray(post.likedBy)) {
+        const originalLength = post.likedBy.length;
+        post.likedBy = post.likedBy.filter(uId => uId !== userId);
+        if (post.likedBy.length !== originalLength) {
+          needsUpdate = true;
+          updates.likedBy = post.likedBy;
+          updates.likes = post.likedBy.length;
+        }
+      }
+      
+      if (needsUpdate) {
+        const updateExpressions = Object.keys(updates).map(f => `#${f} = :${f}`);
+        const expressionAttributeNames = {};
+        const expressionAttributeValues = {};
+        
+        Object.keys(updates).forEach(f => {
+          expressionAttributeNames[`#${f}`] = f;
+          expressionAttributeValues[`:${f}`] = updates[f];
+        });
+        
+        await docClient.send(new UpdateCommand({
+          TableName: DISCUSSIONS_TABLE,
+          Key: { id: post.id },
+          UpdateExpression: `SET ${updateExpressions.join(', ')}`,
+          ExpressionAttributeNames: expressionAttributeNames,
+          ExpressionAttributeValues: expressionAttributeValues
+        }));
+      }
+    }
+  } catch (error) {
+    console.error('Error cleaning up discussions:', error);
   }
 }

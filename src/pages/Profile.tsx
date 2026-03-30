@@ -33,12 +33,16 @@ import { generateBadgeShare, generateProfileActivityShare, generateMeetupAttenda
 import { getShareableProfileUrl, matchesSlug } from '@/lib/profileSlug';
 import { Share2, Copy, Check } from 'lucide-react';
 import { toast } from 'sonner';
+import { useNavigate } from 'react-router-dom';
+import { Trash2 } from 'lucide-react';
 
 export default function Profile() {
   const { slug } = useParams();
-  const { user: authUser, isLoading: authLoading } = useAuth();
   const [profileUser, setProfileUser] = useState<UserType | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const { user: authUser, isLoading: authLoading, deleteAccount } = useAuth();
   const [sprints, setSprints] = useState<any[]>([]);
   const [loadingSprints, setLoadingSprints] = useState(true);
   const [userCommunityRoles, setUserCommunityRoles] = useState<CommunityRole[]>([]);
@@ -54,6 +58,7 @@ export default function Profile() {
   const [meetupUrl, setMeetupUrl] = useState('');
   const [meetupVerifying, setMeetupVerifying] = useState(false);
   const [meetupError, setMeetupError] = useState<string | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
 
   // Fetch meetups from backend
   const { data: allMeetups = [] } = useQuery({
@@ -237,6 +242,20 @@ export default function Profile() {
       setMeetupError(error instanceof Error ? error.message : 'Verification failed');
     } finally {
       setMeetupVerifying(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    setIsDeleting(true);
+    try {
+      await deleteAccount();
+      toast.success('Your account has been permanently deleted.');
+      // Redirect to home
+      window.location.href = '/';
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to delete account');
+      setIsDeleting(false);
+      setShowDeleteConfirm(false);
     }
   };
   
@@ -1238,9 +1257,102 @@ export default function Profile() {
             </motion.div>
           </TabsContent>
         </Tabs>
+
+        {isOwnProfile && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.5 }}
+            className="mt-12 pt-8 border-t"
+          >
+            <div className="max-w-2xl mx-auto">
+              <h2 className="text-xl font-bold text-destructive mb-4">Danger Zone</h2>
+              <Card className="border-destructive/20 bg-destructive/5">
+                <CardContent className="p-6 flex flex-col md:flex-row items-center justify-between gap-4">
+                  <div>
+                    <h3 className="font-semibold text-lg text-destructive">Delete Account</h3>
+                    <p className="text-muted-foreground text-sm">
+                      Permanently delete your profile and all associated data. This action cannot be undone.
+                    </p>
+                  </div>
+                  <Button 
+                    variant="destructive"
+                    onClick={() => {
+                      setDeleteConfirmText('');
+                      setShowDeleteConfirm(true);
+                    }}
+                    className="shrink-0"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete My Account
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
+          </motion.div>
+        )}
       </main>
 
       <Footer />
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-destructive font-bold flex items-center gap-2">
+              <AlertCircle className="h-5 w-5" />
+              Confirm Account Deletion
+            </DialogTitle>
+            <DialogDescription className="pt-2">
+              This will permanently delete your account and all your data, including profile photos, uploaded documents, points, badges, sprint submissions, and forum posts.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="bg-destructive/10 p-4 rounded-lg border border-destructive/20">
+              <p className="text-sm font-medium text-destructive">
+                Warning: This action is irreversible. All your community contributions and achievements will be lost.
+              </p>
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="confirm-delete" className="text-sm">
+                To confirm, type <span className="font-bold select-all text-destructive">confirm delete</span> below:
+              </Label>
+              <Input
+                id="confirm-delete"
+                value={deleteConfirmText}
+                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                placeholder="confirm delete"
+                className="border-destructive/20 focus-visible:ring-destructive"
+                autoComplete="off"
+              />
+            </div>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-3 justify-end mt-4">
+            <Button
+              variant="outline"
+              onClick={() => setShowDeleteConfirm(false)}
+              disabled={isDeleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteAccount}
+              disabled={isDeleting || deleteConfirmText !== 'confirm delete'}
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                'Yes, Delete Everything'
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Meetup Verification Modal */}
       <Dialog open={showMeetupDialog} onOpenChange={setShowMeetupDialog}>

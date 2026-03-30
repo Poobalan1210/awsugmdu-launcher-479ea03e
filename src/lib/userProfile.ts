@@ -81,3 +81,8 @@ export async function getAllUsers(): Promise<User[]> {
                     isOrganiserEmail(user.email)
   }));
 }
+export async function deleteUserProfile(userId: string): Promise<{ success: boolean; message: string }> {
+  return callApi(`/users/${userId}`, {
+    method: 'DELETE',
+  });
+}

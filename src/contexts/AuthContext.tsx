@@ -27,6 +27,7 @@ interface AuthContextType {
   resendConfirmationCode: (email: string) => Promise<void>;
   uploadProfilePhoto: (file: File, userId: string) => Promise<string>;
   refreshUser: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -299,6 +300,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const deleteAccount = async () => {
+    try {
+      if (!user) {
+        throw new Error('User must be authenticated to delete account');
+      }
+      
+      const { deleteUserProfile } = await import('@/lib/userProfile');
+      const result = await deleteUserProfile(user.id);
+      
+      if (result.success) {
+        await amplifySignOut();
+        setUser(null);
+      } else {
+        throw new Error(result.message || 'Failed to delete account');
+      }
+    } catch (error: any) {
+      console.error('Delete account error:', error);
+      throw new Error(error.message || 'Failed to delete account');
+    }
+  };
+
   const value: AuthContextType = {
     user,
     isLoading,
@@ -310,6 +332,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     resendConfirmationCode,
     uploadProfilePhoto,
     refreshUser,
+    deleteAccount,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -403,7 +403,7 @@ function SubmissionReview({ submission, submissionFormConfig, onAction }: {
                       <div className="pt-2">
                         <p className="text-[9px] text-muted-foreground flex items-center gap-1">
                           <User className="h-2 w-2" />
-                          Reviewed by Admin
+                          {submission.reviewerName ? `Reviewed by ${submission.reviewerName}` : 'Reviewed'}
                         </p>
                       </div>
                     </div>
@@ -7243,7 +7243,8 @@ export default function Admin() {
         status: action === 'approve' ? 'approved' : 'rejected',
         points: action === 'approve' ? points : 0,
         feedback,
-        reviewedBy: authUser?.id || ''
+        reviewedBy: authUser?.id || '',
+        reviewerName: authUser?.name
       });
 
       toast.success(`Submission ${action}d${points ? ` with ${points} points` : ''}`);

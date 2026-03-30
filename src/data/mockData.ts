@@ -228,6 +228,7 @@ export interface Submission {
   status: 'pending' | 'approved' | 'rejected';
   feedback?: string;
   reviewedBy?: string;
+  reviewerName?: string;
   reviewedAt?: string;
 }
 

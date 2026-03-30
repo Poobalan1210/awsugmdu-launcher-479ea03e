@@ -171,6 +171,7 @@ export interface ReviewSubmissionData {
   points?: number;
   feedback?: string;
   reviewedBy: string;
+  reviewerName?: string;
 }
 
 export interface ReviewSubmissionResponse {

@@ -786,7 +786,8 @@ async function reviewSubmission(sprintId, submissionId, event) {
     status,
     points,
     feedback,
-    reviewedBy
+    reviewedBy,
+    reviewerName
   } = body;
 
   if (!status || !reviewedBy) {
@@ -825,6 +826,7 @@ async function reviewSubmission(sprintId, submissionId, event) {
     points: status === 'approved' ? (points || 0) : 0,
     ...(feedback && { feedback }),
     reviewedBy,
+    ...(reviewerName && { reviewerName }),
     reviewedAt: new Date().toISOString()
   };
 

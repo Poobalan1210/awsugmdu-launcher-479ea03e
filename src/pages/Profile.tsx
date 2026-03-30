@@ -521,8 +521,8 @@ export default function Profile() {
       });
     });
 
-    // Point activities (adhoc awards, etc.) - skip store redemptions as they appear under store_redeemed
-    pointActivities.filter(activity => activity.points >= 0).forEach(activity => {
+    // Point activities (adhoc awards, etc.) - skip store redemptions and submissions as they appear under their own categories
+    pointActivities.filter(activity => activity.points >= 0 && activity.type !== 'submission' && !activity.reason?.includes('Sprint submission approved')).forEach(activity => {
       activities.push({
         id: `points-${activity.id}`,
         type: 'points_awarded',

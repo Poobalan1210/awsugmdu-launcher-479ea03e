@@ -841,7 +841,7 @@ async function reviewSubmission(sprintId, submissionId, event) {
   }));
 
   // If approved, update user's points, pointActivities, and activities
-  if (status === 'approved' && points > 0) {
+  if (status === 'approved' && points > 0 && submission.status !== 'approved') {
     const USERS_TABLE = process.env.USERS_TABLE_NAME || 'awsug-users';
 
     try {

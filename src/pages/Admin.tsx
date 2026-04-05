@@ -1220,12 +1220,6 @@ function SessionPeopleManager({
     onUpdate({ ...sessionData, volunteers: updated });
   };
 
-  const excludeUserIds = [
-    ...(sessionData.hosts || []).map(h => h.userId),
-    ...(sessionData.speakers || []).map(s => s.userId),
-    ...(sessionData.volunteers || []).map(v => v.userId)
-  ].filter(Boolean) as string[];
-
   return (
     <div className="space-y-6">
       {/* Hosts */}
@@ -1263,10 +1257,6 @@ function SessionPeopleManager({
             selectedUsers={sessionData.hosts || []}
             onSelect={(users) => onUpdate({ ...sessionData, hosts: users })}
             placeholder="Select hosts..."
-            excludeUserIds={[
-              ...(sessionData.speakers || []).map(s => s.userId),
-              ...(sessionData.volunteers || []).map(v => v.userId)
-            ].filter(Boolean) as string[]}
           />
         </div>
       </div>
@@ -1306,10 +1296,6 @@ function SessionPeopleManager({
             selectedUsers={sessionData.speakers || []}
             onSelect={(users) => onUpdate({ ...sessionData, speakers: users })}
             placeholder="Select speakers..."
-            excludeUserIds={[
-              ...(sessionData.hosts || []).map(h => h.userId),
-              ...(sessionData.volunteers || []).map(v => v.userId)
-            ].filter(Boolean) as string[]}
           />
         </div>
       </div>
@@ -1349,10 +1335,6 @@ function SessionPeopleManager({
             selectedUsers={sessionData.volunteers || []}
             onSelect={(users) => onUpdate({ ...sessionData, volunteers: users })}
             placeholder="Select volunteers..."
-            excludeUserIds={[
-              ...(sessionData.hosts || []).map(h => h.userId),
-              ...(sessionData.speakers || []).map(s => s.userId)
-            ].filter(Boolean) as string[]}
           />
         </div>
       </div>
@@ -1729,10 +1711,6 @@ function MeetupPeopleManager({
             selectedUsers={meetupData.speakers || []}
             onSelect={(users) => onUpdate({ ...meetupData, speakers: users })}
             placeholder="Select speakers..."
-            excludeUserIds={[
-              ...(meetupData.hosts || []).map(h => h.userId),
-              ...(meetupData.volunteers || []).map(v => v.userId)
-            ].filter(Boolean) as string[]}
           />
         </div>
       </div>
@@ -1772,10 +1750,6 @@ function MeetupPeopleManager({
             selectedUsers={meetupData.hosts || []}
             onSelect={(users) => onUpdate({ ...meetupData, hosts: users })}
             placeholder="Select organisers..."
-            excludeUserIds={[
-              ...(meetupData.speakers || []).map(s => s.userId),
-              ...(meetupData.volunteers || []).map(v => v.userId)
-            ].filter(Boolean) as string[]}
           />
         </div>
       </div>
@@ -1815,10 +1789,6 @@ function MeetupPeopleManager({
             selectedUsers={meetupData.volunteers || []}
             onSelect={(users) => onUpdate({ ...meetupData, volunteers: users })}
             placeholder="Select volunteers..."
-            excludeUserIds={[
-              ...(meetupData.speakers || []).map(s => s.userId),
-              ...(meetupData.hosts || []).map(h => h.userId)
-            ].filter(Boolean) as string[]}
           />
         </div>
       </div>

@@ -42,7 +42,7 @@
     --aws-dark: 220 25% 12%;
     --success: 142 76% 36%;
     --warning: 45 93% 47%;
-    
+
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 240 5.3% 26.1%;
     --sidebar-primary: 240 5.9% 10%;
@@ -81,7 +81,7 @@
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
     --ring: 25 95% 53%;
-    
+
     --sidebar-background: 220 25% 10%;
     --sidebar-foreground: 240 4.8% 95.9%;
     --sidebar-primary: 25 95% 53%;
@@ -108,6 +108,7 @@
 }
 
 @layer utilities {
+
   /* Gradient text effect */
   .gradient-text {
     @apply bg-gradient-to-r from-primary via-orange-500 to-amber-500 bg-clip-text text-transparent;
@@ -127,27 +128,29 @@
   .animate-delay-100 {
     animation-delay: 100ms;
   }
+
   .animate-delay-200 {
     animation-delay: 200ms;
   }
+
   .animate-delay-300 {
     animation-delay: 300ms;
   }
+
   .animate-delay-400 {
     animation-delay: 400ms;
   }
+
   .animate-delay-500 {
     animation-delay: 500ms;
   }
 
   /* Shimmer effect for loading states */
   .shimmer {
-    background: linear-gradient(
-      90deg,
-      hsl(var(--muted)) 0%,
-      hsl(var(--muted-foreground) / 0.1) 50%,
-      hsl(var(--muted)) 100%
-    );
+    background: linear-gradient(90deg,
+        hsl(var(--muted)) 0%,
+        hsl(var(--muted-foreground) / 0.1) 50%,
+        hsl(var(--muted)) 100%);
     background-size: 200% 100%;
     animation: shimmer 1.5s infinite;
   }
@@ -156,6 +159,7 @@
     0% {
       background-position: 200% 0;
     }
+
     100% {
       background-position: -200% 0;
     }
@@ -167,9 +171,12 @@
   }
 
   @keyframes pulse-glow {
-    0%, 100% {
+
+    0%,
+    100% {
       box-shadow: 0 0 5px hsl(var(--primary) / 0.5);
     }
+
     50% {
       box-shadow: 0 0 20px hsl(var(--primary) / 0.8);
     }

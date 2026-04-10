@@ -10,8 +10,8 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { 
-  Trophy, Calendar, Target, FileText, Medal, Zap, 
+import {
+  Trophy, Calendar, Target, FileText, Medal, Zap,
   Linkedin, Github, Twitter, ExternalLink, Building, User,
   Mic, BookOpen, CheckCircle, Clock, Award, Shield, ShoppingBag, Loader2, Package, Users, AlertCircle
 } from 'lucide-react';
@@ -53,7 +53,7 @@ export default function Profile() {
   const [selectedOrderDetail, setSelectedOrderDetail] = useState<Order | null>(null);
   const [showOrderDetailDialog, setShowOrderDetailDialog] = useState(false);
   const [loadingOrderDetail, setLoadingOrderDetail] = useState(false);
-  
+
   const [showMeetupDialog, setShowMeetupDialog] = useState(false);
   const [meetupUrl, setMeetupUrl] = useState('');
   const [meetupVerifying, setMeetupVerifying] = useState(false);
@@ -134,29 +134,29 @@ export default function Profile() {
     };
     fetchUser();
   }, [slug, authUser?.id]); // Depend on slug to refetch when it changes
-  
+
   // Fetch user roles from API
   useEffect(() => {
     const fetchRoles = async () => {
       if (!profileUser) return;
-      
+
       setLoadingRoles(true);
       try {
         const roles = await getUserRoles(profileUser.id);
         const roleValues = roles.map(r => r.role);
-        
+
         // For authenticated users, check if they're an organiser
         if (authUser && profileUser.id === authUser.id && authUser.role === 'organiser') {
           if (!roleValues.includes('organiser')) {
             roleValues.push('organiser');
           }
         }
-        
+
         // Always ensure member role is present
         if (!roleValues.includes('member')) {
           roleValues.push('member');
         }
-        
+
         setUserCommunityRoles(roleValues);
       } catch (error) {
         console.error('Failed to fetch user roles:', error);
@@ -166,7 +166,7 @@ export default function Profile() {
         setLoadingRoles(false);
       }
     };
-    
+
     fetchRoles();
   }, [profileUser?.id, authUser?.id, authUser?.role]);
 
@@ -174,7 +174,7 @@ export default function Profile() {
   useEffect(() => {
     const fetchPointActivities = async () => {
       if (!profileUser) return;
-      
+
       setLoadingPointActivities(true);
       try {
         const { getUserPointActivities } = await import('@/lib/points');
@@ -187,7 +187,7 @@ export default function Profile() {
         setLoadingPointActivities(false);
       }
     };
-    
+
     fetchPointActivities();
   }, [profileUser?.id]);
 
@@ -203,7 +203,7 @@ export default function Profile() {
     };
     fetchColleges();
   }, []);
-  
+
   const user = profileUser;
   const isOwnProfile = !slug || (authUser && profileUser && profileUser.id === authUser.id);
 
@@ -215,11 +215,11 @@ export default function Profile() {
 
     setMeetupVerifying(true);
     setMeetupError(null);
-    
+
     try {
       const normalizedUrl = normalizeMeetupProfileUrl(meetupUrl);
       const result = await submitMeetupVerification(user.email, normalizedUrl);
-      
+
       if (result.isPending || result.isMember) {
         // Update user profile in backend
         await updateUserProfile(user.id, {
@@ -227,9 +227,9 @@ export default function Profile() {
           meetupVerificationStatus: result.isPending ? 'pending' : 'approved',
           meetupEmail: normalizedUrl
         });
-        
-        toast.success(result.isPending ? 
-          "Verification submitted for review!" : 
+
+        toast.success(result.isPending ?
+          "Verification submitted for review!" :
           "Meetup membership verified! You earned 100 points."
         );
         setShowMeetupDialog(false);
@@ -258,7 +258,7 @@ export default function Profile() {
       setShowDeleteConfirm(false);
     }
   };
-  
+
   // Show loading state while auth is loading or profile is loading
   if (loading || authLoading) {
     return (
@@ -274,7 +274,7 @@ export default function Profile() {
       </div>
     );
   }
-  
+
   if (!user) {
     return (
       <div className="min-h-screen flex flex-col">
@@ -297,11 +297,11 @@ export default function Profile() {
   }
 
   // Calculate activity summary for this user
-  const userSubmissions = sprints.flatMap(s => 
+  const userSubmissions = sprints.flatMap(s =>
     s.submissions.filter(sub => sub.userId === user.id)
   );
-  
-  const userSprintsParticipated = sprints.filter(s => 
+
+  const userSprintsParticipated = sprints.filter(s =>
     s.registeredUsers.includes(user.id)
   );
 
@@ -348,7 +348,7 @@ export default function Profile() {
 
   // Generate activity history
   type ActivityType = 'sprint_attended' | 'sprint_spoke' | 'meetup_attended' | 'meetup_spoke' | 'meetup_organized' | 'blog_submitted' | 'submission_approved' | 'badge_earned' | 'points_awarded' | 'store_redeemed';
-  
+
   interface ActivityHistoryItem {
     id: string;
     type: ActivityType;
@@ -366,7 +366,7 @@ export default function Profile() {
 
   const generateActivityHistory = (): ActivityHistoryItem[] => {
     const activities: ActivityHistoryItem[] = [];
-    
+
     // Helper to extract plain text string from potentially complex titles
     const getStringTitle = (sprintTitle: any) => typeof sprintTitle === 'string' ? sprintTitle : 'Skill Sprint';
 
@@ -402,7 +402,7 @@ export default function Profile() {
 
     // Meetup attendance - use backend data
     const meetupsToCheck = allMeetups;
-    
+
     // Show attended meetups from user activities (marked by admin)
     if (user.activities) {
       user.activities
@@ -422,7 +422,7 @@ export default function Profile() {
           }
         });
     }
-    
+
     // Show organized/volunteered meetups
     if (user.activities) {
       user.activities
@@ -442,13 +442,13 @@ export default function Profile() {
           }
         });
     }
-    
+
     // Show registered meetups (not yet attended)
     meetupsToCheck.forEach(meetup => {
       const alreadyMarkedAttended = user.activities?.some(
         a => a.type === 'meetup_attended' && a.meetupId === meetup.id
       );
-      
+
       if (meetup.registeredUsers?.includes(user.id) && !alreadyMarkedAttended) {
         activities.push({
           id: `meetup-register-${meetup.id}`,
@@ -568,7 +568,7 @@ export default function Profile() {
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
-      
+
       <main className="flex-1 container mx-auto px-4 py-8">
         {/* Profile Header */}
         <motion.div
@@ -589,10 +589,10 @@ export default function Profile() {
                     <AvatarFallback className="text-3xl">{user.name.charAt(0)}</AvatarFallback>
                   </Avatar>
                 </motion.div>
-                
+
                 <div className="flex-1 text-center md:text-left">
                   <h1 className="text-2xl md:text-3xl font-bold mb-2">{user.name}</h1>
-                  
+
                   {/* Community Roles - Display prominently near name */}
                   {userCommunityRoles.length > 0 && (
                     <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 mb-3">
@@ -602,17 +602,16 @@ export default function Profile() {
                           const roleInfo = getRoleInfo(role);
                           if (!roleInfo) return null;
                           return (
-                            <Badge 
+                            <Badge
                               key={role}
                               variant="outline"
-                              className={`${
-                                role === 'organiser' ? 'bg-purple-500/10 text-purple-600 border-purple-500/30 hover:bg-purple-500/20' :
-                                role === 'speaker' ? 'bg-rose-500/10 text-rose-600 border-rose-500/30 hover:bg-rose-500/20' :
-                                role === 'champ' ? 'bg-amber-500/10 text-amber-600 border-amber-500/30 hover:bg-amber-500/20' :
-                                role === 'volunteer' ? 'bg-blue-500/10 text-blue-600 border-blue-500/30 hover:bg-blue-500/20' :
-                                role === 'cloud_club_captain' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/20' :
-                                ''
-                              } text-sm font-medium`}
+                              className={`${role === 'organiser' ? 'bg-purple-500/10 text-purple-600 border-purple-500/30 hover:bg-purple-500/20' :
+                                  role === 'speaker' ? 'bg-rose-500/10 text-rose-600 border-rose-500/30 hover:bg-rose-500/20' :
+                                    role === 'champ' ? 'bg-amber-500/10 text-amber-600 border-amber-500/30 hover:bg-amber-500/20' :
+                                      role === 'volunteer' ? 'bg-blue-500/10 text-blue-600 border-blue-500/30 hover:bg-blue-500/20' :
+                                        role === 'cloud_club_captain' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/20' :
+                                          ''
+                                } text-sm font-medium`}
                             >
                               <span className="mr-1">{roleInfo.icon}</span>
                               {roleInfo.label}
@@ -621,11 +620,11 @@ export default function Profile() {
                         })}
                     </div>
                   )}
-                  
+
                   {/* Champ Captain badge from college lead */}
                   {isChampCaptain && !userCommunityRoles.includes('champ') && (
                     <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 mb-3">
-                      <Badge 
+                      <Badge
                         variant="outline"
                         className="bg-amber-500/10 text-amber-600 border-amber-500/30 hover:bg-amber-500/20 text-sm font-medium"
                       >
@@ -634,7 +633,7 @@ export default function Profile() {
                       </Badge>
                     </div>
                   )}
-                  
+
                   {user.designation && (
                     <div className="flex items-center justify-center md:justify-start gap-2 text-muted-foreground mb-2">
                       <Building className="h-4 w-4" />
@@ -642,9 +641,9 @@ export default function Profile() {
                       {user.company && <span>at {user.company}</span>}
                     </div>
                   )}
-                  
+
                   <p className="text-muted-foreground mb-4 max-w-2xl">{user.bio}</p>
-                  
+
                   <div className="flex flex-wrap gap-4 justify-center md:justify-start mb-4">
                     <div className="flex items-center gap-2 text-sm">
                       <Trophy className="h-4 w-4 text-primary" />
@@ -715,7 +714,7 @@ export default function Profile() {
                 </div>
 
                 <div className="text-center">
-                  <motion.div 
+                  <motion.div
                     className="text-4xl font-bold text-primary"
                     initial={{ scale: 0 }}
                     animate={{ scale: 1 }}
@@ -750,7 +749,7 @@ export default function Profile() {
                     </p>
                   </div>
                 </div>
-                <Button 
+                <Button
                   onClick={() => setShowMeetupDialog(true)}
                   className="bg-amber-500 hover:bg-amber-600 text-white shrink-0"
                 >
@@ -880,7 +879,7 @@ export default function Profile() {
                       </div>
                       <Progress value={(activitySummary.sprintsCompleted / 12) * 100} />
                     </div>
-                    
+
                     <div className="grid grid-cols-2 gap-4">
                       <div className="p-4 rounded-lg bg-muted/50 text-center">
                         <div className="text-2xl font-bold text-primary">{activitySummary.submissions}</div>
@@ -913,15 +912,14 @@ export default function Profile() {
                     <div className="space-y-4">
                       {userSprintsParticipated.length > 0 ? (
                         userSprintsParticipated.map((sprint) => (
-                          <Link 
-                            key={sprint.id} 
+                          <Link
+                            key={sprint.id}
                             to={`/skill-sprint?id=${sprint.id}`}
                             className="flex items-center gap-4 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
                           >
-                            <div className={`w-3 h-3 rounded-full ${
-                              sprint.status === 'active' ? 'bg-green-500' :
-                              sprint.status === 'completed' ? 'bg-primary' : 'bg-muted-foreground'
-                            }`} />
+                            <div className={`w-3 h-3 rounded-full ${sprint.status === 'active' ? 'bg-green-500' :
+                                sprint.status === 'completed' ? 'bg-primary' : 'bg-muted-foreground'
+                              }`} />
                             <div className="flex-1">
                               <p className="font-medium">{sprint.title}</p>
                               <p className="text-sm text-muted-foreground">{sprint.theme}</p>
@@ -989,7 +987,7 @@ export default function Profile() {
                             const meetupId = meetupIdMatch ? meetupIdMatch[1] : '';
                             return generateMeetupAttendanceShare(user.name, activity.description, meetupId);
                           }
-                          
+
                           if (activity.type === 'badge_earned') {
                             const badge = user.badges.find(b => `badge-${b.id}` === activity.id);
                             if (badge) return generateBadgeShare(user.name, badge);
@@ -1004,20 +1002,20 @@ export default function Profile() {
                               '/store'
                             );
                           }
-                          
+
                           // For points_awarded, extract the points from the title string
                           let pointsStr = '0';
                           if (activity.type === 'points_awarded' || activity.type === 'submission_approved') {
-                            const match = activity.type === 'points_awarded' 
+                            const match = activity.type === 'points_awarded'
                               ? activity.title.match(/(\d+)/)
                               : activity.description.match(/(\d+)/);
                             if (match) pointsStr = match[1];
                           }
-                          
-                          const title = activity.type === 'points_awarded' || activity.type === 'blog_submitted' 
-                            ? activity.description 
+
+                          const title = activity.type === 'points_awarded' || activity.type === 'blog_submitted'
+                            ? activity.description
                             : activity.type === 'submission_approved' ? activity.title.replace('Submission approved: ', '')
-                            : activity.title.replace(/^(Attended|Spoke at|Registered for) /i, '');
+                              : activity.title.replace(/^(Attended|Spoke at|Registered for) /i, '');
 
                           return generateProfileActivityShare(
                             user.name,
@@ -1027,7 +1025,7 @@ export default function Profile() {
                             parseInt(pointsStr) || undefined
                           );
                         };
-                        
+
                         const shareData = isOwnProfile ? getShareData() : null;
 
                         const content = activity.link ? (
@@ -1117,7 +1115,7 @@ export default function Profile() {
                               {content}
                               {shareData && (
                                 <div className="absolute right-4 top-1/2 -translate-y-1/2">
-                                  <ShareButton 
+                                  <ShareButton
                                     data={shareData}
                                     variant="outline"
                                     size="sm"
@@ -1182,7 +1180,7 @@ export default function Profile() {
                                     <div className="flex flex-wrap items-center gap-2 mb-2">
                                       <Badge variant={
                                         submission.status === 'approved' ? 'default' :
-                                        submission.status === 'pending' ? 'secondary' : 'destructive'
+                                          submission.status === 'pending' ? 'secondary' : 'destructive'
                                       }>
                                         {submission.status}
                                       </Badge>
@@ -1200,8 +1198,8 @@ export default function Profile() {
                                     )}
                                     <div className="flex flex-wrap gap-2">
                                       {submission.blogUrl && (
-                                        <a 
-                                          href={submission.blogUrl} 
+                                        <a
+                                          href={submission.blogUrl}
                                           target="_blank"
                                           rel="noopener noreferrer"
                                           className="text-sm text-primary hover:underline flex items-center gap-1"
@@ -1211,8 +1209,8 @@ export default function Profile() {
                                         </a>
                                       )}
                                       {(submission.githubUrl || submission.repoUrl) && (
-                                        <a 
-                                          href={submission.githubUrl || submission.repoUrl} 
+                                        <a
+                                          href={submission.githubUrl || submission.repoUrl}
                                           target="_blank"
                                           rel="noopener noreferrer"
                                           className="text-sm text-primary hover:underline flex items-center gap-1"
@@ -1275,7 +1273,7 @@ export default function Profile() {
                       Permanently delete your profile and all associated data. This action cannot be undone.
                     </p>
                   </div>
-                  <Button 
+                  <Button
                     variant="destructive"
                     onClick={() => {
                       setDeleteConfirmText('');
@@ -1313,7 +1311,7 @@ export default function Profile() {
                 Warning: This action is irreversible. All your community contributions and achievements will be lost.
               </p>
             </div>
-            
+
             <div className="space-y-2">
               <Label htmlFor="confirm-delete" className="text-sm">
                 To confirm, type <span className="font-bold select-all text-destructive">confirm delete</span> below:
@@ -1366,7 +1364,7 @@ export default function Profile() {
               Provide your Meetup membership details URL to verify your account and earn 100 points.
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="meetupUrl">Meetup Membership Details URL</Label>
@@ -1393,10 +1391,10 @@ export default function Profile() {
                 <li>Copy the URL from your browser's address bar</li>
               </ol>
             </div>
-            
+
             <div className="flex flex-col gap-2 pt-2">
-              <Button 
-                onClick={handleMeetupVerification} 
+              <Button
+                onClick={handleMeetupVerification}
                 disabled={meetupVerifying || !meetupUrl.trim()}
                 className="w-full"
               >
@@ -1456,7 +1454,7 @@ export default function Profile() {
                   <span className="text-muted-foreground">Status</span>
                   <Badge variant={
                     selectedOrderDetail.status === 'completed' || selectedOrderDetail.status === 'delivered' ? 'default' :
-                    selectedOrderDetail.status === 'cancelled' ? 'destructive' : 'secondary'
+                      selectedOrderDetail.status === 'cancelled' ? 'destructive' : 'secondary'
                   } className={
                     selectedOrderDetail.status === 'completed' || selectedOrderDetail.status === 'delivered' ? 'bg-emerald-500 hover:bg-emerald-600' : ''
                   }>

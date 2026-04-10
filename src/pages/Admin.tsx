@@ -22,10 +22,12 @@ import {
   Copy, Mail, Edit, Trash2, Eye, FileText, User, Video,
   Upload, X, UserPlus, Check, ChevronDown, ChevronUp, GraduationCap,
   Trophy, ListTodo, ClipboardCheck, Target, Shield, UserCog, Medal, Github, ShoppingBag, Loader2, Cloud,
-  Star, Quote, Heart, Zap, CheckSquare, Square, List, Hash, Type
+  Star, Quote, Heart, Zap, CheckSquare, Square, List, Hash, Type, Code2, Sparkles
 } from 'lucide-react';
 import { mockSprints, mockMeetups, Submission, Sprint, Session, SessionPerson, User as UserType, predefinedTasks, mockColleges, getTaskById, communityRoles, mockUserRoles, CommunityRole, UserRoleAssignment, PointActivity, mockPointActivities, Meetup, mockBadges, Badge as BadgeType, BadgeAward, mockBadgeAwards, BadgeCriteriaType, criteriaTypeLabels, BadgeCriteria, mockUsers, SubmissionField } from '@/data/mockData';
 import { createMeetup, updateMeetup, publishMeetup, getMeetups, CreateMeetupData, UpdateMeetupData, deleteMeetup, endMeetup } from '@/lib/meetups';
+import { getSpotlightSubmissions, reviewSpotlight, deleteSpotlight } from '@/lib/spotlight';
+import { SpotlightSubmission, SpotlightType } from '@/data/mockData';
 import { createSprint, updateSprint, addSession, getSprints, deleteSprint, deleteSession, CreateSprintData, UpdateSprintData, CreateSessionData, reviewSubmission } from '@/lib/sprints';
 import { uploadFileToS3 } from '@/lib/s3Upload';
 import { getAllUsers } from '@/lib/userProfile';
@@ -92,11 +94,10 @@ function SubmissionReview({ submission, submissionFormConfig, onAction }: {
                     submission.status === 'approved' ? 'default' :
                       submission.status === 'rejected' ? 'destructive' : 'secondary'
                   }
-                  className={`capitalize font-semibold text-[10px] px-2 py-0.5 rounded-full ${
-                    submission.status === 'approved' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' :
-                    submission.status === 'rejected' ? 'bg-destructive/10 text-destructive border-destructive/20' :
-                    'bg-amber-500/10 text-amber-500 border-amber-500/20'
-                  }`}
+                  className={`capitalize font-semibold text-[10px] px-2 py-0.5 rounded-full ${submission.status === 'approved' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' :
+                      submission.status === 'rejected' ? 'bg-destructive/10 text-destructive border-destructive/20' :
+                        'bg-amber-500/10 text-amber-500 border-amber-500/20'
+                    }`}
                 >
                   {submission.status}
                 </Badge>
@@ -114,17 +115,17 @@ function SubmissionReview({ submission, submissionFormConfig, onAction }: {
                 {(() => {
                   const customFields = submission.customFields || {};
                   const fields = { ...customFields };
-                  
+
                   // Only add legacy field if no Kiro question exists in custom fields/config
-                  const hasKiroInCustom = Object.keys(fields).some(k => 
-                    k.toLowerCase().includes('kiro') || 
+                  const hasKiroInCustom = Object.keys(fields).some(k =>
+                    k.toLowerCase().includes('kiro') ||
                     submissionFormConfig?.find(f => f.id === k)?.label.toLowerCase().includes('kiro')
                   );
-                  
+
                   if (submission.isFirstTimeKiro !== undefined && fields.isFirstTimeKiro === undefined && !hasKiroInCustom) {
                     fields.isFirstTimeKiro = submission.isFirstTimeKiro;
                   }
-                  
+
                   const fieldEntries = Object.entries(fields);
                   if (fieldEntries.length === 0) return null;
 
@@ -139,7 +140,7 @@ function SubmissionReview({ submission, submissionFormConfig, onAction }: {
                           const configField = submissionFormConfig?.find(f => f.id === key);
                           const isKiro = key === 'isFirstTimeKiro' || configField?.label.toLowerCase().includes('kiro');
                           const displayKey = configField?.label || key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
-                          
+
                           // Determine icon and formatting based on value type
                           let Icon = List;
                           let isLong = false;
@@ -167,9 +168,8 @@ function SubmissionReview({ submission, submissionFormConfig, onAction }: {
                                 <Icon className="h-3 w-3 text-primary/60" />
                                 {displayKey}
                               </Label>
-                              <div className={`p-2.5 rounded-lg border bg-background/50 transition-all duration-200 hover:border-primary/20 hover:bg-background/80 ${
-                                isKiro && (value === 'Yes' || value === true || value === 'First Time') ? 'border-primary/30 bg-primary/5' : 'border-border/60'
-                              }`}>
+                              <div className={`p-2.5 rounded-lg border bg-background/50 transition-all duration-200 hover:border-primary/20 hover:bg-background/80 ${isKiro && (value === 'Yes' || value === true || value === 'First Time') ? 'border-primary/30 bg-primary/5' : 'border-border/60'
+                                }`}>
                                 {typeof value === 'boolean' ? (
                                   <div className="flex items-center gap-2">
                                     <div className={`h-2.5 w-2.5 rounded-full ${value ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]' : 'bg-muted'}`} />
@@ -269,11 +269,10 @@ function SubmissionReview({ submission, submissionFormConfig, onAction }: {
 
               {/* Actions / Review Panel */}
               <div className="lg:w-80 flex-shrink-0">
-                <div className={`h-full flex flex-col p-5 rounded-2xl border transition-all duration-500 ${
-                  isPending
+                <div className={`h-full flex flex-col p-5 rounded-2xl border transition-all duration-500 ${isPending
                     ? 'bg-primary/[0.03] border-primary/20 shadow-sm'
                     : 'bg-emerald-500/[0.03] border-emerald-500/20 shadow-sm flex-center'
-                }`}>
+                  }`}>
                   {isPending ? (
                     <div className="space-y-5">
                       <div className="flex items-center justify-between">
@@ -287,7 +286,7 @@ function SubmissionReview({ submission, submissionFormConfig, onAction }: {
                           <span className="text-[11px] font-mono font-bold bg-primary/10 text-primary px-2 rounded-full">{points}</span>
                         </div>
                         <div className="flex gap-2">
-                           <div className="relative flex-1">
+                          <div className="relative flex-1">
                             <Input
                               type="number"
                               value={points}
@@ -353,7 +352,7 @@ function SubmissionReview({ submission, submissionFormConfig, onAction }: {
                       </div>
 
                       <div className="grid grid-cols-2 gap-3 pt-2">
-                         <Button
+                        <Button
                           size="sm"
                           variant="destructive"
                           className="h-10 text-xs font-bold border-b-2 border-destructive-foreground/20 active:border-b-0 active:translate-y-[1px]"
@@ -392,7 +391,7 @@ function SubmissionReview({ submission, submissionFormConfig, onAction }: {
                       {submission.feedback && (
                         <div className="relative px-3 py-2 bg-background border border-border/40 rounded-lg max-w-[200px]">
                           <div className="absolute -top-2 left-1/2 -translate-x-1/2 flex gap-1">
-                             <Quote className="h-3 w-3 text-emerald-500 fill-emerald-500/10" />
+                            <Quote className="h-3 w-3 text-emerald-500 fill-emerald-500/10" />
                           </div>
                           <p className="text-[11px] text-muted-foreground italic leading-tight">
                             {submission.feedback}
@@ -547,13 +546,13 @@ function ViewParticipantsDialog({ sprint }: { sprint: Sprint }) {
 }
 
 
-function SprintFormContent({ 
-  formData, 
-  setFormData, 
-  submissionFields, 
-  setSubmissionFields 
-}: { 
-  formData: any; 
+function SprintFormContent({
+  formData,
+  setFormData,
+  submissionFields,
+  setSubmissionFields
+}: {
+  formData: any;
   setFormData: (data: any) => void;
   submissionFields: SubmissionField[];
   setSubmissionFields: (fields: SubmissionField[]) => void;
@@ -660,7 +659,7 @@ function SprintFormContent({
             <Plus className="h-4 w-4 mr-2" /> Add Field
           </Button>
         </div>
-        
+
         {submissionFields.length > 0 ? (
           <div className="space-y-4">
             {submissionFields.map((field, index) => (
@@ -724,30 +723,30 @@ function SprintFormContent({
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
-                     <div className="space-y-2">
-                        <Label className="text-xs font-semibold">Placeholder (Optional)</Label>
-                        <Input
-                          placeholder="Short hint for users"
-                          value={field.placeholder || ''}
-                          onChange={(e) => {
-                            const newFields = [...submissionFields];
-                            newFields[index].placeholder = e.target.value;
-                            setSubmissionFields(newFields);
-                          }}
-                        />
-                      </div>
-                      <div className="flex items-center space-x-2 pt-8">
-                        <Switch
-                          id={`req-${field.id}`}
-                          checked={field.required}
-                          onCheckedChange={(checked) => {
-                            const newFields = [...submissionFields];
-                            newFields[index].required = checked;
-                            setSubmissionFields(newFields);
-                          }}
-                        />
-                        <Label htmlFor={`req-${field.id}`} className="text-xs font-medium">Required Field</Label>
-                      </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs font-semibold">Placeholder (Optional)</Label>
+                      <Input
+                        placeholder="Short hint for users"
+                        value={field.placeholder || ''}
+                        onChange={(e) => {
+                          const newFields = [...submissionFields];
+                          newFields[index].placeholder = e.target.value;
+                          setSubmissionFields(newFields);
+                        }}
+                      />
+                    </div>
+                    <div className="flex items-center space-x-2 pt-8">
+                      <Switch
+                        id={`req-${field.id}`}
+                        checked={field.required}
+                        onCheckedChange={(checked) => {
+                          const newFields = [...submissionFields];
+                          newFields[index].required = checked;
+                          setSubmissionFields(newFields);
+                        }}
+                      />
+                      <Label htmlFor={`req-${field.id}`} className="text-xs font-medium">Required Field</Label>
+                    </div>
                   </div>
 
                   {(field.type === 'radio' || field.type === 'select') && (
@@ -892,7 +891,7 @@ function CreateSprintDialog({ onSuccess }: { onSuccess?: () => void }) {
 function EditSprintDialog({ sprint, onSuccess }: { sprint: Sprint; onSuccess?: () => void }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  
+
   // Initialize with sprint data
   const startDateObj = parseISO(sprint.startDate);
   const [formData, setFormData] = useState({
@@ -902,16 +901,16 @@ function EditSprintDialog({ sprint, onSuccess }: { sprint: Sprint; onSuccess?: (
     year: startDateObj.getFullYear().toString(),
     githubRepo: sprint.githubRepo || ''
   });
-  
+
   const [submissionFields, setSubmissionFields] = useState<SubmissionField[]>(
     (sprint.submissionFormConfig && sprint.submissionFormConfig.length > 0)
       ? sprint.submissionFormConfig
       : [
-          { id: 'blogUrl', label: 'Blog URL', type: 'text', placeholder: 'AWS Builder Center preferred', required: false },
-          { id: 'githubUrl', label: 'GitHub Repository URL', type: 'text', placeholder: 'https://github.com/username/project', required: false },
-          { id: 'supportingDocuments', label: 'Supporting Documents', type: 'file', placeholder: 'Screenshots, diagrams, or other supporting materials', required: false },
-          { id: 'comments', label: 'Comments', type: 'textarea', placeholder: 'Tell us about what you built and learned...', required: false }
-        ]
+        { id: 'blogUrl', label: 'Blog URL', type: 'text', placeholder: 'AWS Builder Center preferred', required: false },
+        { id: 'githubUrl', label: 'GitHub Repository URL', type: 'text', placeholder: 'https://github.com/username/project', required: false },
+        { id: 'supportingDocuments', label: 'Supporting Documents', type: 'file', placeholder: 'Screenshots, diagrams, or other supporting materials', required: false },
+        { id: 'comments', label: 'Comments', type: 'textarea', placeholder: 'Tell us about what you built and learned...', required: false }
+      ]
   );
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -3834,7 +3833,7 @@ function AwardPointsDialog({ college, onSuccess }: { college: College; onSuccess
 
       // Update college with new total points
       const newTotalPoints = college.totalPoints + formData.points;
-      
+
       const newActivity = {
         id: `pa-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         points: formData.points,
@@ -4474,7 +4473,7 @@ function CreateCloudClubDialog({ isOpen, onOpenChange, onSuccess, allUsers = [] 
           </div>
 
           <div className="flex justify-end gap-2 pt-4">
-             <Button
+            <Button
               type="button"
               variant="outline"
               onClick={() => onOpenChange(false)}
@@ -5644,11 +5643,11 @@ function CloudClubManagementCard({ club, onDelete, onUpdate, allUsers, allTasks 
                           <Badge className="bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 shadow-none">
                             {task.points} pts
                           </Badge>
-                          <VerifyCloudClubTaskDialog 
-                            club={club} 
-                            taskId={task.id} 
-                            task={task} 
-                            onSuccess={onUpdate} 
+                          <VerifyCloudClubTaskDialog
+                            club={club}
+                            taskId={task.id}
+                            task={task}
+                            onSuccess={onUpdate}
                           />
                         </div>
                       </div>
@@ -6151,7 +6150,7 @@ function AwardCloudClubPointsDialog({ club, onSuccess }: { club: any; onSuccess:
       const { updateCloudClub } = await import('@/lib/cloudClubs');
 
       const newTotalPoints = (club.totalPoints || 0) + formData.points;
-      
+
       const newActivity = {
         id: `pa-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         points: formData.points,
@@ -6734,7 +6733,7 @@ function BadgesTab({ allUsers }: { allUsers: UserType[] }) {
     try {
       // Import updateUserProfile dynamically to avoid circular dependencies if any
       const { updateUserProfile } = await import('@/lib/userProfile');
-      
+
       // Update user in the backend
       await updateUserProfile(selectedUserId, { badges: updatedBadges } as any);
 
@@ -6756,7 +6755,7 @@ function BadgesTab({ allUsers }: { allUsers: UserType[] }) {
       if (userIndex !== -1) {
         mockUsers[userIndex].badges.push(newBadgeForUser);
       }
-      
+
       // Update user in the allUsers prop to reflect immediately in the UI
       user.badges.push(newBadgeForUser);
 
@@ -6764,7 +6763,7 @@ function BadgesTab({ allUsers }: { allUsers: UserType[] }) {
       setSelectedUserId('');
       setAwardReason('');
       setIsAwardDialogOpen(false);
-      
+
       // Refresh auth user if awarding to self
       if (authUser?.id === selectedUserId) {
         await refreshUser();
@@ -7093,6 +7092,304 @@ function BadgesTab({ allUsers }: { allUsers: UserType[] }) {
   );
 }
 
+const spotlightTypeConfig: Record<string, { label: string; icon: typeof Code2; color: string }> = {
+  project: { label: 'Project', icon: Code2, color: 'text-violet-400' },
+  blog: { label: 'Blog', icon: FileText, color: 'text-sky-400' },
+  video: { label: 'Video', icon: Video, color: 'text-rose-400' },
+  other: { label: 'Other', icon: Sparkles, color: 'text-amber-400' },
+};
+
+function SpotlightManagementTab({
+  spotlightSubmissions,
+  pendingSpotlights,
+  approvedSpotlights,
+  rejectedSpotlights,
+  loading,
+  onRefresh,
+  authUser,
+}: {
+  spotlightSubmissions: SpotlightSubmission[];
+  pendingSpotlights: SpotlightSubmission[];
+  approvedSpotlights: SpotlightSubmission[];
+  rejectedSpotlights: SpotlightSubmission[];
+  loading: boolean;
+  onRefresh: () => void;
+  authUser: any;
+}) {
+  const [reviewPoints, setReviewPoints] = useState<Record<string, number>>({});
+  const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
+  const [showNotes, setShowNotes] = useState<Record<string, boolean>>({});
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  const handleReview = async (id: string, status: 'approved' | 'rejected') => {
+    setActionLoading(id);
+    try {
+      const pts = status === 'approved' ? (reviewPoints[id] || 0) : 0;
+      await reviewSpotlight(id, {
+        status,
+        points: pts,
+        adminNotes: reviewNotes[id] || undefined,
+        reviewedBy: authUser?.id || '',
+        reviewerName: authUser?.name,
+      });
+      toast.success(`Spotlight ${status}${pts > 0 ? ` with ${pts} points` : ''}`);
+      onRefresh();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to review');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this spotlight submission?')) return;
+    try {
+      await deleteSpotlight(id);
+      toast.success('Spotlight deleted');
+      onRefresh();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to delete');
+    }
+  };
+
+  const renderSpotlightCard = (sub: SpotlightSubmission, showActions: boolean) => {
+    const config = spotlightTypeConfig[sub.type] || spotlightTypeConfig.other;
+    const Icon = config.icon;
+
+    return (
+      <Card key={sub.id} className="glass-card overflow-hidden border-border/40 hover:border-primary/30 transition-all duration-300">
+        <CardContent className="p-0">
+          <div className="flex flex-col lg:flex-row">
+            {/* Image / Type preview */}
+            <div className="lg:w-48 h-32 lg:h-auto flex-shrink-0 relative overflow-hidden bg-muted/30">
+              {sub.imageUrl ? (
+                <img src={sub.imageUrl} alt={sub.title} className="w-full h-full object-cover" />
+              ) : (
+                <div className="flex items-center justify-center h-full">
+                  <Icon className={`h-12 w-12 ${config.color} opacity-40`} />
+                </div>
+              )}
+              <div className="absolute top-2 left-2">
+                <Badge className={`bg-background/80 backdrop-blur-sm border-border/50 ${config.color} gap-1 py-0.5 px-2 text-[10px] font-bold uppercase tracking-wider`}>
+                  <Icon className="h-3 w-3" />
+                  {config.label}
+                </Badge>
+              </div>
+            </div>
+
+            {/* Info */}
+            <div className="flex-1 p-4 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h4 className="font-bold text-sm truncate">{sub.title}</h4>
+                  <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{sub.description}</p>
+                </div>
+                <Badge
+                  className={`capitalize font-semibold text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 ${sub.status === 'approved' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' :
+                      sub.status === 'rejected' ? 'bg-destructive/10 text-destructive border-destructive/20' :
+                        'bg-amber-500/10 text-amber-500 border-amber-500/20'
+                    }`}
+                >
+                  {sub.status}
+                </Badge>
+              </div>
+
+              {/* Tags */}
+              {sub.tags && sub.tags.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {sub.tags.map((tag) => (
+                    <span key={tag} className="text-[10px] font-semibold uppercase tracking-wider bg-muted/50 text-muted-foreground px-1.5 py-0.5 rounded-full border border-border/40">
+                      #{tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* User & Link */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Avatar className="h-6 w-6 border border-border/50">
+                    <AvatarImage src={sub.userAvatar} />
+                    <AvatarFallback className="text-[9px] bg-primary/10 text-primary font-bold">{sub.userName.charAt(0)}</AvatarFallback>
+                  </Avatar>
+                  <span className="text-xs text-muted-foreground">{sub.userName}</span>
+                  <span className="text-[10px] text-muted-foreground/60">
+                    {new Date(sub.submittedAt).toLocaleDateString()}
+                  </span>
+                </div>
+                <a href={sub.url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline flex items-center gap-1">
+                  <ExternalLink className="h-3 w-3" /> View
+                </a>
+              </div>
+
+              {/* Review result info */}
+              {sub.status !== 'pending' && (
+                <div className="text-[10px] text-muted-foreground flex items-center gap-3 pt-1 border-t border-border/30">
+                  {sub.points > 0 && <span className="font-bold text-amber-500">⭐ {sub.points} pts</span>}
+                  {sub.reviewerName && <span>Reviewed by {sub.reviewerName}</span>}
+                  {sub.adminNotes && <span className="italic">&ldquo;{sub.adminNotes}&rdquo;</span>}
+                </div>
+              )}
+
+              {/* Action buttons for pending submissions */}
+              {showActions && sub.status === 'pending' && (
+                <div className="pt-3 border-t border-border/30 space-y-3">
+                  {/* Points */}
+                  <div className="flex items-center gap-3">
+                    <Label className="text-[11px] font-bold min-w-fit">Award Points</Label>
+                    <div className="relative flex-1 max-w-[140px]">
+                      <Input
+                        type="number"
+                        value={reviewPoints[sub.id] || 0}
+                        onChange={(e) => setReviewPoints({ ...reviewPoints, [sub.id]: Number(e.target.value) })}
+                        className="h-8 text-xs pl-7 font-bold"
+                        min={0}
+                        max={1000}
+                      />
+                      <Star className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-amber-500" />
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className={`h-6 text-[10px] font-bold ${showNotes[sub.id] ? 'text-primary' : 'text-muted-foreground'}`}
+                      onClick={() => setShowNotes({ ...showNotes, [sub.id]: !showNotes[sub.id] })}
+                    >
+                      {showNotes[sub.id] ? 'Cancel' : 'Add Note +'}
+                    </Button>
+                  </div>
+                  {/* Notes */}
+                  <AnimatePresence>
+                    {showNotes[sub.id] && (
+                      <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}>
+                        <Textarea
+                          placeholder="Admin notes..."
+                          value={reviewNotes[sub.id] || ''}
+                          onChange={(e) => setReviewNotes({ ...reviewNotes, [sub.id]: e.target.value })}
+                          className="text-xs min-h-[60px] resize-none"
+                        />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                  {/* Buttons */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      className="h-9 text-xs font-bold"
+                      disabled={actionLoading === sub.id}
+                      onClick={() => handleReview(sub.id, 'rejected')}
+                    >
+                      {actionLoading === sub.id ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <XCircle className="h-3.5 w-3.5 mr-1" />}
+                      Reject
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="h-9 text-xs font-bold bg-[#f97316] hover:bg-[#ea580c] text-white"
+                      disabled={actionLoading === sub.id}
+                      onClick={() => handleReview(sub.id, 'approved')}
+                    >
+                      {actionLoading === sub.id ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <CheckCircle className="h-3.5 w-3.5 mr-1" />}
+                      Approve
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Delete button for reviewed submissions */}
+              {sub.status !== 'pending' && (
+                <div className="pt-2">
+                  <Button variant="ghost" size="sm" className="h-7 text-[10px] text-destructive hover:text-destructive" onClick={() => handleDelete(sub.id)}>
+                    <Trash2 className="h-3 w-3 mr-1" /> Remove
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  if (loading) {
+    return (
+      <div className="text-center py-12">
+        <Clock className="h-8 w-8 animate-spin mx-auto mb-4 text-muted-foreground" />
+        <p className="text-muted-foreground">Loading spotlight submissions...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-8">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-semibold flex items-center gap-2">
+          <Star className="h-5 w-5 text-amber-500" />
+          Community Spotlight Management
+        </h2>
+        <Badge variant="outline" className="text-xs">{spotlightSubmissions.length} total</Badge>
+      </div>
+
+      {/* Pending */}
+      <div className="space-y-4">
+        <h3 className="text-sm font-bold flex items-center gap-2 uppercase tracking-wide text-amber-500">
+          <Clock className="h-4 w-4" />
+          Pending Review ({pendingSpotlights.length})
+        </h3>
+        {pendingSpotlights.length === 0 ? (
+          <div className="bg-muted/30 rounded-lg py-8 text-center">
+            <Check className="h-8 w-8 text-emerald-500 mx-auto mb-2" />
+            <p className="text-sm text-muted-foreground">All spotlight submissions have been reviewed.</p>
+          </div>
+        ) : (
+          <div className="space-y-4 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
+            {pendingSpotlights.map((sub) => renderSpotlightCard(sub, true))}
+          </div>
+        )}
+      </div>
+
+      {/* Approved */}
+      <Collapsible defaultOpen={false}>
+        <CollapsibleTrigger asChild>
+          <Button variant="ghost" className="w-full flex justify-between items-center py-4 border-t rounded-none hover:bg-muted/50 group">
+            <div className="flex items-center gap-2 font-semibold text-sm uppercase tracking-wide text-emerald-500">
+              <CheckCircle className="h-4 w-4" />
+              Approved ({approvedSpotlights.length})
+            </div>
+            <ChevronDown className="h-4 w-4 transition-transform duration-200 group-data-[state=open]:rotate-180" />
+          </Button>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="space-y-4 pt-4 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+          {approvedSpotlights.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">No approved spotlights yet.</p>
+          ) : (
+            approvedSpotlights.map((sub) => renderSpotlightCard(sub, false))
+          )}
+        </CollapsibleContent>
+      </Collapsible>
+
+      {/* Rejected */}
+      <Collapsible defaultOpen={false}>
+        <CollapsibleTrigger asChild>
+          <Button variant="ghost" className="w-full flex justify-between items-center py-4 border-t rounded-none hover:bg-muted/50 group">
+            <div className="flex items-center gap-2 font-semibold text-sm uppercase tracking-wide text-destructive">
+              <XCircle className="h-4 w-4" />
+              Rejected ({rejectedSpotlights.length})
+            </div>
+            <ChevronDown className="h-4 w-4 transition-transform duration-200 group-data-[state=open]:rotate-180" />
+          </Button>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="space-y-4 pt-4 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+          {rejectedSpotlights.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">No rejected submissions.</p>
+          ) : (
+            rejectedSpotlights.map((sub) => renderSpotlightCard(sub, false))
+          )}
+        </CollapsibleContent>
+      </Collapsible>
+    </div>
+  );
+}
+
 export default function Admin() {
   const { user: authUser, refreshUser } = useAuth();
   const [activeTab, setActiveTab] = useState('sprints');
@@ -7103,11 +7400,16 @@ export default function Admin() {
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [allSubmissions, setAllSubmissions] = useState<Array<Submission & { sprintTitle: string; sprintId: string }>>([]);
   const [loadingSubmissions, setLoadingSubmissions] = useState(false);
+  const [spotlightSubmissions, setSpotlightSubmissions] = useState<SpotlightSubmission[]>([]);
+  const [loadingSpotlight, setLoadingSpotlight] = useState(false);
   const isAdmin = authUser?.role === 'organiser' || authUser?.role === 'admin';
   const isSpeaker = authUser?.role === 'speaker';
 
   const pendingSubmissions = allSubmissions.filter(s => s.status === 'pending');
   const reviewedSubmissions = allSubmissions.filter(s => s.status !== 'pending');
+  const pendingSpotlights = spotlightSubmissions.filter(s => s.status === 'pending');
+  const approvedSpotlights = spotlightSubmissions.filter(s => s.status === 'approved');
+  const rejectedSpotlights = spotlightSubmissions.filter(s => s.status === 'rejected');
 
   // Fetch users from API
   const fetchUsers = async () => {
@@ -7159,6 +7461,20 @@ export default function Admin() {
     }
   };
 
+  // Fetch spotlight submissions
+  const fetchSpotlightSubmissions = async () => {
+    setLoadingSpotlight(true);
+    try {
+      const allSpotlight = await getSpotlightSubmissions();
+      setSpotlightSubmissions(allSpotlight);
+    } catch (error) {
+      console.error('Error fetching spotlight submissions:', error);
+      setSpotlightSubmissions([]);
+    } finally {
+      setLoadingSpotlight(false);
+    }
+  };
+
   // Delete sprint
   const handleDeleteSprint = async (sprintId: string, sprintTitle: string) => {
     if (!confirm(`Are you sure you want to delete "${sprintTitle}"? This will also delete all sessions in this sprint. This action cannot be undone.`)) {
@@ -7205,6 +7521,13 @@ export default function Admin() {
       fetchMeetupCount();
     }
   }, [isAdmin]);
+
+  // Load spotlight submissions when spotlight tab is active
+  useEffect(() => {
+    if (isAdmin && activeTab === 'spotlight') {
+      fetchSpotlightSubmissions();
+    }
+  }, [isAdmin, activeTab]);
 
   const handleSubmissionAction = async (submissionId: string, sprintId: string, action: 'approve' | 'reject', points?: number, feedback?: string) => {
     try {
@@ -7327,6 +7650,15 @@ export default function Admin() {
                     <Award className="h-4 w-4" />
                     Certifications
                   </TabsTrigger>
+                  <TabsTrigger value="spotlight" className="gap-2">
+                    <Star className="h-4 w-4" />
+                    Spotlight
+                    {pendingSpotlights.length > 0 && (
+                      <Badge variant="destructive" className="ml-1 h-5 w-5 p-0 flex items-center justify-center">
+                        {pendingSpotlights.length}
+                      </Badge>
+                    )}
+                  </TabsTrigger>
                 </>
               )}
             </TabsList>
@@ -7353,7 +7685,7 @@ export default function Admin() {
                           </CardContent>
                         </Card>
                       ) : (
-                          sprints.map(sprint => {
+                        sprints.map(sprint => {
                           const sprintSubmissions = allSubmissions.filter(sub => sub.sprintId === sprint.id);
                           const sprintPending = sprintSubmissions.filter(sub => sub.status === 'pending');
                           const sprintReviewed = sprintSubmissions.filter(sub => sub.status !== 'pending');
@@ -7502,6 +7834,18 @@ export default function Admin() {
 
                 <TabsContent value="certifications">
                   <CertificationGroupsManagement allUsers={allUsers} />
+                </TabsContent>
+
+                <TabsContent value="spotlight">
+                  <SpotlightManagementTab
+                    spotlightSubmissions={spotlightSubmissions}
+                    pendingSpotlights={pendingSpotlights}
+                    approvedSpotlights={approvedSpotlights}
+                    rejectedSpotlights={rejectedSpotlights}
+                    loading={loadingSpotlight}
+                    onRefresh={fetchSpotlightSubmissions}
+                    authUser={authUser}
+                  />
                 </TabsContent>
               </>
             )}

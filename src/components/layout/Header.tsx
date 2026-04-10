@@ -22,6 +22,9 @@ const navItems = [{
   name: 'Cloud Clubs',
   path: '/cloud-clubs'
 }, {
+  name: 'Community Spotlight',
+  path: '/community-spotlight'
+}, {
   name: 'College Champs',
   path: '/college-champs'
 }, {
@@ -36,7 +39,7 @@ export function Header() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, isAuthenticated, isLoading, signOut } = useAuth();
-  
+
   const handleLogout = async () => {
     try {
       await signOut();
@@ -49,127 +52,127 @@ export function Header() {
   const isAdmin = user?.role === 'organiser' || user?.role === 'admin';
   const isSpeaker = user?.role === 'speaker';
   return <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container mx-auto flex h-16 items-center justify-between px-4">
-        {/* Logo */}
-        <Link to="/" className="flex items-center gap-3">
-          <img src={logo} alt="AWS User Group" className="h-10 w-auto" />
-          
-        </Link>
+    <div className="container mx-auto flex h-16 items-center justify-between px-4">
+      {/* Logo */}
+      <Link to="/" className="flex items-center gap-3">
+        <img src={logo} alt="AWS User Group" className="h-10 w-auto" />
 
-        {/* Desktop Navigation */}
-        <nav className="hidden lg:flex items-center gap-1">
-          {navItems.map(item => <Link key={item.path} to={item.path} className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${location.pathname === item.path ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}>
-              {item.name}
-            </Link>)}
-          {(isAdmin || isSpeaker) && <Link to="/admin" className={`px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-1 ${location.pathname.startsWith('/admin') ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}>
-              <Shield className="h-4 w-4" />
-              Admin
-            </Link>}
-          {isAdmin && <Link to="/dashboard" className={`px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-1 ${location.pathname === '/dashboard' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}>
-              <Activity className="h-4 w-4" />
-              Dashboard
-            </Link>}
-        </nav>
+      </Link>
 
-        {/* Auth Section */}
-        <div className="flex items-center gap-4">
-          {isLoading ? (
-            <div className="h-10 w-10 rounded-full bg-muted animate-pulse" />
-          ) : isAuthenticated && user ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="relative h-10 w-10 rounded-full">
-                  <Avatar className="h-10 w-10 border-2 border-primary">
-                    <AvatarImage src={user.avatar} alt={user.name} />
-                    <AvatarFallback>{user.name?.charAt(0) || 'U'}</AvatarFallback>
-                  </Avatar>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-56" align="end">
-                <div className="flex items-center gap-2 p-2">
-                  <Avatar className="h-8 w-8">
-                    <AvatarImage src={user.avatar} alt={user.name} />
-                    <AvatarFallback>{user.name?.charAt(0) || 'U'}</AvatarFallback>
-                  </Avatar>
-                  <div className="flex flex-col">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium">{user.name}</p>
-                      <Badge variant="outline" className="text-xs capitalize">
-                        {user.role}
-                      </Badge>
-                    </div>
-                    <p className="text-xs text-muted-foreground">{user.points} points</p>
+      {/* Desktop Navigation */}
+      <nav className="hidden lg:flex items-center gap-1">
+        {navItems.map(item => <Link key={item.path} to={item.path} className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${location.pathname === item.path ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}>
+          {item.name}
+        </Link>)}
+        {(isAdmin || isSpeaker) && <Link to="/admin" className={`px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-1 ${location.pathname.startsWith('/admin') ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}>
+          <Shield className="h-4 w-4" />
+          Admin
+        </Link>}
+        {isAdmin && <Link to="/dashboard" className={`px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-1 ${location.pathname === '/dashboard' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}>
+          <Activity className="h-4 w-4" />
+          Dashboard
+        </Link>}
+      </nav>
+
+      {/* Auth Section */}
+      <div className="flex items-center gap-4">
+        {isLoading ? (
+          <div className="h-10 w-10 rounded-full bg-muted animate-pulse" />
+        ) : isAuthenticated && user ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" className="relative h-10 w-10 rounded-full">
+                <Avatar className="h-10 w-10 border-2 border-primary">
+                  <AvatarImage src={user.avatar} alt={user.name} />
+                  <AvatarFallback>{user.name?.charAt(0) || 'U'}</AvatarFallback>
+                </Avatar>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-56" align="end">
+              <div className="flex items-center gap-2 p-2">
+                <Avatar className="h-8 w-8">
+                  <AvatarImage src={user.avatar} alt={user.name} />
+                  <AvatarFallback>{user.name?.charAt(0) || 'U'}</AvatarFallback>
+                </Avatar>
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium">{user.name}</p>
+                    <Badge variant="outline" className="text-xs capitalize">
+                      {user.role}
+                    </Badge>
                   </div>
+                  <p className="text-xs text-muted-foreground">{user.points} points</p>
                 </div>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem asChild>
-                  <Link to="/profile" className="flex items-center cursor-pointer">
-                    <User className="h-4 w-4 mr-2" />
-                    Profile
-                  </Link>
-                </DropdownMenuItem>
-                {(isAdmin || isSpeaker) && (
-                  <DropdownMenuItem asChild>
-                    <Link to="/admin" className="flex items-center cursor-pointer">
-                      <Shield className="h-4 w-4 mr-2" />
-                      Admin Panel
-                    </Link>
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleLogout} className="text-destructive cursor-pointer flex items-center">
-                  <LogOut className="h-4 w-4 mr-2" />
-                  Log out
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ) : (
-            <div className="hidden sm:flex items-center gap-2">
-              <Button variant="ghost" asChild>
-                <Link to="/login">Log in</Link>
-              </Button>
-              <Button asChild>
-                <Link to="/signup">Sign up</Link>
-              </Button>
-            </div>
-          )}
-
-          {/* Mobile Menu Button */}
-          <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
-            {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-          </Button>
-        </div>
-      </div>
-
-      {/* Mobile Navigation */}
-      {mobileMenuOpen && <div className="lg:hidden border-t border-border bg-background animate-fade-in">
-          <nav className="container mx-auto px-4 py-4 flex flex-col gap-2">
-            {navItems.map(item => <Link key={item.path} to={item.path} onClick={() => setMobileMenuOpen(false)} className={`px-4 py-3 rounded-md text-sm font-medium transition-colors ${location.pathname === item.path ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}>
-                {item.name}
-              </Link>)}
-            {(isAdmin || isSpeaker) && <Link to="/admin" onClick={() => setMobileMenuOpen(false)} className={`px-4 py-3 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${location.pathname.startsWith('/admin') ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}>
-                <Shield className="h-4 w-4" />
-                Admin Panel
-              </Link>}
-            {isAdmin && <Link to="/dashboard" onClick={() => setMobileMenuOpen(false)} className={`px-4 py-3 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${location.pathname === '/dashboard' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}>
-                <Activity className="h-4 w-4" />
-                Dashboard
-              </Link>}
-            {!isAuthenticated && !isLoading && (
-              <div className="flex flex-col gap-2 pt-4 border-t border-border mt-2">
-                <Button variant="outline" asChild>
-                  <Link to="/login" onClick={() => setMobileMenuOpen(false)}>
-                    Log in
-                  </Link>
-                </Button>
-                <Button asChild>
-                  <Link to="/signup" onClick={() => setMobileMenuOpen(false)}>
-                    Sign up
-                  </Link>
-                </Button>
               </div>
-            )}
-          </nav>
-        </div>}
-    </header>;
+              <DropdownMenuSeparator />
+              <DropdownMenuItem asChild>
+                <Link to="/profile" className="flex items-center cursor-pointer">
+                  <User className="h-4 w-4 mr-2" />
+                  Profile
+                </Link>
+              </DropdownMenuItem>
+              {(isAdmin || isSpeaker) && (
+                <DropdownMenuItem asChild>
+                  <Link to="/admin" className="flex items-center cursor-pointer">
+                    <Shield className="h-4 w-4 mr-2" />
+                    Admin Panel
+                  </Link>
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleLogout} className="text-destructive cursor-pointer flex items-center">
+                <LogOut className="h-4 w-4 mr-2" />
+                Log out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          <div className="hidden sm:flex items-center gap-2">
+            <Button variant="ghost" asChild>
+              <Link to="/login">Log in</Link>
+            </Button>
+            <Button asChild>
+              <Link to="/signup">Sign up</Link>
+            </Button>
+          </div>
+        )}
+
+        {/* Mobile Menu Button */}
+        <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
+          {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+        </Button>
+      </div>
+    </div>
+
+    {/* Mobile Navigation */}
+    {mobileMenuOpen && <div className="lg:hidden border-t border-border bg-background animate-fade-in">
+      <nav className="container mx-auto px-4 py-4 flex flex-col gap-2">
+        {navItems.map(item => <Link key={item.path} to={item.path} onClick={() => setMobileMenuOpen(false)} className={`px-4 py-3 rounded-md text-sm font-medium transition-colors ${location.pathname === item.path ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}>
+          {item.name}
+        </Link>)}
+        {(isAdmin || isSpeaker) && <Link to="/admin" onClick={() => setMobileMenuOpen(false)} className={`px-4 py-3 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${location.pathname.startsWith('/admin') ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}>
+          <Shield className="h-4 w-4" />
+          Admin Panel
+        </Link>}
+        {isAdmin && <Link to="/dashboard" onClick={() => setMobileMenuOpen(false)} className={`px-4 py-3 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${location.pathname === '/dashboard' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}>
+          <Activity className="h-4 w-4" />
+          Dashboard
+        </Link>}
+        {!isAuthenticated && !isLoading && (
+          <div className="flex flex-col gap-2 pt-4 border-t border-border mt-2">
+            <Button variant="outline" asChild>
+              <Link to="/login" onClick={() => setMobileMenuOpen(false)}>
+                Log in
+              </Link>
+            </Button>
+            <Button asChild>
+              <Link to="/signup" onClick={() => setMobileMenuOpen(false)}>
+                Sign up
+              </Link>
+            </Button>
+          </div>
+        )}
+      </nav>
+    </div>}
+  </header>;
 }

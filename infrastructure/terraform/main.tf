@@ -413,7 +413,9 @@ resource "aws_iam_role_policy" "lambda_dynamodb" {
           aws_dynamodb_table.discussions.arn,
           "${aws_dynamodb_table.discussions.arn}/index/*",
           aws_dynamodb_table.orders.arn,
-          "${aws_dynamodb_table.orders.arn}/index/*"
+          "${aws_dynamodb_table.orders.arn}/index/*",
+          aws_dynamodb_table.spotlight.arn,
+          "${aws_dynamodb_table.spotlight.arn}/index/*"
         ]
       }
     ]
@@ -2285,6 +2287,7 @@ resource "aws_api_gateway_deployment" "api" {
       aws_api_gateway_integration.users_points_activities_get_lambda.id,
       aws_api_gateway_integration.users_id_points_activities_get_lambda.id,
       aws_lambda_function.cloud_clubs_crud.source_code_hash,
+      aws_lambda_function.spotlight_crud.source_code_hash,
     ]))
   }
 
@@ -2432,6 +2435,18 @@ resource "aws_api_gateway_deployment" "api" {
     aws_api_gateway_integration_response.cloud_clubs_submissions_id_review_options,
     aws_api_gateway_integration_response.cloud_clubs_tasks_options,
     aws_api_gateway_integration_response.cloud_clubs_tasks_id_options,
+    # Spotlight integrations
+    aws_api_gateway_integration.spotlight_get_lambda,
+    aws_api_gateway_integration.spotlight_post_lambda,
+    aws_api_gateway_integration.spotlight_options_lambda,
+    aws_api_gateway_integration.spotlight_id_get_lambda,
+    aws_api_gateway_integration.spotlight_id_delete_lambda,
+    aws_api_gateway_integration.spotlight_id_options_lambda,
+    aws_api_gateway_integration.spotlight_id_review_post_lambda,
+    aws_api_gateway_integration.spotlight_id_review_options_lambda,
+    aws_api_gateway_integration_response.spotlight_options,
+    aws_api_gateway_integration_response.spotlight_id_options,
+    aws_api_gateway_integration_response.spotlight_id_review_options,
   ]
 
   rest_api_id = aws_api_gateway_rest_api.api.id

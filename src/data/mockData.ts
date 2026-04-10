@@ -232,6 +232,29 @@ export interface Submission {
   reviewedAt?: string;
 }
 
+export type SpotlightType = 'project' | 'blog' | 'video' | 'other';
+export type SpotlightStatus = 'pending' | 'approved' | 'rejected';
+
+export interface SpotlightSubmission {
+  id: string;
+  userId: string;
+  userName: string;
+  userAvatar?: string;
+  title: string;
+  description: string;
+  type: SpotlightType;
+  url: string;
+  imageUrl?: string;
+  tags: string[];
+  status: SpotlightStatus;
+  points: number;
+  submittedAt: string;
+  reviewedBy?: string;
+  reviewerName?: string;
+  reviewedAt?: string;
+  adminNotes?: string;
+}
+
 export interface AgendaItem {
   time: string;
   title: string;

@@ -465,7 +465,7 @@ export default function CommunitySpotlight() {
                 Showcase Your Work
               </h1>
               <p className="text-lg text-muted-foreground max-w-2xl mx-auto mt-4 leading-relaxed">
-                Share your open-source projects, technical blogs, videos, and creative work with the AWS User Group community.
+                Share your open-source projects, technical blogs, videos, and creative work with the AWS User Group Madurai community.
               </p>
             </motion.div>
 

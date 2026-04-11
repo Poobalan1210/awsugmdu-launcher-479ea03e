@@ -905,7 +905,11 @@ export default function CollegeChamps() {
   const sortedColleges = [...colleges].sort((a, b) => b.totalPoints - a.totalPoints);
   
   const totalPoints = colleges.reduce((sum, c) => sum + (c.totalPoints || 0), 0);
-  const totalEvents = colleges.reduce((sum, c) => sum + (c.hostedEvents?.filter(e => e.status === 'completed').length || 0), 0);
+  const totalEvents = colleges.reduce((sum, c) => {
+    const events = c.hostedEvents || [];
+    const now = new Date();
+    return sum + events.filter(e => e.status === 'completed' || new Date(e.date) < now).length;
+  }, 0);
   const totalMembers = colleges.reduce((sum, c) => sum + (c.members?.length || 0), 0);
 
   return (

@@ -33,6 +33,9 @@ const navItems = [{
 }, {
   name: 'Store',
   path: '/store'
+}, {
+  name: 'AWS Events',
+  path: '/aws-events'
 }];
 export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);

@@ -1,0 +1,11 @@
+{
+  "name": "aws-events-crud",
+  "version": "1.0.0",
+  "description": "Lambda function for AWS Events management",
+  "main": "index.js",
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.621.0",
+    "@aws-sdk/lib-dynamodb": "^3.621.0",
+    "uuid": "^9.0.1"
+  }
+}

@@ -255,6 +255,30 @@ export interface SpotlightSubmission {
   adminNotes?: string;
 }
 
+export interface AWSEvent {
+  id: string;
+  title: string;
+  description: string;
+  date: string;
+  points: number;
+  createdAt?: string;
+}
+
+export interface AWSEventSubmission {
+  id: string;
+  eventId: string;
+  userId: string;
+  userName: string;
+  userAvatar?: string;
+  linkedInUrl: string;
+  photoUrl: string;
+  status: 'pending' | 'approved' | 'rejected';
+  submittedAt: string;
+  reviewedBy?: string;
+  reviewerName?: string;
+  reviewedAt?: string;
+}
+
 export interface AgendaItem {
   time: string;
   title: string;

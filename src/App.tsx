@@ -19,6 +19,7 @@ import Meetups from "./pages/Meetups";
 import Leaderboard from "./pages/Leaderboard";
 import Admin from "./pages/Admin";
 import Dashboard from "./pages/Dashboard";
+import AWSEvents from "./pages/AWSEvents";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -99,6 +100,11 @@ const App = () => (
             <Route path="/admin" element={
               <ProtectedRoute>
                 <Admin />
+              </ProtectedRoute>
+            } />
+            <Route path="/aws-events" element={
+              <ProtectedRoute>
+                <AWSEvents />
               </ProtectedRoute>
             } />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

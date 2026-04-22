@@ -2288,6 +2288,7 @@ resource "aws_api_gateway_deployment" "api" {
       aws_api_gateway_integration.users_id_points_activities_get_lambda.id,
       aws_lambda_function.cloud_clubs_crud.source_code_hash,
       aws_lambda_function.spotlight_crud.source_code_hash,
+      aws_lambda_function.aws_events_crud.source_code_hash,
     ]))
   }
 
@@ -2447,6 +2448,11 @@ resource "aws_api_gateway_deployment" "api" {
     aws_api_gateway_integration_response.spotlight_options,
     aws_api_gateway_integration_response.spotlight_id_options,
     aws_api_gateway_integration_response.spotlight_id_review_options,
+    # AWS Events integrations
+    aws_api_gateway_integration.aws_events_lambda,
+    aws_api_gateway_integration.aws_events_options,
+    aws_api_gateway_method_response.aws_events_options_200,
+    aws_api_gateway_integration_response.aws_events_options,
   ]
 
   rest_api_id = aws_api_gateway_rest_api.api.id

@@ -43,6 +43,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import StoreManagement from '@/components/admin/StoreManagement';
 import CertificationGroupsManagement from '@/components/admin/CertificationGroupsManagement';
 import SprintsTab from '@/components/admin/tabs/SprintsTab';
+import AWSEventsTab from '@/components/admin/tabs/AWSEventsTab';
 import { SessionPerson, SessionPeopleManager, userToSessionPerson, userToMeetupPerson, UserSelect, UserMultiSelect, MeetupPeopleManager } from '@/components/admin/shared/AdminShared';
 import { TaskSubmissionsPanel } from '@/components/college-champs/TaskSubmissionsPanel';
 import { CloudClubTaskSubmissionsPanel } from '@/components/cloud-clubs/TaskSubmissionsPanel';
@@ -5865,12 +5866,20 @@ export default function Admin() {
                       </Badge>
                     )}
                   </TabsTrigger>
+                  <TabsTrigger value="aws-events" className="gap-2">
+                    <Award className="h-4 w-4" />
+                    AWS Events
+                  </TabsTrigger>
                 </>
               )}
             </TabsList>
 
             <TabsContent value="sprints" className="space-y-6">
               <SprintsTab isAdmin={isAdmin} isSpeaker={isSpeaker} authUser={authUser} onRefreshStats={fetchSprints} />
+            </TabsContent>
+
+            <TabsContent value="aws-events" className="space-y-6">
+              <AWSEventsTab />
             </TabsContent>
 
             {isAdmin && (

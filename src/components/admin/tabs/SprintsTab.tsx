@@ -402,7 +402,8 @@ function SprintFormContent({ formData, setFormData, submissionFields, setSubmiss
     setSubmissionFields(submissionFields.map((f: any) => f.id === id ? { ...f, ...updates } : f));
   };
 
-  const years = [new Date().getFullYear(), new Date().getFullYear() + 1];
+  const currentYear = new Date().getFullYear();
+  const years = [currentYear - 1, currentYear, currentYear + 1];
   const months = [
     { value: '1', label: 'January' }, { value: '2', label: 'February' }, { value: '3', label: 'March' },
     { value: '4', label: 'April' }, { value: '5', label: 'May' }, { value: '6', label: 'June' },
@@ -437,6 +438,10 @@ function SprintFormContent({ formData, setFormData, submissionFields, setSubmiss
       <div className="space-y-2">
         <Label>Description</Label>
         <Textarea value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} placeholder="Describe the sprint goals..." />
+      </div>
+      <div className="space-y-2">
+        <Label>Starter Code Repo URL</Label>
+        <Input value={formData.githubRepo} onChange={e => setFormData({ ...formData, githubRepo: e.target.value })} placeholder="https://github.com/your-org/starter-repo" />
       </div>
       <div className="space-y-4">
         <div className="flex justify-between items-center"><Label>Submission Form Configuration</Label><Button type="button" variant="outline" size="sm" onClick={addField}><Plus className="h-4 w-4 mr-2" />Add Field</Button></div>
@@ -494,7 +499,8 @@ function CreateSprintDialog({ onSuccess }: { onSuccess?: () => void }) {
 function EditSprintDialog({ sprint, onSuccess }: { sprint: Sprint; onSuccess?: () => void }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState({ title: sprint.title, description: sprint.description, month: '1', year: '2024', githubRepo: sprint.githubRepo || '' });
+  const sprintDate = sprint.startDate ? new Date(sprint.startDate) : new Date();
+  const [formData, setFormData] = useState({ title: sprint.title, description: sprint.description, month: String(sprintDate.getUTCMonth() + 1), year: String(sprintDate.getUTCFullYear()), githubRepo: sprint.githubRepo || '' });
   const [submissionFields, setSubmissionFields] = useState<SubmissionField[]>(sprint.submissionFormConfig || []);
 
   const handleSubmit = async (e: React.FormEvent) => {

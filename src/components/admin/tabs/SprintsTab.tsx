@@ -467,7 +467,9 @@ function CreateSprintDialog({ onSuccess }: { onSuccess?: () => void }) {
     setLoading(true);
     try {
       const startDate = `${formData.year}-${formData.month.padStart(2, '0')}-01`;
-      await createSprint({ ...formData, startDate, endDate: startDate, submissionFormConfig: submissionFields });
+      const lastDay = new Date(Number(formData.year), Number(formData.month), 0).getDate();
+      const endDate = `${formData.year}-${formData.month.padStart(2, '0')}-${lastDay}`;
+      await createSprint({ ...formData, startDate, endDate, submissionFormConfig: submissionFields });
       toast.success('Sprint created!');
       setOpen(false);
       onSuccess?.();

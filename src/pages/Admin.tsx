@@ -22,7 +22,7 @@ import {
   Copy, Mail, Edit, Trash2, Eye, FileText, User, Video,
   Upload, X, UserPlus, Check, ChevronDown, ChevronUp, GraduationCap,
   Trophy, ListTodo, ClipboardCheck, Target, Shield, UserCog, Medal, Github, ShoppingBag, Loader2, Cloud,
-  Star, Quote, Heart, Zap, CheckSquare, Square, List, Hash, Type, Code2, Sparkles
+  Star, Quote, Heart, Zap, CheckSquare, Square, List, Hash, Type, Code2, Sparkles, Image as ImageIcon
 } from 'lucide-react';
 import { mockSprints, mockMeetups, Submission, Sprint, Session, User as UserType, predefinedTasks, mockColleges, getTaskById, communityRoles, mockUserRoles, CommunityRole, UserRoleAssignment, PointActivity, mockPointActivities, Meetup, mockBadges, Badge as BadgeType, BadgeAward, mockBadgeAwards, BadgeCriteriaType, criteriaTypeLabels, BadgeCriteria, mockUsers, SubmissionField } from '@/data/mockData';
 import { createMeetup, updateMeetup, publishMeetup, getMeetups, CreateMeetupData, UpdateMeetupData, deleteMeetup, endMeetup } from '@/lib/meetups';
@@ -4928,9 +4928,12 @@ function BadgesTab({ allUsers }: { allUsers: UserType[] }) {
     name: '',
     description: '',
     icon: '🏆',
+    imageUrl: '',          // uploaded image URL (takes priority over icon)
+    iconMode: 'emoji' as 'emoji' | 'image',  // which tab is active
     criteriaType: 'manual' as BadgeCriteriaType,
     threshold: 1
   });
+  const [badgeImageUploading, setBadgeImageUploading] = useState(false);
 
   const filteredBadges = badges.filter(badge =>
     badge.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -5046,13 +5049,14 @@ function BadgesTab({ allUsers }: { allUsers: UserType[] }) {
       name: newBadge.name,
       description: newBadge.description,
       icon: newBadge.icon,
+      imageUrl: newBadge.imageUrl || undefined,
       criteria,
       earnedDate: new Date().toISOString().split('T')[0]
     };
 
     setBadges(prev => [...prev, badge]);
     toast.success(`Created badge "${badge.name}"`);
-    setNewBadge({ name: '', description: '', icon: '🏆', criteriaType: 'manual', threshold: 1 });
+    setNewBadge({ name: '', description: '', icon: '🏆', imageUrl: '', iconMode: 'emoji', criteriaType: 'manual', threshold: 1 });
     setIsCreateDialogOpen(false);
   };
 
@@ -5103,28 +5107,120 @@ function BadgesTab({ allUsers }: { allUsers: UserType[] }) {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Icon</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" className="w-full text-2xl h-12">
-                        {newBadge.icon}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-64">
-                      <div className="grid grid-cols-6 gap-2">
-                        {emojiOptions.map(emoji => (
-                          <Button
-                            key={emoji}
-                            variant="ghost"
-                            className="h-10 w-10 text-xl p-0"
-                            onClick={() => setNewBadge(prev => ({ ...prev, icon: emoji }))}
+                  <Label>Badge Image</Label>
+                  {/* Tab switcher: Emoji vs Upload */}
+                  <div className="flex rounded-md border overflow-hidden text-xs">
+                    <button
+                      type="button"
+                      className={`flex-1 py-1.5 font-medium transition-colors ${newBadge.iconMode === 'emoji' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
+                      onClick={() => setNewBadge(prev => ({ ...prev, iconMode: 'emoji' }))}
+                    >
+                      Emoji
+                    </button>
+                    <button
+                      type="button"
+                      className={`flex-1 py-1.5 font-medium transition-colors ${newBadge.iconMode === 'image' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
+                      onClick={() => setNewBadge(prev => ({ ...prev, iconMode: 'image' }))}
+                    >
+                      Upload
+                    </button>
+                  </div>
+
+                  {newBadge.iconMode === 'emoji' ? (
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" className="w-full text-2xl h-12">
+                          {newBadge.icon}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-64">
+                        <div className="grid grid-cols-6 gap-2">
+                          {emojiOptions.map(emoji => (
+                            <Button
+                              key={emoji}
+                              variant="ghost"
+                              className="h-10 w-10 text-xl p-0"
+                              onClick={() => setNewBadge(prev => ({ ...prev, icon: emoji }))}
+                            >
+                              {emoji}
+                            </Button>
+                          ))}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  ) : (
+                    <div className="space-y-2">
+                      {/* Preview */}
+                      {newBadge.imageUrl ? (
+                        <div className="relative w-full h-24 rounded-lg border overflow-hidden bg-muted/30 flex items-center justify-center">
+                          <img
+                            src={newBadge.imageUrl}
+                            alt="Badge preview"
+                            className="h-20 w-20 object-contain rounded-full"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setNewBadge(prev => ({ ...prev, imageUrl: '' }))}
+                            className="absolute top-1 right-1 bg-background rounded-full p-0.5 border shadow-sm hover:bg-muted"
+                            aria-label="Remove image"
                           >
-                            {emoji}
-                          </Button>
-                        ))}
-                      </div>
-                    </PopoverContent>
-                  </Popover>
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ) : (
+                        <label className="flex flex-col items-center justify-center w-full h-24 rounded-lg border-2 border-dashed border-muted-foreground/30 hover:border-primary/50 cursor-pointer bg-muted/20 hover:bg-muted/40 transition-colors">
+                          {badgeImageUploading ? (
+                            <div className="flex flex-col items-center gap-1">
+                              <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                              <span className="text-xs text-muted-foreground">Uploading…</span>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col items-center gap-1">
+                              <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                              <span className="text-xs text-muted-foreground">Click to upload</span>
+                              <span className="text-xs text-muted-foreground/60">PNG, JPG, SVG · max 2 MB</span>
+                            </div>
+                          )}
+                          <input
+                            type="file"
+                            accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                            className="hidden"
+                            disabled={badgeImageUploading}
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              if (file.size > 2 * 1024 * 1024) {
+                                toast.error('Image must be under 2 MB');
+                                return;
+                              }
+                              setBadgeImageUploading(true);
+                              try {
+                                const { uploadFileToS3 } = await import('@/lib/s3Upload');
+                                const url = await uploadFileToS3(file, 'badge-images');
+                                setNewBadge(prev => ({ ...prev, imageUrl: url }));
+                                toast.success('Image uploaded!');
+                              } catch (err: any) {
+                                // Fallback: use object URL for preview if S3 not configured
+                                const localUrl = URL.createObjectURL(file);
+                                setNewBadge(prev => ({ ...prev, imageUrl: localUrl }));
+                                toast.info('Using local preview (S3 not configured)');
+                              } finally {
+                                setBadgeImageUploading(false);
+                              }
+                              e.target.value = '';
+                            }}
+                          />
+                        </label>
+                      )}
+                      {/* URL paste fallback */}
+                      <Input
+                        placeholder="…or paste an image URL"
+                        value={newBadge.imageUrl}
+                        onChange={e => setNewBadge(prev => ({ ...prev, imageUrl: e.target.value }))}
+                        className="text-xs h-8"
+                      />
+                    </div>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label>Award Criteria *</Label>
@@ -5217,7 +5313,13 @@ function BadgesTab({ allUsers }: { allUsers: UserType[] }) {
             <Card key={badge.id} className="glass-card hover-lift">
               <CardContent className="p-4">
                 <div className="flex items-start gap-4">
-                  <div className="text-4xl">{badge.icon}</div>
+                  <div className="flex-shrink-0 w-12 h-12 rounded-full bg-gradient-to-br from-amber-400/20 to-orange-500/20 border-2 border-amber-400/40 flex items-center justify-center overflow-hidden">
+                    {badge.imageUrl ? (
+                      <img src={badge.imageUrl} alt={badge.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-3xl">{badge.icon}</span>
+                    )}
+                  </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <h3 className="font-semibold truncate">{badge.name}</h3>
@@ -5271,7 +5373,13 @@ function BadgesTab({ allUsers }: { allUsers: UserType[] }) {
                       <DialogContent>
                         <DialogHeader>
                           <DialogTitle className="flex items-center gap-2">
-                            <span className="text-2xl">{badge.icon}</span>
+                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400/20 to-orange-500/20 border border-amber-400/40 flex items-center justify-center overflow-hidden flex-shrink-0">
+                              {badge.imageUrl ? (
+                                <img src={badge.imageUrl} alt={badge.name} className="w-full h-full object-cover" />
+                              ) : (
+                                <span className="text-lg">{badge.icon}</span>
+                              )}
+                            </div>
                             Award "{badge.name}"
                           </DialogTitle>
                           <DialogDescription>

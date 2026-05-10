@@ -30,8 +30,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { ShareButton } from '@/components/common/ShareButton';
 import { generateBadgeShare, generateProfileActivityShare, generateMeetupAttendanceShare } from '@/lib/sharing';
+import { OpenBadgeCard } from '@/components/badges/OpenBadgeCard';
 import { getShareableProfileUrl, matchesSlug } from '@/lib/profileSlug';
-import { Share2, Copy, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { Trash2 } from 'lucide-react';
@@ -694,23 +694,17 @@ export default function Profile() {
                         </a>
                       </Button>
                     )}
-                    <Button
+                    <ShareButton
+                      data={{
+                        title: `${user.name} - AWS User Group Madurai`,
+                        text: `Check out ${user.name}'s profile on AWS User Group Madurai! 🚀`,
+                        url: getShareableProfileUrl(user.name, user.id),
+                        hashtags: ['AWSUG', 'AWS', 'CloudComputing', 'Community'],
+                      }}
                       variant="outline"
                       size="sm"
-                      onClick={() => {
-                        const url = getShareableProfileUrl(user.name, user.id);
-                        navigator.clipboard.writeText(url).then(() => {
-                          toast.success('Profile link copied to clipboard!');
-                        }).catch(() => {
-                          // Fallback: show the URL
-                          toast.info(url);
-                        });
-                      }}
-                    >
-                      <Share2 className="h-4 w-4 mr-1" />
-                      Share Profile
-                    </Button>
-                  </div>
+                      useDialog
+                    />                  </div>
                 </div>
 
                 <div className="text-center">
@@ -789,37 +783,13 @@ export default function Profile() {
                   {user.badges.length > 0 ? (
                     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                       {user.badges.map((badge, index) => (
-                        <motion.div
+                        <OpenBadgeCard
                           key={badge.id}
-                          initial={{ opacity: 0, y: 20 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: index * 0.1 }}
-                        >
-                          <Card className="border-2 hover:border-primary/50 transition-colors">
-                            <CardContent className="p-4">
-                              <div className="flex items-start gap-4">
-                                <div className="text-4xl">{badge.icon}</div>
-                                <div className="flex-1">
-                                  <h3 className="font-semibold">{badge.name}</h3>
-                                  <p className="text-sm text-muted-foreground">{badge.description}</p>
-                                  <p className="text-xs text-muted-foreground mt-2">
-                                    Earned {format(parseISO(badge.earnedDate), 'MMM d, yyyy')}
-                                  </p>
-                                </div>
-                              </div>
-                              {isOwnProfile && (
-                                <div className="mt-3 pt-3 border-t">
-                                  <ShareButton
-                                    data={generateBadgeShare(user.name, badge)}
-                                    variant="outline"
-                                    size="sm"
-                                    className="w-full"
-                                  />
-                                </div>
-                              )}
-                            </CardContent>
-                          </Card>
-                        </motion.div>
+                          badge={badge}
+                          user={{ id: user.id, name: user.name, email: user.email }}
+                          isOwnProfile={isOwnProfile}
+                          index={index}
+                        />
                       ))}
                     </div>
                   ) : (
@@ -990,7 +960,7 @@ export default function Profile() {
 
                           if (activity.type === 'badge_earned') {
                             const badge = user.badges.find(b => `badge-${b.id}` === activity.id);
-                            if (badge) return generateBadgeShare(user.name, badge);
+                            if (badge) return generateBadgeShare(user.name, badge, user.id);
                             return null;
                           }
 

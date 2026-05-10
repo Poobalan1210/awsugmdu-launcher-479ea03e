@@ -5,6 +5,7 @@ const s3Client = new S3Client({ region: process.env.AWS_REGION });
 
 const MEETUP_POSTERS_BUCKET = process.env.MEETUP_POSTERS_BUCKET || 'awsug-meetup-posters';
 const PROFILE_PHOTOS_BUCKET = process.env.PROFILE_PHOTOS_BUCKET || 'awsug-profile-photos';
+const BADGE_IMAGES_BUCKET   = process.env.BADGE_IMAGES_BUCKET   || 'awsug-badge-images';
 const CLOUDFRONT_PROFILE_PHOTOS = process.env.CLOUDFRONT_PROFILE_PHOTOS_DOMAIN || '';
 const CLOUDFRONT_MEETUP_POSTERS = process.env.CLOUDFRONT_MEETUP_POSTERS_DOMAIN || '';
 
@@ -51,8 +52,10 @@ exports.handler = async (event) => {
     const bucketName = bucketType === 'profile-photos' 
       ? PROFILE_PHOTOS_BUCKET 
       : bucketType === 'college-logos' || bucketType === 'cloud-club-logos' || bucketType === 'cloud-club-files'
-      ? PROFILE_PHOTOS_BUCKET // Reuse profile photos bucket for college and cloud club documents
-      : MEETUP_POSTERS_BUCKET; // Also used for meetup-photos, meetup-reports, and spotlight-images
+      ? PROFILE_PHOTOS_BUCKET
+      : bucketType === 'badge-images'
+      ? BADGE_IMAGES_BUCKET
+      : MEETUP_POSTERS_BUCKET; // meetup-posters, meetup-photos, meetup-reports, spotlight-images
     
     // Validate content type - allow documents for college-logos bucket
     const allowedImageTypes = [
@@ -60,7 +63,8 @@ exports.handler = async (event) => {
       'image/jpg',
       'image/png',
       'image/gif',
-      'image/webp'
+      'image/webp',
+      'image/svg+xml',
     ];
     
     const allowedDocumentTypes = [
@@ -102,6 +106,8 @@ exports.handler = async (event) => {
       ? `event-reports/${timestamp}-${sanitizedFileName}`
       : bucketType === 'spotlight-images'
       ? `spotlight-images/${timestamp}-${sanitizedFileName}`
+      : bucketType === 'badge-images'
+      ? `badge-images/${timestamp}-${sanitizedFileName}`
       : `posters/${timestamp}-${sanitizedFileName}`;
     
     // Generate presigned URL (valid for 5 minutes)

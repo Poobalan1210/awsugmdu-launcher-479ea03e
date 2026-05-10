@@ -1,5 +1,6 @@
 import { Badge } from '@/data/mockData';
 import { sprintPath } from '@/lib/sprintSlug';
+import { generateProfileSlug } from '@/lib/profileSlug';
 
 const BASE_URL = window.location.origin;
 
@@ -29,13 +30,35 @@ export function generateLeaderboardShare(
 // Generate share data for new badge earned
 export function generateBadgeShare(
   userName: string,
-  badge: Badge
+  badge: Badge,
+  userId?: string
 ): AchievementShareData {
+  // Point to the public badge page when we have the userId — just like Credly
+  const badgeUrl =
+    userId
+      ? `${BASE_URL}/badges/${badge.id}/${generateProfileSlug(userName, userId)}`
+      : `${BASE_URL}/profile`;
+
   return {
     title: `${userName} earned ${badge.name}`,
-    text: `I just earned the "${badge.name}" badge! ${badge.icon}\n${badge.description}`,
-    url: `${BASE_URL}/profile`,
-    hashtags: ['AWSUG', 'Achievement', 'AWS', 'CloudComputing'],
+    text: `I just earned the "${badge.name}" badge on AWS User Group Madurai! ${badge.icon}\n${badge.description}`,
+    url: badgeUrl,
+    hashtags: ['AWSUG', 'OpenBadges', 'Achievement', 'AWS', 'CloudComputing'],
+  };
+}
+
+// Generate a direct badge verification share URL
+export function generateBadgeVerificationShare(
+  userName: string,
+  badge: Badge,
+  userId: string
+): AchievementShareData {
+  const badgeUrl = `${BASE_URL}/badges/${badge.id}/${generateProfileSlug(userName, userId)}`;
+  return {
+    title: `Verify ${userName}'s ${badge.name} badge`,
+    text: `Check out the "${badge.name}" badge ${badge.icon} earned by ${userName} on AWS User Group Madurai!`,
+    url: badgeUrl,
+    hashtags: ['AWSUG', 'OpenBadges', 'AWS'],
   };
 }
 

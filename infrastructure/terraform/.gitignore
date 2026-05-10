@@ -8,3 +8,9 @@
 # Lambda dependencies and builds
 lambda/*/node_modules/
 lambda/*/*.zip
+
+# State snapshots (contain sensitive infra data — keep local only)
+.state-snapshots/
+
+# Terraform plan files
+tfplan

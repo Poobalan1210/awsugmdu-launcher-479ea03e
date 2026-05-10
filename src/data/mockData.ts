@@ -150,7 +150,10 @@ export interface Badge {
   id: string;
   name: string;
   description: string;
+  /** Emoji character used as the badge icon (used when imageUrl is not set) */
   icon: string;
+  /** Optional uploaded image URL — takes priority over icon when present */
+  imageUrl?: string;
   earnedDate: string;
   criteria: BadgeCriteria;
 }

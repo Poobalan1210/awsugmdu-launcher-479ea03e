@@ -9,6 +9,8 @@ import Index from "./pages/Index";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Profile from "./pages/Profile";
+import BadgePublic from "./pages/BadgePublic";
+import BadgeVerify from "./pages/BadgeVerify";
 import SkillSprint from "./pages/SkillSprint";
 import CollegeChamps from "./pages/CollegeChamps";
 import CloudClubs from "./pages/CloudClubs";
@@ -35,6 +37,11 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
+
+            {/* Public badge page — no auth required, like Credly's /badges/{id}/public_url */}
+            <Route path="/badges/:badgeId/:userSlug" element={<BadgePublic />} />
+            {/* OB v2 verification page — public */}
+            <Route path="/ob2/verify" element={<BadgeVerify />} />
             
             {/* Protected Routes */}
             <Route path="/profile" element={

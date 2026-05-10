@@ -602,6 +602,7 @@ resource "aws_lambda_function" "s3_upload" {
       PROFILE_PHOTOS_BUCKET = aws_s3_bucket.profile_photos.id
       CLOUDFRONT_PROFILE_PHOTOS_DOMAIN = aws_cloudfront_distribution.profile_photos.domain_name
       CLOUDFRONT_MEETUP_POSTERS_DOMAIN = aws_cloudfront_distribution.meetup_posters.domain_name
+      BADGE_IMAGES_BUCKET  = aws_s3_bucket.badge_images.id
     }
   }
 
@@ -2289,6 +2290,15 @@ resource "aws_api_gateway_deployment" "api" {
       aws_lambda_function.cloud_clubs_crud.source_code_hash,
       aws_lambda_function.spotlight_crud.source_code_hash,
       aws_lambda_function.aws_events_crud.source_code_hash,
+      # Badges (OB v2)
+      aws_lambda_function.badges_crud.source_code_hash,
+      aws_api_gateway_integration.ob2_issuer_get.id,
+      aws_api_gateway_integration.ob2_badges_id_get.id,
+      aws_api_gateway_integration.ob2_images_id_get.id,
+      aws_api_gateway_integration.ob2_assertions_get.id,
+      aws_api_gateway_integration.ob2_assertions_post.id,
+      aws_api_gateway_integration.ob2_assert_id_get.id,
+      aws_api_gateway_integration.ob2_verify_get.id,
     ]))
   }
 
@@ -2453,6 +2463,26 @@ resource "aws_api_gateway_deployment" "api" {
     aws_api_gateway_integration.aws_events_options,
     aws_api_gateway_method_response.aws_events_options_200,
     aws_api_gateway_integration_response.aws_events_options,
+    # Badges (OB v2) integrations
+    aws_api_gateway_integration.ob2_issuer_get,
+    aws_api_gateway_integration.ob2_issuer_options,
+    aws_api_gateway_integration_response.ob2_issuer_options,
+    aws_api_gateway_integration.ob2_badges_id_get,
+    aws_api_gateway_integration.ob2_badges_id_options,
+    aws_api_gateway_integration_response.ob2_badges_id_options,
+    aws_api_gateway_integration.ob2_images_id_get,
+    aws_api_gateway_integration.ob2_images_id_options,
+    aws_api_gateway_integration_response.ob2_images_id_options,
+    aws_api_gateway_integration.ob2_assertions_get,
+    aws_api_gateway_integration.ob2_assertions_post,
+    aws_api_gateway_integration.ob2_assertions_options,
+    aws_api_gateway_integration_response.ob2_assertions_options,
+    aws_api_gateway_integration.ob2_assert_id_get,
+    aws_api_gateway_integration.ob2_assert_id_options,
+    aws_api_gateway_integration_response.ob2_assert_id_options,
+    aws_api_gateway_integration.ob2_verify_get,
+    aws_api_gateway_integration.ob2_verify_options,
+    aws_api_gateway_integration_response.ob2_verify_options,
   ]
 
   rest_api_id = aws_api_gateway_rest_api.api.id

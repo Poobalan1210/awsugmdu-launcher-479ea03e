@@ -2,6 +2,13 @@
   "rewrites": [
     {
       "source": "/badges/:badgeId/:userSlug",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(LinkedInBot|Twitterbot|facebookexternalhit|WhatsApp|TelegramBot|Slackbot|Discordbot|bot|crawler|spider).*"
+        }
+      ],
       "destination": "/api/badges/:badgeId/:userSlug"
     },
     {

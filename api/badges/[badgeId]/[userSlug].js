@@ -150,52 +150,13 @@ export default async function handler(req, res) {
     }
   }
 
-  // ── For human visitors: serve the React SPA ───────────────────────────────
-  // Crawlers need the OG HTML; humans get the React app
+  // ── For human visitors: redirect to the React SPA ───────────────────────
+  // This branch only runs if the has[] condition in vercel.json doesn't match,
+  // which shouldn't happen in production. Safety fallback.
   if (!isCrawler(userAgent)) {
-    // Serve the React SPA index.html — Vercel will handle this
-    // We can't just redirect because that would break the React router
-    // Instead, serve a minimal HTML that loads the React app
-    const title = recipientName
-      ? `${recipientName} earned ${badgeName} | AWS UG Madurai`
-      : `${badgeName} | AWS UG Madurai`;
-    const ogImage = img || `${BASE_URL}/badges/${badgeId}/image.png?name=${encodeURIComponent(badgeName)}`;
-    const t = esc(title);
-    const d = esc(badgeDescription);
-    const imgTag = esc(ogImage);
-    const canonical = esc(`${BASE_URL}/badges/${badgeId}/${userSlug}`);
-
-    // Serve full HTML with OG tags + React app bootstrap
-    const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <link rel="icon" type="image/png" href="/favicon.png" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${t}</title>
-  <link rel="canonical" href="${canonical}" />
-  <meta property="og:type"         content="profile" />
-  <meta property="og:site_name"    content="AWS User Group Madurai" />
-  <meta property="og:title"        content="${t}" />
-  <meta property="og:description"  content="${d}" />
-  <meta property="og:url"          content="${canonical}" />
-  <meta property="og:image"        content="${imgTag}" />
-  <meta property="og:image:width"  content="400" />
-  <meta property="og:image:height" content="400" />
-  <meta property="og:image:alt"    content="${t}" />
-  <meta name="twitter:card"        content="summary" />
-  <meta name="twitter:title"       content="${t}" />
-  <meta name="twitter:description" content="${d}" />
-  <meta name="twitter:image"       content="${imgTag}" />
-</head>
-<body>
-  <div id="root"></div>
-  <script type="module" src="/src/main.tsx"></script>
-</body>
-</html>`;
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store');
-    return res.status(200).send(html);
+    // Serve index.html content directly to avoid redirect loop
+    return res.redirect(302, `${BASE_URL}/index.html`);
   }
 
   // ── For crawlers: serve OG HTML with badge image ──────────────────────────

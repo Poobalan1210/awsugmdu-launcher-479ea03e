@@ -22,6 +22,8 @@ const {
   PutCommand,
   QueryCommand,
   ScanCommand,
+  UpdateCommand,
+  DeleteCommand,
 } = require('@aws-sdk/lib-dynamodb');
 const crypto = require('crypto');
 const { handleOgBadge } = require('./og-proxy');
@@ -30,6 +32,7 @@ const client = new DynamoDBClient({ region: process.env.AWS_REGION || 'ap-south-
 const db = DynamoDBDocumentClient.from(client);
 
 const ASSERTIONS_TABLE  = process.env.ASSERTIONS_TABLE  || 'awsug-ob2-assertions';
+const BADGES_TABLE      = process.env.BADGES_TABLE      || 'awsug-badges';
 const BADGE_IMAGES_BUCKET = process.env.BADGE_IMAGES_BUCKET || '';
 const BASE_URL          = process.env.BASE_URL          || 'https://www.awsugmdu.in';
 const OB2_CONTEXT       = 'https://w3id.org/openbadges/v2';
@@ -431,6 +434,108 @@ exports.handler = async (event) => {
   const ogMatch = path.match(/^\/og\/badge\/([^/]+)\/([^/]+)$/);
   if (method === 'GET' && ogMatch) {
     return handleOgBadge(ogMatch[1], ogMatch[2]);
+  }
+
+  // ── Badge definitions CRUD ────────────────────────────────────────────────
+
+  // GET /badges — list all badges (hardcoded + custom from DB)
+  if (method === 'GET' && path === '/badges') {
+    try {
+      const result = await db.send(new ScanCommand({ TableName: BADGES_TABLE }));
+      const dbBadges = result.Items || [];
+      // Merge: hardcoded first (as base), then DB badges override/extend
+      const hardcoded = Object.values(BADGE_DEFINITIONS).map(def => ({
+        id: def.id, name: def.name, description: def.description,
+        icon: def.icon, criteria: { type: 'manual', description: def.criteria },
+        earnedDate: '', isBuiltIn: true,
+      }));
+      // DB badges that aren't in hardcoded list
+      const custom = dbBadges.filter(b => !BADGE_DEFINITIONS[b.id]);
+      return json(200, { badges: [...hardcoded, ...custom] });
+    } catch (e) {
+      console.error('DynamoDB error:', e);
+      return json(500, { error: 'Failed to list badges' });
+    }
+  }
+
+  // GET /badges/{id}
+  const badgeIdMatch = path.match(/^\/badges\/([^/]+)$/);
+  if (method === 'GET' && badgeIdMatch) {
+    const id = badgeIdMatch[1];
+    if (BADGE_DEFINITIONS[id]) {
+      const def = BADGE_DEFINITIONS[id];
+      return json(200, { badge: { id: def.id, name: def.name, description: def.description, icon: def.icon, isBuiltIn: true } });
+    }
+    try {
+      const result = await db.send(new GetCommand({ TableName: BADGES_TABLE, Key: { id } }));
+      if (!result.Item) return json(404, { error: 'Badge not found' });
+      return json(200, { badge: result.Item });
+    } catch (e) {
+      return json(500, { error: 'Failed to get badge' });
+    }
+  }
+
+  // POST /badges — create a new badge
+  if (method === 'POST' && path === '/badges') {
+    let body;
+    try { body = JSON.parse(event.body || '{}'); } catch { return json(400, { error: 'Invalid JSON' }); }
+    const { name, description, icon, imageUrl, criteria } = body;
+    if (!name || !description) return json(400, { error: 'name and description are required' });
+    const id = `b-${Date.now()}`;
+    const item = {
+      id, name, description,
+      icon: icon || '🏅',
+      imageUrl: imageUrl || null,
+      criteria: criteria || { type: 'manual', description: 'Manually awarded by admins' },
+      earnedDate: new Date().toISOString().split('T')[0],
+      createdAt: new Date().toISOString(),
+      isBuiltIn: false,
+    };
+    try {
+      await db.send(new PutCommand({ TableName: BADGES_TABLE, Item: item }));
+      return json(201, { badge: item });
+    } catch (e) {
+      console.error('DynamoDB error:', e);
+      return json(500, { error: 'Failed to create badge' });
+    }
+  }
+
+  // PUT /badges/{id} — update a badge
+  if (method === 'PUT' && badgeIdMatch) {
+    const id = badgeIdMatch[1];
+    if (BADGE_DEFINITIONS[id]) return json(403, { error: 'Cannot modify built-in badges' });
+    let body;
+    try { body = JSON.parse(event.body || '{}'); } catch { return json(400, { error: 'Invalid JSON' }); }
+    const { name, description, icon, imageUrl, criteria } = body;
+    try {
+      const result = await db.send(new GetCommand({ TableName: BADGES_TABLE, Key: { id } }));
+      if (!result.Item) return json(404, { error: 'Badge not found' });
+      const updated = {
+        ...result.Item,
+        ...(name && { name }),
+        ...(description && { description }),
+        ...(icon && { icon }),
+        ...(imageUrl !== undefined && { imageUrl }),
+        ...(criteria && { criteria }),
+        updatedAt: new Date().toISOString(),
+      };
+      await db.send(new PutCommand({ TableName: BADGES_TABLE, Item: updated }));
+      return json(200, { badge: updated });
+    } catch (e) {
+      return json(500, { error: 'Failed to update badge' });
+    }
+  }
+
+  // DELETE /badges/{id}
+  if (method === 'DELETE' && badgeIdMatch) {
+    const id = badgeIdMatch[1];
+    if (BADGE_DEFINITIONS[id]) return json(403, { error: 'Cannot delete built-in badges' });
+    try {
+      await db.send(new DeleteCommand({ TableName: BADGES_TABLE, Key: { id } }));
+      return json(200, { message: 'Badge deleted' });
+    } catch (e) {
+      return json(500, { error: 'Failed to delete badge' });
+    }
   }
 
   return json(404, { error: 'Not found' });

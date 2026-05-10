@@ -4916,7 +4916,9 @@ function MembersTab({ allUsers, onRefresh }: { allUsers: UserType[]; onRefresh?:
 // Badge Management Tab Component
 function BadgesTab({ allUsers }: { allUsers: UserType[] }) {
   const { user: authUser, refreshUser } = useAuth();
+
   const [badges, setBadges] = useState<BadgeType[]>(mockBadges);
+  const [badgesLoading, setBadgesLoading] = useState(true);
   const [badgeAwards, setBadgeAwards] = useState<BadgeAward[]>(mockBadgeAwards);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBadge, setSelectedBadge] = useState<BadgeType | null>(null);
@@ -4934,6 +4936,24 @@ function BadgesTab({ allUsers }: { allUsers: UserType[] }) {
     threshold: 1
   });
   const [badgeImageUploading, setBadgeImageUploading] = useState(false);
+
+  // Load badges from API on mount
+  useEffect(() => {
+    const load = async () => {
+      setBadgesLoading(true);
+      try {
+        const { getBadges } = await import('@/lib/badges');
+        const fetched = await getBadges();
+        setBadges(fetched);
+      } catch (err) {
+        console.error('Failed to load badges:', err);
+        setBadges(mockBadges);
+      } finally {
+        setBadgesLoading(false);
+      }
+    };
+    load();
+  }, []);
 
   const filteredBadges = badges.filter(badge =>
     badge.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -5030,7 +5050,7 @@ function BadgesTab({ allUsers }: { allUsers: UserType[] }) {
     }
   };
 
-  const handleCreateBadge = () => {
+  const handleCreateBadge = async () => {
     if (!newBadge.name || !newBadge.description) {
       toast.error('Please fill in all required fields');
       return;
@@ -5044,24 +5064,41 @@ function BadgesTab({ allUsers }: { allUsers: UserType[] }) {
         : `${criteriaTypeLabels[newBadge.criteriaType]}: ${newBadge.threshold}`
     };
 
-    const badge: BadgeType = {
-      id: `b-${Date.now()}`,
-      name: newBadge.name,
-      description: newBadge.description,
-      icon: newBadge.icon,
-      imageUrl: newBadge.imageUrl || undefined,
-      criteria,
-      earnedDate: new Date().toISOString().split('T')[0]
-    };
+    try {
+      const { createBadge } = await import('@/lib/badges');
+      const badge = await createBadge({
+        name: newBadge.name,
+        description: newBadge.description,
+        icon: newBadge.icon,
+        imageUrl: newBadge.imageUrl || undefined,
+        criteria,
+      });
+      setBadges(prev => [...prev, badge]);
+      toast.success(`Created badge "${badge.name}"`);
+      setNewBadge({ name: '', description: '', icon: '🏆', imageUrl: '', iconMode: 'emoji', criteriaType: 'manual', threshold: 1 });
+      setIsCreateDialogOpen(false);
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to create badge');
+    }
+  };
 
-    setBadges(prev => [...prev, badge]);
-    toast.success(`Created badge "${badge.name}"`);
-    setNewBadge({ name: '', description: '', icon: '🏆', imageUrl: '', iconMode: 'emoji', criteriaType: 'manual', threshold: 1 });
-    setIsCreateDialogOpen(false);
+  const handleDeleteBadge = async (badgeId: string) => {
+    const isHardcoded = mockBadges.some(b => b.id === badgeId);
+    if (isHardcoded) {
+      toast.error('Cannot delete a built-in badge.');
+      return;
+    }
+    try {
+      const { deleteBadge } = await import('@/lib/badges');
+      await deleteBadge(badgeId);
+      setBadges(prev => prev.filter(b => b.id !== badgeId));
+      toast.success('Badge deleted.');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to delete badge');
+    }
   };
 
   const emojiOptions = ['🏆', '🚀', '⭐', '🎯', '🔥', '💎', '🌟', '🎖️', '🥇', '🎓', '✨', '💡', '🤝', '✍️', '🔒', '☁️', '📜', '🎤'];
-
   return (
     <div className="space-y-6">
       {/* Header with Create Button */}
@@ -5349,27 +5386,28 @@ function BadgesTab({ allUsers }: { allUsers: UserType[] }) {
                         {usersWithBadge.length} awarded
                       </span>
                     </div>
-                    <Dialog
-                      open={isAwardDialogOpen && selectedBadge?.id === badge.id}
-                      onOpenChange={(open) => {
-                        setIsAwardDialogOpen(open);
-                        if (!open) setSelectedBadge(null);
-                      }}
-                    >
-                      <DialogTrigger asChild>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="w-full gap-1"
-                          onClick={() => {
-                            setSelectedBadge(badge);
-                            setIsAwardDialogOpen(true);
-                          }}
-                        >
-                          <Award className="h-4 w-4" />
-                          Award Badge
-                        </Button>
-                      </DialogTrigger>
+                    <div className="flex gap-2">
+                      <Dialog
+                        open={isAwardDialogOpen && selectedBadge?.id === badge.id}
+                        onOpenChange={(open) => {
+                          setIsAwardDialogOpen(open);
+                          if (!open) setSelectedBadge(null);
+                        }}
+                      >
+                        <DialogTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex-1 gap-1"
+                            onClick={() => {
+                              setSelectedBadge(badge);
+                              setIsAwardDialogOpen(true);
+                            }}
+                          >
+                            <Award className="h-4 w-4" />
+                            Award Badge
+                          </Button>
+                        </DialogTrigger>
                       <DialogContent>
                         <DialogHeader>
                           <DialogTitle className="flex items-center gap-2">
@@ -5430,6 +5468,19 @@ function BadgesTab({ allUsers }: { allUsers: UserType[] }) {
                         </div>
                       </DialogContent>
                     </Dialog>
+                    {/* Delete button — only for custom (non-hardcoded) badges */}
+                    {!mockBadges.find(m => m.id === badge.id) && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-destructive border-destructive/30 hover:bg-destructive/10 px-2"
+                        onClick={() => handleDeleteBadge(badge.id)}
+                        aria-label="Delete badge"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                    </div>
                   </div>
                 </div>
               </CardContent>

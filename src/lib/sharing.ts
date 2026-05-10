@@ -40,13 +40,10 @@ export function generateBadgeShare(
     : `${BASE_URL}/profile`;
   if (userId) {
     const params = new URLSearchParams();
-    if (badge.imageUrl) {
-      params.set('img', badge.imageUrl);
-      const v = badge.imageUrl.split('/').pop()?.split('-')[0]?.slice(-4) || '1';
-      params.set('v', v);
-    }
+    if (badge.imageUrl) params.set('img', badge.imageUrl);
     params.set('name', badge.name);
     params.set('desc', badge.description);
+    params.set('t', Date.now().toString().slice(-6));
     shareUrl += `?${params.toString()}`;
   }
 

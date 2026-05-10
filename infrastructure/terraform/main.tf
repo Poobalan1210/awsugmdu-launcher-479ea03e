@@ -2301,6 +2301,12 @@ resource "aws_api_gateway_deployment" "api" {
       aws_api_gateway_integration.ob2_verify_get.id,
       # OG proxy for social crawlers
       aws_api_gateway_integration.og_badge_get.id,
+      # Badge definitions CRUD
+      aws_api_gateway_integration.badges_get.id,
+      aws_api_gateway_integration.badges_post.id,
+      aws_api_gateway_integration.badges_id_get.id,
+      aws_api_gateway_integration.badges_id_put.id,
+      aws_api_gateway_integration.badges_id_delete.id,
     ]))
   }
 
@@ -2489,6 +2495,16 @@ resource "aws_api_gateway_deployment" "api" {
     aws_api_gateway_integration.og_badge_get,
     aws_api_gateway_integration.og_badge_options,
     aws_api_gateway_integration_response.og_badge_options,
+    # Badge definitions CRUD
+    aws_api_gateway_integration.badges_get,
+    aws_api_gateway_integration.badges_post,
+    aws_api_gateway_integration.badges_options,
+    aws_api_gateway_integration_response.badges_options,
+    aws_api_gateway_integration.badges_id_get,
+    aws_api_gateway_integration.badges_id_put,
+    aws_api_gateway_integration.badges_id_delete,
+    aws_api_gateway_integration.badges_id_options,
+    aws_api_gateway_integration_response.badges_id_options,
   ]
 
   rest_api_id = aws_api_gateway_rest_api.api.id

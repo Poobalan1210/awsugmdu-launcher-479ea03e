@@ -77,6 +77,23 @@ resource "aws_iam_role_policy" "upload_badge_images_s3" {
   })
 }
 
+# ─── DynamoDB table for badge definitions ────────────────────────────────────
+resource "aws_dynamodb_table" "badges" {
+  name         = "${var.project_name}-badges"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "id"
+
+  attribute {
+    name = "id"
+    type = "S"
+  }
+
+  point_in_time_recovery      { enabled = true }
+  deletion_protection_enabled = false   # allow deletes from admin
+
+  tags = { Name = "${var.project_name}-badges-table" }
+}
+
 # ─── DynamoDB table for OB v2 assertions ─────────────────────────────────────
 resource "aws_dynamodb_table" "ob2_assertions" {
   name         = "${var.project_name}-ob2-assertions"
@@ -127,9 +144,10 @@ resource "aws_lambda_function" "badges_crud" {
 
   environment {
     variables = {
-      ASSERTIONS_TABLE   = aws_dynamodb_table.ob2_assertions.name
+      ASSERTIONS_TABLE    = aws_dynamodb_table.ob2_assertions.name
+      BADGES_TABLE        = aws_dynamodb_table.badges.name
       BADGE_IMAGES_BUCKET = aws_s3_bucket.badge_images.id
-      BASE_URL           = "https://www.awsugmdu.in"
+      BASE_URL            = "https://www.awsugmdu.in"
     }
   }
 
@@ -159,6 +177,8 @@ resource "aws_iam_role_policy" "badges_dynamodb" {
       Resource = [
         aws_dynamodb_table.ob2_assertions.arn,
         "${aws_dynamodb_table.ob2_assertions.arn}/index/*",
+        aws_dynamodb_table.badges.arn,
+        "${aws_dynamodb_table.badges.arn}/index/*",
       ]
     }]
   })
@@ -597,6 +617,160 @@ resource "aws_api_gateway_integration_response" "og_badge_options" {
   status_code         = aws_api_gateway_method_response.og_badge_options_200.status_code
   response_parameters = local.cors_headers
   depends_on          = [aws_api_gateway_integration.og_badge_options]
+}
+
+# ─── Badge definitions CRUD: /badges and /badges/{id} ────────────────────────
+
+resource "aws_api_gateway_resource" "badges_resource" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  parent_id   = aws_api_gateway_rest_api.api.root_resource_id
+  path_part   = "badges"
+}
+
+resource "aws_api_gateway_resource" "badges_id_resource" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  parent_id   = aws_api_gateway_resource.badges_resource.id
+  path_part   = "{id}"
+}
+
+# GET /badges
+resource "aws_api_gateway_method" "badges_get" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.badges_resource.id
+  http_method   = "GET"
+  authorization = "NONE"
+}
+resource "aws_api_gateway_integration" "badges_get" {
+  rest_api_id             = aws_api_gateway_rest_api.api.id
+  resource_id             = aws_api_gateway_resource.badges_resource.id
+  http_method             = aws_api_gateway_method.badges_get.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.badges_crud.invoke_arn
+}
+
+# POST /badges
+resource "aws_api_gateway_method" "badges_post" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.badges_resource.id
+  http_method   = "POST"
+  authorization = "NONE"
+}
+resource "aws_api_gateway_integration" "badges_post" {
+  rest_api_id             = aws_api_gateway_rest_api.api.id
+  resource_id             = aws_api_gateway_resource.badges_resource.id
+  http_method             = aws_api_gateway_method.badges_post.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.badges_crud.invoke_arn
+}
+
+# OPTIONS /badges
+resource "aws_api_gateway_method" "badges_options" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.badges_resource.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+resource "aws_api_gateway_integration" "badges_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.badges_resource.id
+  http_method = aws_api_gateway_method.badges_options.http_method
+  type        = "MOCK"
+  request_templates = { "application/json" = "{\"statusCode\": 200}" }
+}
+resource "aws_api_gateway_method_response" "badges_options_200" {
+  rest_api_id         = aws_api_gateway_rest_api.api.id
+  resource_id         = aws_api_gateway_resource.badges_resource.id
+  http_method         = aws_api_gateway_method.badges_options.http_method
+  status_code         = "200"
+  response_parameters = local.cors_response_params
+}
+resource "aws_api_gateway_integration_response" "badges_options" {
+  rest_api_id         = aws_api_gateway_rest_api.api.id
+  resource_id         = aws_api_gateway_resource.badges_resource.id
+  http_method         = aws_api_gateway_method.badges_options.http_method
+  status_code         = aws_api_gateway_method_response.badges_options_200.status_code
+  response_parameters = local.cors_headers
+  depends_on          = [aws_api_gateway_integration.badges_options]
+}
+
+# GET /badges/{id}
+resource "aws_api_gateway_method" "badges_id_get" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.badges_id_resource.id
+  http_method   = "GET"
+  authorization = "NONE"
+}
+resource "aws_api_gateway_integration" "badges_id_get" {
+  rest_api_id             = aws_api_gateway_rest_api.api.id
+  resource_id             = aws_api_gateway_resource.badges_id_resource.id
+  http_method             = aws_api_gateway_method.badges_id_get.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.badges_crud.invoke_arn
+}
+
+# PUT /badges/{id}
+resource "aws_api_gateway_method" "badges_id_put" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.badges_id_resource.id
+  http_method   = "PUT"
+  authorization = "NONE"
+}
+resource "aws_api_gateway_integration" "badges_id_put" {
+  rest_api_id             = aws_api_gateway_rest_api.api.id
+  resource_id             = aws_api_gateway_resource.badges_id_resource.id
+  http_method             = aws_api_gateway_method.badges_id_put.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.badges_crud.invoke_arn
+}
+
+# DELETE /badges/{id}
+resource "aws_api_gateway_method" "badges_id_delete" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.badges_id_resource.id
+  http_method   = "DELETE"
+  authorization = "NONE"
+}
+resource "aws_api_gateway_integration" "badges_id_delete" {
+  rest_api_id             = aws_api_gateway_rest_api.api.id
+  resource_id             = aws_api_gateway_resource.badges_id_resource.id
+  http_method             = aws_api_gateway_method.badges_id_delete.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.badges_crud.invoke_arn
+}
+
+# OPTIONS /badges/{id}
+resource "aws_api_gateway_method" "badges_id_options" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.badges_id_resource.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+resource "aws_api_gateway_integration" "badges_id_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.badges_id_resource.id
+  http_method = aws_api_gateway_method.badges_id_options.http_method
+  type        = "MOCK"
+  request_templates = { "application/json" = "{\"statusCode\": 200}" }
+}
+resource "aws_api_gateway_method_response" "badges_id_options_200" {
+  rest_api_id         = aws_api_gateway_rest_api.api.id
+  resource_id         = aws_api_gateway_resource.badges_id_resource.id
+  http_method         = aws_api_gateway_method.badges_id_options.http_method
+  status_code         = "200"
+  response_parameters = local.cors_response_params
+}
+resource "aws_api_gateway_integration_response" "badges_id_options" {
+  rest_api_id         = aws_api_gateway_rest_api.api.id
+  resource_id         = aws_api_gateway_resource.badges_id_resource.id
+  http_method         = aws_api_gateway_method.badges_id_options.http_method
+  status_code         = aws_api_gateway_method_response.badges_id_options_200.status_code
+  response_parameters = local.cors_headers
+  depends_on          = [aws_api_gateway_integration.badges_id_options]
 }
 
 # ─── Outputs ──────────────────────────────────────────────────────────────────

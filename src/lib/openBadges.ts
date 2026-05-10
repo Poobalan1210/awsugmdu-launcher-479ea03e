@@ -132,6 +132,7 @@ export const getPublicBadgeUrl = (
  *
  * Encodes the badge's imageUrl as a query param so the Vercel function
  * can use it directly without making an extra API call.
+ * Adds a cache-bust param so LinkedIn re-crawls when the image changes.
  */
 export const getOgProxyUrl = (
   badge: Badge,
@@ -140,9 +141,11 @@ export const getOgProxyUrl = (
 ): string => {
   const slug = generateProfileSlug(userName, userId);
   const base = `${BASE_URL}/og/badge/${badge.id}/${slug}`;
-  // Pass the uploaded image URL so the Vercel function uses it for og:image
   if (badge.imageUrl) {
-    return `${base}?img=${encodeURIComponent(badge.imageUrl)}`;
+    // v param is a short hash of the imageUrl — changes when image changes,
+    // forcing LinkedIn to re-crawl and show the new image
+    const v = badge.imageUrl.split('/').pop()?.split('-')[0]?.slice(-4) || '1';
+    return `${base}?img=${encodeURIComponent(badge.imageUrl)}&v=${v}`;
   }
   return base;
 };

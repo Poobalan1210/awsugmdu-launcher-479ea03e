@@ -35,13 +35,12 @@ export function generateBadgeShare(
 ): AchievementShareData {
   // Use the OG proxy URL on our own domain — crawlers get server-rendered OG tags,
   // humans get redirected to the React badge page.
-  const slug = userId ? generateProfileSlug(userName, userId) : null;
   let shareUrl = userId
-    ? `${BASE_URL}/og/badge/${badge.id}/${slug}`
+    ? `${BASE_URL}/og/badge/${badge.id}/${generateProfileSlug(userName, userId)}`
     : `${BASE_URL}/profile`;
-  // Pass the uploaded image URL so the Vercel function uses it for og:image
   if (userId && badge.imageUrl) {
-    shareUrl += `?img=${encodeURIComponent(badge.imageUrl)}`;
+    const v = badge.imageUrl.split('/').pop()?.split('-')[0]?.slice(-4) || '1';
+    shareUrl += `?img=${encodeURIComponent(badge.imageUrl)}&v=${v}`;
   }
 
   return {

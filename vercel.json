@@ -1,5 +1,15 @@
 {
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
+  ],
+  "routes": [
+    {
+      "src": "/og/badge/([^/]+)/([^/]+)",
+      "dest": "/api/og/badge/$1/$2"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
   ]
 }

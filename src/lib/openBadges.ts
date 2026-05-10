@@ -130,11 +130,10 @@ export const getPublicBadgeUrl = (
 /**
  * OG proxy URL — use this as the share URL on all social platforms.
  *
- * Social crawlers (LinkedIn, Twitter, WhatsApp, Slack, Telegram) fetch this
- * URL and receive server-rendered HTML with correct OG meta tags baked in.
- * Human visitors are immediately redirected to the real React badge page.
- *
- * Format: {VITE_API_ENDPOINT}/og/badge/{badgeId}/{userSlug}
+ * Points to the Vercel serverless function at /og/badge/{badgeId}/{userSlug}
+ * on your own domain (awsugmdu.in). LinkedIn and other crawlers will fetch
+ * this URL, get server-rendered OG tags, and show a rich preview card.
+ * Human visitors are immediately redirected to the React badge page.
  */
 export const getOgProxyUrl = (
   badge: Badge,
@@ -142,8 +141,8 @@ export const getOgProxyUrl = (
   userId: string
 ): string => {
   const slug = generateProfileSlug(userName, userId);
-  const apiBase = (import.meta as any).env?.VITE_API_ENDPOINT || BASE_URL;
-  return `${apiBase}/og/badge/${badge.id}/${slug}`;
+  // Always use the site's own domain — never the API Gateway URL
+  return `${BASE_URL}/og/badge/${badge.id}/${slug}`;
 };
 
 // ─── Recipient hashing ────────────────────────────────────────────────────────

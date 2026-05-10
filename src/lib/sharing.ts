@@ -3,8 +3,6 @@ import { sprintPath } from '@/lib/sprintSlug';
 import { generateProfileSlug } from '@/lib/profileSlug';
 
 const BASE_URL = window.location.origin;
-// API endpoint for OG proxy (server-rendered OG tags for social crawlers)
-const API_BASE = (import.meta as any).env?.VITE_API_ENDPOINT || BASE_URL;
 
 export interface AchievementShareData {
   title: string;
@@ -35,10 +33,10 @@ export function generateBadgeShare(
   badge: Badge,
   userId?: string
 ): AchievementShareData {
-  // Use the OG proxy URL when we have userId — crawlers get server-rendered OG tags,
+  // Use the OG proxy URL on our own domain — crawlers get server-rendered OG tags,
   // humans get redirected to the React badge page.
   const shareUrl = userId
-    ? `${API_BASE}/og/badge/${badge.id}/${generateProfileSlug(userName, userId)}`
+    ? `${BASE_URL}/og/badge/${badge.id}/${generateProfileSlug(userName, userId)}`
     : `${BASE_URL}/profile`;
 
   return {
@@ -55,7 +53,7 @@ export function generateBadgeVerificationShare(
   badge: Badge,
   userId: string
 ): AchievementShareData {
-  const shareUrl = `${API_BASE}/og/badge/${badge.id}/${generateProfileSlug(userName, userId)}`;
+  const shareUrl = `${BASE_URL}/og/badge/${badge.id}/${generateProfileSlug(userName, userId)}`;
   return {
     title: `Verify ${userName}'s ${badge.name} badge`,
     text: `Check out the "${badge.name}" badge ${badge.icon} earned by ${userName} on AWS User Group Madurai!`,

@@ -130,10 +130,8 @@ export const getPublicBadgeUrl = (
 /**
  * OG proxy URL — use this as the share URL on all social platforms.
  *
- * Points to the Vercel serverless function at /og/badge/{badgeId}/{userSlug}
- * on your own domain (awsugmdu.in). LinkedIn and other crawlers will fetch
- * this URL, get server-rendered OG tags, and show a rich preview card.
- * Human visitors are immediately redirected to the React badge page.
+ * Encodes the badge's imageUrl as a query param so the Vercel function
+ * can use it directly without making an extra API call.
  */
 export const getOgProxyUrl = (
   badge: Badge,
@@ -141,8 +139,12 @@ export const getOgProxyUrl = (
   userId: string
 ): string => {
   const slug = generateProfileSlug(userName, userId);
-  // Always use the site's own domain — never the API Gateway URL
-  return `${BASE_URL}/og/badge/${badge.id}/${slug}`;
+  const base = `${BASE_URL}/og/badge/${badge.id}/${slug}`;
+  // Pass the uploaded image URL so the Vercel function uses it for og:image
+  if (badge.imageUrl) {
+    return `${base}?img=${encodeURIComponent(badge.imageUrl)}`;
+  }
+  return base;
 };
 
 // ─── Recipient hashing ────────────────────────────────────────────────────────

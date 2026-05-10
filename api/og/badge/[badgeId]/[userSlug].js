@@ -239,7 +239,7 @@ function generateFallbackPng(badgeName, recipientName) {
 }
 
 export default async function handler(req, res) {
-  const { badgeId, userSlug } = req.query;
+  const { badgeId, userSlug, img } = req.query;
 
   // Derive recipient name from slug: "poobalan-p-6544" → "Poobalan P"
   let recipientName = null;
@@ -252,22 +252,19 @@ export default async function handler(req, res) {
     }
   }
 
-  // Fetch badge data from the API to get the uploaded imageUrl
-  // GET /ob2/badges/{badgeId}.json returns the BadgeClass with the image field
+  // Get badge name/description — try API first, fall back to hardcoded
   let badgeName = BADGE_DEFINITIONS[badgeId]?.name || 'Badge';
   let badgeDescription = BADGE_DEFINITIONS[badgeId]?.description || '';
-  let uploadedImageUrl = null;
 
   const badgeClass = await fetchJson(`${API_BASE}/ob2/badges/${badgeId}.json`);
   if (badgeClass) {
     badgeName = badgeClass.name || badgeName;
     badgeDescription = badgeClass.description || badgeDescription;
-    // The image field is the uploaded S3 URL when set, otherwise the generated SVG
-    // Only use it as og:image if it's a real uploaded image (not the generated SVG endpoint)
-    if (badgeClass.image && !badgeClass.image.includes('/ob2/badge-images/')) {
-      uploadedImageUrl = badgeClass.image;
-    }
   }
+
+  // The uploaded image URL — passed directly from the frontend as ?img=...
+  // This is the S3 URL of the badge image the admin uploaded
+  const uploadedImageUrl = img || null;
 
   // ── Serve badge PNG image ──────────────────────────────────────────────────
   if (userSlug === 'image.png') {
@@ -298,14 +295,17 @@ export default async function handler(req, res) {
     ? `${recipientName} was awarded the "${badgeName}" badge by AWS User Group Madurai. ${badgeDescription}`
     : `"${badgeName}" — ${badgeDescription} | Issued by AWS User Group Madurai`;
 
-  // og:image — the PNG endpoint on our own domain
-  const ogImage      = `${BASE_URL}/og/badge/${badgeId}/image.png`;
+  // og:image — the PNG endpoint on our own domain, with the uploaded image URL passed through
+  const ogImageBase  = `${BASE_URL}/og/badge/${badgeId}/image.png`;
+  const ogImage      = uploadedImageUrl
+    ? `${ogImageBase}?img=${encodeURIComponent(uploadedImageUrl)}`
+    : ogImageBase;
   const canonicalUrl = `${BASE_URL}/og/badge/${badgeId}/${userSlug}`;
   const redirectUrl  = `${BASE_URL}/badges/${badgeId}/${userSlug}`;
 
-  const t  = esc(title);
-  const d  = esc(description);
-  const img = esc(ogImage);
+  const t   = esc(title);
+  const d   = esc(description);
+  const imgTag = esc(ogImage);
   const cu  = esc(canonicalUrl);
   const ru  = esc(redirectUrl);
 
@@ -323,7 +323,7 @@ export default async function handler(req, res) {
   <meta property="og:title"        content="${t}" />
   <meta property="og:description"  content="${d}" />
   <meta property="og:url"          content="${cu}" />
-  <meta property="og:image"        content="${img}" />
+  <meta property="og:image"        content="${imgTag}" />
   <meta property="og:image:width"  content="400" />
   <meta property="og:image:height" content="400" />
   <meta property="og:image:type"   content="image/png" />
@@ -333,7 +333,7 @@ export default async function handler(req, res) {
   <meta name="twitter:card"        content="summary" />
   <meta name="twitter:title"       content="${t}" />
   <meta name="twitter:description" content="${d}" />
-  <meta name="twitter:image"       content="${img}" />
+  <meta name="twitter:image"       content="${imgTag}" />
 
   <!-- Redirect humans to the React page immediately -->
   <meta http-equiv="refresh" content="0; url=${ru}" />

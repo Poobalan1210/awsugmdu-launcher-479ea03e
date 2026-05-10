@@ -4,32 +4,31 @@
  * Route:  GET /og/badge/:badgeId/:userSlug
  * URL:    https://www.awsugmdu.in/og/badge/b1/poobalan-p-6544
  *
- * Returns server-rendered HTML with OG meta tags so LinkedIn/Twitter/WhatsApp
- * show a rich preview card. Human visitors are redirected to the React page.
+ * Flow:
+ *  1. Fetch the badge's uploaded imageUrl from the API (badges Lambda)
+ *  2. If imageUrl exists → use it directly as og:image
+ *  3. If not → generate a fallback PNG with canvas
  *
- * Also serves the badge image at:
- *   GET /og/badge/:badgeId/image.png  → inline PNG (for og:image)
+ * Human visitors are redirected to the React badge page immediately.
  */
 
-import { createCanvas } from '@napi-rs/canvas';
+import { createCanvas, loadImage } from '@napi-rs/canvas';
+import https from 'https';
 
 const BASE_URL = 'https://www.awsugmdu.in';
+const API_BASE = process.env.VITE_API_ENDPOINT
+  || 'https://2q4zt5zl9e.execute-api.us-east-1.amazonaws.com/dev';
 
-// Badge definitions — keep in sync with src/data/mockData.ts
+// Fallback badge definitions (used when API is unreachable)
 const BADGE_DEFINITIONS = {
-  b1: { name: 'Sprint Champion',  description: 'Completed 5 skill sprints',        color: '#FF9900' },
-  b2: { name: 'First Submission', description: 'Made your first sprint submission', color: '#FF9900' },
-  b3: { name: 'AWS Certified',    description: 'Earned an AWS certification',       color: '#FF9900' },
-  b4: { name: 'Community Helper', description: 'Helped 10 community members',       color: '#FF9900' },
-  b5: { name: 'Blog Writer',      description: 'Published 3 technical blogs',       color: '#FF9900' },
-  b6: { name: 'Early Adopter',    description: 'Joined in the first month',         color: '#FF9900' },
-  b7: { name: 'Speaker Star',     description: 'Delivered 3 sessions',              color: '#FF9900' },
-  b8: { name: 'Security Expert',  description: 'Completed Security Sprint',         color: '#FF9900' },
-};
-
-const BADGE_ICONS = {
-  b1: '🏆', b2: '🚀', b3: '📜', b4: '🤝',
-  b5: '✍️', b6: '⭐', b7: '🎤', b8: '🔒',
+  b1: { name: 'Sprint Champion',  description: 'Completed 5 skill sprints'        },
+  b2: { name: 'First Submission', description: 'Made your first sprint submission' },
+  b3: { name: 'AWS Certified',    description: 'Earned an AWS certification'       },
+  b4: { name: 'Community Helper', description: 'Helped 10 community members'       },
+  b5: { name: 'Blog Writer',      description: 'Published 3 technical blogs'       },
+  b6: { name: 'Early Adopter',    description: 'Joined in the first month'         },
+  b7: { name: 'Speaker Star',     description: 'Delivered 3 sessions'              },
+  b8: { name: 'Security Expert',  description: 'Completed Security Sprint'         },
 };
 
 function esc(s) {
@@ -38,55 +37,94 @@ function esc(s) {
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+/** Fetch JSON from a URL with a timeout, returns null on any error */
+function fetchJson(url, timeoutMs = 3000) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), timeoutMs);
+    https.get(url, { headers: { Accept: 'application/json' } }, (res) => {
+      let data = '';
+      res.on('data', c => { data += c; });
+      res.on('end', () => {
+        clearTimeout(timer);
+        try { resolve(JSON.parse(data)); } catch { resolve(null); }
+      });
+    }).on('error', () => { clearTimeout(timer); resolve(null); });
+  });
+}
+
 /**
- * Generate a 400×400 PNG badge image using canvas.
- * Returns a Buffer.
+ * Generate a 400×400 PNG using the badge's uploaded image.
+ * Draws the image inside the amber ring with the badge name and recipient below.
  */
-function generateBadgePng(badgeId, badgeName, recipientName) {
+async function generateBadgePngWithImage(imageUrl, badgeName, recipientName) {
   const size = 400;
+  const cx = size / 2;
+  const cy = size / 2;
   const canvas = createCanvas(size, size);
   const ctx = canvas.getContext('2d');
 
   // Background
-  ctx.fillStyle = '#0f172a';
+  const bg = ctx.createRadialGradient(cx, cy, 60, cx, cy, 220);
+  bg.addColorStop(0, '#1e293b');
+  bg.addColorStop(1, '#0f172a');
+  ctx.fillStyle = bg;
   ctx.fillRect(0, 0, size, size);
 
-  // Outer amber ring
+  // Outer amber glow ring
   ctx.beginPath();
-  ctx.arc(size / 2, size / 2, 185, 0, Math.PI * 2);
+  ctx.arc(cx, cy, 178, 0, Math.PI * 2);
   ctx.strokeStyle = '#FF9900';
-  ctx.lineWidth = 12;
+  ctx.lineWidth = 14;
+  ctx.shadowColor = '#FF9900';
+  ctx.shadowBlur = 18;
   ctx.stroke();
+  ctx.shadowBlur = 0;
 
-  // Inner ring (dashed effect — draw segments)
+  // Inner dashed ring
   ctx.beginPath();
-  ctx.arc(size / 2, size / 2, 168, 0, Math.PI * 2);
-  ctx.strokeStyle = '#FF9900';
+  ctx.arc(cx, cy, 158, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(255,153,0,0.35)';
   ctx.lineWidth = 2;
-  ctx.setLineDash([10, 6]);
+  ctx.setLineDash([8, 6]);
   ctx.stroke();
   ctx.setLineDash([]);
 
-  // Emoji icon
-  ctx.font = '100px Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(BADGE_ICONS[badgeId] || '🏅', size / 2, size / 2 - 40);
+  // Badge image — clipped to a circle in the upper portion
+  const imgRadius = 72;
+  const imgCy = cy - 30;
+  try {
+    const img = await loadImage(imageUrl);
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, imgCy, imgRadius, 0, Math.PI * 2);
+    ctx.clip();
+    // Draw image centred and cover-fitted
+    const scale = Math.max((imgRadius * 2) / img.width, (imgRadius * 2) / img.height);
+    const dw = img.width * scale;
+    const dh = img.height * scale;
+    ctx.drawImage(img, cx - dw / 2, imgCy - dh / 2, dw, dh);
+    ctx.restore();
+  } catch {
+    // Image load failed — draw a placeholder circle
+    ctx.beginPath();
+    ctx.arc(cx, imgCy, imgRadius, 0, Math.PI * 2);
+    ctx.fillStyle = '#334155';
+    ctx.fill();
+  }
 
   // Badge name
-  ctx.font = 'bold 28px system-ui, -apple-system, sans-serif';
-  ctx.fillStyle = '#FFFFFF';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = 'bold 28px sans-serif';
 
-  // Word-wrap badge name
   const words = badgeName.split(' ');
   const lines = [];
   let line = '';
   for (const word of words) {
     const test = line ? `${line} ${word}` : word;
-    if (ctx.measureText(test).width > 260) {
-      lines.push(line);
+    if (ctx.measureText(test).width > 270) {
+      if (line) lines.push(line);
       line = word;
     } else {
       line = test;
@@ -94,24 +132,108 @@ function generateBadgePng(badgeId, badgeName, recipientName) {
   }
   if (line) lines.push(line);
 
-  const lineHeight = 34;
-  const startY = size / 2 + 60;
-  lines.forEach((l, i) => {
-    ctx.fillText(l, size / 2, startY + i * lineHeight);
-  });
+  const lineH = 34;
+  const nameStartY = imgCy + imgRadius + 28;
+  lines.forEach((l, i) => ctx.fillText(l, cx, nameStartY + i * lineH));
 
-  // Recipient name (smaller, amber)
+  // Recipient name
   if (recipientName) {
-    ctx.font = '18px system-ui, -apple-system, sans-serif';
+    ctx.font = '18px sans-serif';
     ctx.fillStyle = '#FF9900';
-    ctx.fillText(recipientName, size / 2, startY + lines.length * lineHeight + 16);
+    ctx.fillText(recipientName, cx, nameStartY + lines.length * lineH + 18);
   }
 
   // Issuer label
-  ctx.font = '14px system-ui, -apple-system, sans-serif';
-  ctx.fillStyle = '#FF9900';
-  ctx.letterSpacing = '2px';
-  ctx.fillText('AWS UG MADURAI', size / 2, size - 28);
+  ctx.font = 'bold 12px sans-serif';
+  ctx.fillStyle = 'rgba(255,153,0,0.75)';
+  ctx.fillText('AWS USER GROUP MADURAI', cx, size - 20);
+
+  return canvas.toBuffer('image/png');
+}
+
+/**
+ * Fallback PNG — geometric star, no uploaded image.
+ */
+function generateFallbackPng(badgeName, recipientName) {
+  const size = 400;
+  const cx = size / 2;
+  const cy = size / 2;
+  const canvas = createCanvas(size, size);
+  const ctx = canvas.getContext('2d');
+
+  const bg = ctx.createRadialGradient(cx, cy, 60, cx, cy, 220);
+  bg.addColorStop(0, '#1e293b');
+  bg.addColorStop(1, '#0f172a');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, size, size);
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, 178, 0, Math.PI * 2);
+  ctx.strokeStyle = '#FF9900';
+  ctx.lineWidth = 14;
+  ctx.shadowColor = '#FF9900';
+  ctx.shadowBlur = 18;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, 158, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(255,153,0,0.35)';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([8, 6]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // 6-pointed star
+  const starR1 = 52, starR2 = 26, pts = 6;
+  ctx.beginPath();
+  for (let i = 0; i < pts * 2; i++) {
+    const angle = (i * Math.PI) / pts - Math.PI / 2;
+    const r = i % 2 === 0 ? starR1 : starR2;
+    const x = cx + r * Math.cos(angle);
+    const y = (cy - 28) + r * Math.sin(angle);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  const sg = ctx.createLinearGradient(cx - starR1, cy - 28 - starR1, cx + starR1, cy - 28 + starR1);
+  sg.addColorStop(0, '#FFD700');
+  sg.addColorStop(1, '#FF9900');
+  ctx.fillStyle = sg;
+  ctx.shadowColor = '#FF9900';
+  ctx.shadowBlur = 12;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = 'bold 30px sans-serif';
+
+  const words = badgeName.split(' ');
+  const lines = [];
+  let line = '';
+  for (const word of words) {
+    const test = line ? `${line} ${word}` : word;
+    if (ctx.measureText(test).width > 270) {
+      if (line) lines.push(line);
+      line = word;
+    } else { line = test; }
+  }
+  if (line) lines.push(line);
+
+  const lineH = 36;
+  const nameStartY = cy + 46;
+  lines.forEach((l, i) => ctx.fillText(l, cx, nameStartY + i * lineH));
+
+  if (recipientName) {
+    ctx.font = '18px sans-serif';
+    ctx.fillStyle = '#FF9900';
+    ctx.fillText(recipientName, cx, nameStartY + lines.length * lineH + 18);
+  }
+
+  ctx.font = 'bold 12px sans-serif';
+  ctx.fillStyle = 'rgba(255,153,0,0.75)';
+  ctx.fillText('AWS USER GROUP MADURAI', cx, size - 20);
 
   return canvas.toBuffer('image/png');
 }
@@ -119,29 +241,9 @@ function generateBadgePng(badgeId, badgeName, recipientName) {
 export default async function handler(req, res) {
   const { badgeId, userSlug } = req.query;
 
-  // ── Serve badge PNG image ──────────────────────────────────────────────────
-  if (userSlug === 'image.png') {
-    const def = BADGE_DEFINITIONS[badgeId];
-    if (!def) { res.status(404).send('Not found'); return; }
-    try {
-      const png = generateBadgePng(badgeId, def.name, null);
-      res.setHeader('Content-Type', 'image/png');
-      res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=86400');
-      res.status(200).send(png);
-    } catch (e) {
-      // @napi-rs/canvas not available — fall back to a redirect to a placeholder
-      res.redirect(302, `${BASE_URL}/og-image.png`);
-    }
-    return;
-  }
-
-  // ── Serve OG HTML page ─────────────────────────────────────────────────────
-  const def = BADGE_DEFINITIONS[badgeId];
-  if (!def) { res.status(404).send('Badge not found'); return; }
-
   // Derive recipient name from slug: "poobalan-p-6544" → "Poobalan P"
   let recipientName = null;
-  if (userSlug) {
+  if (userSlug && userSlug !== 'image.png') {
     const parts = userSlug.split('-');
     if (parts.length >= 2) {
       recipientName = parts.slice(0, -1)
@@ -150,16 +252,54 @@ export default async function handler(req, res) {
     }
   }
 
+  // Fetch badge data from the API to get the uploaded imageUrl
+  // GET /ob2/badges/{badgeId}.json returns the BadgeClass with the image field
+  let badgeName = BADGE_DEFINITIONS[badgeId]?.name || 'Badge';
+  let badgeDescription = BADGE_DEFINITIONS[badgeId]?.description || '';
+  let uploadedImageUrl = null;
+
+  const badgeClass = await fetchJson(`${API_BASE}/ob2/badges/${badgeId}.json`);
+  if (badgeClass) {
+    badgeName = badgeClass.name || badgeName;
+    badgeDescription = badgeClass.description || badgeDescription;
+    // The image field is the uploaded S3 URL when set, otherwise the generated SVG
+    // Only use it as og:image if it's a real uploaded image (not the generated SVG endpoint)
+    if (badgeClass.image && !badgeClass.image.includes('/ob2/badge-images/')) {
+      uploadedImageUrl = badgeClass.image;
+    }
+  }
+
+  // ── Serve badge PNG image ──────────────────────────────────────────────────
+  if (userSlug === 'image.png') {
+    try {
+      let png;
+      if (uploadedImageUrl) {
+        // Use the uploaded badge image inside the amber ring
+        png = await generateBadgePngWithImage(uploadedImageUrl, badgeName, null);
+      } else {
+        png = generateFallbackPng(badgeName, null);
+      }
+      res.setHeader('Content-Type', 'image/png');
+      res.setHeader('Cache-Control', 'public, max-age=3600, s-maxage=3600');
+      res.status(200).send(png);
+    } catch (e) {
+      console.error('PNG generation failed:', e);
+      res.redirect(302, `${BASE_URL}/og-image.png`);
+    }
+    return;
+  }
+
+  // ── Serve OG HTML page ─────────────────────────────────────────────────────
   const title = recipientName
-    ? `${recipientName} earned ${def.name} | AWS UG Madurai`
-    : `${def.name} | AWS UG Madurai`;
+    ? `${recipientName} earned ${badgeName} | AWS UG Madurai`
+    : `${badgeName} | AWS UG Madurai`;
 
   const description = recipientName
-    ? `${recipientName} was awarded the "${def.name}" badge by AWS User Group Madurai. ${def.description}`
-    : `"${def.name}" — ${def.description} | Issued by AWS User Group Madurai`;
+    ? `${recipientName} was awarded the "${badgeName}" badge by AWS User Group Madurai. ${badgeDescription}`
+    : `"${badgeName}" — ${badgeDescription} | Issued by AWS User Group Madurai`;
 
-  // og:image — served from this same function at /og/badge/{id}/image.png
-  const ogImage     = `${BASE_URL}/og/badge/${badgeId}/image.png`;
+  // og:image — the PNG endpoint on our own domain
+  const ogImage      = `${BASE_URL}/og/badge/${badgeId}/image.png`;
   const canonicalUrl = `${BASE_URL}/og/badge/${badgeId}/${userSlug}`;
   const redirectUrl  = `${BASE_URL}/badges/${badgeId}/${userSlug}`;
 
@@ -207,4 +347,4 @@ export default async function handler(req, res) {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('Cache-Control', 'public, max-age=3600, s-maxage=3600');
   res.status(200).send(html);
-};
+}

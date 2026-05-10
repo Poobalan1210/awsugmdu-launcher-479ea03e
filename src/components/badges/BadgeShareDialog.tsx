@@ -46,6 +46,8 @@ export function BadgeShareDialog({
   const hashtags = ['AWSUG', 'OpenBadges', 'AWS', 'CloudComputing'];
   const hashtagStr = hashtags.map(t => `#${t}`).join(' ');
 
+  // Use the human-readable badge page as the article URL for LinkedIn
+  const articleUrl = badgeViewUrl || badgePageUrl;
   const encodedUrl = encodeURIComponent(badgePageUrl);
   const encodedText = encodeURIComponent(`${shareText}\n\n${hashtagStr}`);
 
@@ -55,13 +57,20 @@ export function BadgeShareDialog({
       icon: <Linkedin className="h-4 w-4" />,
       color: 'text-blue-600 border-blue-500/30 hover:bg-blue-500/10',
       action: async () => {
-        // Copy full post content then open LinkedIn
-        const content = `${shareText}\n\n${badgePageUrl}\n\n${hashtagStr}`;
-        try { await navigator.clipboard.writeText(content); } catch { /* ignore */ }
-        toast.success('Post content copied!', {
-          description: 'Paste it into your LinkedIn post (Cmd+V / Ctrl+V)',
+        // Use LinkedIn's shareArticle endpoint which shows a proper preview
+        // with title, description, and image without relying on OG crawl cache
+        const liParams = new URLSearchParams({
+          mini: 'true',
+          url: articleUrl,
+          title: `${recipient.name} earned ${badge.name} | AWS UG Madurai`,
+          summary: `${badge.description} — Issued by AWS User Group Madurai`,
+          source: 'AWS User Group Madurai',
         });
-        window.open('https://www.linkedin.com/feed/?shareActive=true', '_blank', 'noopener,noreferrer');
+        window.open(
+          `https://www.linkedin.com/shareArticle?${liParams.toString()}`,
+          '_blank',
+          'noopener,noreferrer,width=600,height=600'
+        );
       },
     },
     {

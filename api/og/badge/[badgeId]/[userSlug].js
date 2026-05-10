@@ -1,25 +1,26 @@
 /**
  * Vercel Serverless Function — OG Proxy for badge sharing
  *
- * Route:  GET /og/badge/:badgeId/:userSlug
- * URL:    https://www.awsugmdu.in/og/badge/b1/poobalan-p-6544
+ * Route: GET /og/badge/:badgeId/:userSlug[?img=<encodedS3Url>]
+ * e.g.:  https://www.awsugmdu.in/og/badge/b-123/poobalan-p-6544?img=https%3A%2F%2F...
  *
- * Flow:
- *  1. Fetch the badge's uploaded imageUrl from the API (badges Lambda)
- *  2. If imageUrl exists → use it directly as og:image
- *  3. If not → generate a fallback PNG with canvas
+ * Returns server-rendered HTML with correct OG meta tags so LinkedIn,
+ * Twitter, WhatsApp, Slack, and Telegram show a rich preview card.
+ * Human visitors are immediately redirected to the React badge page.
  *
- * Human visitors are redirected to the React badge page immediately.
+ * og:image priority:
+ *   1. ?img= query param  → the S3 URL of the uploaded badge image (set by frontend)
+ *   2. fallback PNG       → generated with canvas (amber ring + gold star)
  */
 
-import { createCanvas, loadImage } from '@napi-rs/canvas';
+import { createCanvas } from '@napi-rs/canvas';
 import https from 'https';
 
 const BASE_URL = 'https://www.awsugmdu.in';
 const API_BASE = process.env.VITE_API_ENDPOINT
   || 'https://2q4zt5zl9e.execute-api.us-east-1.amazonaws.com/dev';
 
-// Fallback badge definitions (used when API is unreachable)
+// Fallback badge definitions — used when the badge ID is not in the API
 const BADGE_DEFINITIONS = {
   b1: { name: 'Sprint Champion',  description: 'Completed 5 skill sprints'        },
   b2: { name: 'First Submission', description: 'Made your first sprint submission' },
@@ -37,10 +38,10 @@ function esc(s) {
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-/** Fetch JSON from a URL with a timeout, returns null on any error */
-function fetchJson(url, timeoutMs = 3000) {
+/** Fetch JSON from a URL with a 3 s timeout. Returns null on any error. */
+function fetchJson(url) {
   return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(null), timeoutMs);
+    const timer = setTimeout(() => resolve(null), 3000);
     https.get(url, { headers: { Accept: 'application/json' } }, (res) => {
       let data = '';
       res.on('data', c => { data += c; });
@@ -53,10 +54,11 @@ function fetchJson(url, timeoutMs = 3000) {
 }
 
 /**
- * Generate a 400×400 PNG using the badge's uploaded image.
- * Draws the image inside the amber ring with the badge name and recipient below.
+ * Generate a 400×400 fallback PNG badge image.
+ * Used only when no uploaded image URL is available.
+ * Draws a geometric gold star inside the amber ring — no emoji, no external fonts.
  */
-async function generateBadgePngWithImage(imageUrl, badgeName, recipientName) {
+function generateFallbackPng(badgeName) {
   const size = 400;
   const cx = size / 2;
   const cy = size / 2;
@@ -89,102 +91,7 @@ async function generateBadgePngWithImage(imageUrl, badgeName, recipientName) {
   ctx.stroke();
   ctx.setLineDash([]);
 
-  // Badge image — clipped to a circle in the upper portion
-  const imgRadius = 72;
-  const imgCy = cy - 30;
-  try {
-    const img = await loadImage(imageUrl);
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(cx, imgCy, imgRadius, 0, Math.PI * 2);
-    ctx.clip();
-    // Draw image centred and cover-fitted
-    const scale = Math.max((imgRadius * 2) / img.width, (imgRadius * 2) / img.height);
-    const dw = img.width * scale;
-    const dh = img.height * scale;
-    ctx.drawImage(img, cx - dw / 2, imgCy - dh / 2, dw, dh);
-    ctx.restore();
-  } catch {
-    // Image load failed — draw a placeholder circle
-    ctx.beginPath();
-    ctx.arc(cx, imgCy, imgRadius, 0, Math.PI * 2);
-    ctx.fillStyle = '#334155';
-    ctx.fill();
-  }
-
-  // Badge name
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = '#FFFFFF';
-  ctx.font = 'bold 28px sans-serif';
-
-  const words = badgeName.split(' ');
-  const lines = [];
-  let line = '';
-  for (const word of words) {
-    const test = line ? `${line} ${word}` : word;
-    if (ctx.measureText(test).width > 270) {
-      if (line) lines.push(line);
-      line = word;
-    } else {
-      line = test;
-    }
-  }
-  if (line) lines.push(line);
-
-  const lineH = 34;
-  const nameStartY = imgCy + imgRadius + 28;
-  lines.forEach((l, i) => ctx.fillText(l, cx, nameStartY + i * lineH));
-
-  // Recipient name
-  if (recipientName) {
-    ctx.font = '18px sans-serif';
-    ctx.fillStyle = '#FF9900';
-    ctx.fillText(recipientName, cx, nameStartY + lines.length * lineH + 18);
-  }
-
-  // Issuer label
-  ctx.font = 'bold 12px sans-serif';
-  ctx.fillStyle = 'rgba(255,153,0,0.75)';
-  ctx.fillText('AWS USER GROUP MADURAI', cx, size - 20);
-
-  return canvas.toBuffer('image/png');
-}
-
-/**
- * Fallback PNG — geometric star, no uploaded image.
- */
-function generateFallbackPng(badgeName, recipientName) {
-  const size = 400;
-  const cx = size / 2;
-  const cy = size / 2;
-  const canvas = createCanvas(size, size);
-  const ctx = canvas.getContext('2d');
-
-  const bg = ctx.createRadialGradient(cx, cy, 60, cx, cy, 220);
-  bg.addColorStop(0, '#1e293b');
-  bg.addColorStop(1, '#0f172a');
-  ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, size, size);
-
-  ctx.beginPath();
-  ctx.arc(cx, cy, 178, 0, Math.PI * 2);
-  ctx.strokeStyle = '#FF9900';
-  ctx.lineWidth = 14;
-  ctx.shadowColor = '#FF9900';
-  ctx.shadowBlur = 18;
-  ctx.stroke();
-  ctx.shadowBlur = 0;
-
-  ctx.beginPath();
-  ctx.arc(cx, cy, 158, 0, Math.PI * 2);
-  ctx.strokeStyle = 'rgba(255,153,0,0.35)';
-  ctx.lineWidth = 2;
-  ctx.setLineDash([8, 6]);
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  // 6-pointed star
+  // 6-pointed gold star
   const starR1 = 52, starR2 = 26, pts = 6;
   ctx.beginPath();
   for (let i = 0; i < pts * 2; i++) {
@@ -204,6 +111,7 @@ function generateFallbackPng(badgeName, recipientName) {
   ctx.fill();
   ctx.shadowBlur = 0;
 
+  // Badge name (word-wrapped)
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = '#FFFFFF';
@@ -225,12 +133,7 @@ function generateFallbackPng(badgeName, recipientName) {
   const nameStartY = cy + 46;
   lines.forEach((l, i) => ctx.fillText(l, cx, nameStartY + i * lineH));
 
-  if (recipientName) {
-    ctx.font = '18px sans-serif';
-    ctx.fillStyle = '#FF9900';
-    ctx.fillText(recipientName, cx, nameStartY + lines.length * lineH + 18);
-  }
-
+  // Issuer label
   ctx.font = 'bold 12px sans-serif';
   ctx.fillStyle = 'rgba(255,153,0,0.75)';
   ctx.fillText('AWS USER GROUP MADURAI', cx, size - 20);
@@ -241,9 +144,21 @@ function generateFallbackPng(badgeName, recipientName) {
 export default async function handler(req, res) {
   const { badgeId, userSlug, img } = req.query;
 
-  // Derive recipient name from slug: "poobalan-p-6544" → "Poobalan P"
+  // ── Resolve badge name & description ──────────────────────────────────────
+  // Start with hardcoded fallback, then try the API for dynamic badges
+  let badgeName        = BADGE_DEFINITIONS[badgeId]?.name        || 'Badge';
+  let badgeDescription = BADGE_DEFINITIONS[badgeId]?.description || '';
+
+  try {
+    const badgeClass = await fetchJson(`${API_BASE}/ob2/badges/${badgeId}.json`);
+    if (badgeClass?.name)        badgeName        = badgeClass.name;
+    if (badgeClass?.description) badgeDescription = badgeClass.description;
+  } catch { /* API unreachable — use fallback */ }
+
+  // ── Resolve recipient name from slug ──────────────────────────────────────
+  // Slug format: "firstname-lastname-xxxx" — strip the 4-char hash suffix
   let recipientName = null;
-  if (userSlug && userSlug !== 'image.png') {
+  if (userSlug) {
     const parts = userSlug.split('-');
     if (parts.length >= 2) {
       recipientName = parts.slice(0, -1)
@@ -252,41 +167,35 @@ export default async function handler(req, res) {
     }
   }
 
-  // Get badge name/description — try API first, fall back to hardcoded
-  let badgeName = BADGE_DEFINITIONS[badgeId]?.name || 'Badge';
-  let badgeDescription = BADGE_DEFINITIONS[badgeId]?.description || '';
-
-  const badgeClass = await fetchJson(`${API_BASE}/ob2/badges/${badgeId}.json`);
-  if (badgeClass) {
-    badgeName = badgeClass.name || badgeName;
-    badgeDescription = badgeClass.description || badgeDescription;
-  }
-
-  // The uploaded image URL — passed directly from the frontend as ?img=...
-  // This is the S3 URL of the badge image the admin uploaded
+  // ── Resolve og:image ──────────────────────────────────────────────────────
+  // ?img= is the S3 URL of the uploaded badge image, encoded by the frontend.
+  // When present, use it directly — LinkedIn fetches it from S3.
+  // When absent, serve a generated fallback PNG from this function.
   const uploadedImageUrl = img || null;
 
-  // ── Serve badge PNG image ──────────────────────────────────────────────────
+  // The fallback PNG URL — served by this same function without ?img=
+  const fallbackPngUrl = `${BASE_URL}/og/badge/${badgeId}/image.png`;
+
+  // og:image is the uploaded S3 URL when available, otherwise the fallback PNG
+  const ogImage = uploadedImageUrl || fallbackPngUrl;
+
+  // ── Handle /og/badge/:badgeId/image.png ───────────────────────────────────
+  // This sub-path serves the fallback PNG for badges without an uploaded image.
+  // It is only reached when og:image points to fallbackPngUrl (no ?img= param).
   if (userSlug === 'image.png') {
     try {
-      let png;
-      if (uploadedImageUrl) {
-        // Use the uploaded badge image inside the amber ring
-        png = await generateBadgePngWithImage(uploadedImageUrl, badgeName, null);
-      } else {
-        png = generateFallbackPng(badgeName, null);
-      }
+      const png = generateFallbackPng(badgeName);
       res.setHeader('Content-Type', 'image/png');
       res.setHeader('Cache-Control', 'public, max-age=3600, s-maxage=3600');
       res.status(200).send(png);
     } catch (e) {
-      console.error('PNG generation failed:', e);
+      console.error('Fallback PNG generation failed:', e);
       res.redirect(302, `${BASE_URL}/og-image.png`);
     }
     return;
   }
 
-  // ── Serve OG HTML page ─────────────────────────────────────────────────────
+  // ── Build OG HTML page ────────────────────────────────────────────────────
   const title = recipientName
     ? `${recipientName} earned ${badgeName} | AWS UG Madurai`
     : `${badgeName} | AWS UG Madurai`;
@@ -295,17 +204,12 @@ export default async function handler(req, res) {
     ? `${recipientName} was awarded the "${badgeName}" badge by AWS User Group Madurai. ${badgeDescription}`
     : `"${badgeName}" — ${badgeDescription} | Issued by AWS User Group Madurai`;
 
-  // og:image — the PNG endpoint on our own domain, with the uploaded image URL passed through
-  const ogImageBase  = `${BASE_URL}/og/badge/${badgeId}/image.png`;
-  const ogImage      = uploadedImageUrl
-    ? `${ogImageBase}?img=${encodeURIComponent(uploadedImageUrl)}`
-    : ogImageBase;
   const canonicalUrl = `${BASE_URL}/og/badge/${badgeId}/${userSlug}`;
   const redirectUrl  = `${BASE_URL}/badges/${badgeId}/${userSlug}`;
 
   const t   = esc(title);
   const d   = esc(description);
-  const imgTag = esc(ogImage);
+  const img_ = esc(ogImage);
   const cu  = esc(canonicalUrl);
   const ru  = esc(redirectUrl);
 
@@ -323,7 +227,7 @@ export default async function handler(req, res) {
   <meta property="og:title"        content="${t}" />
   <meta property="og:description"  content="${d}" />
   <meta property="og:url"          content="${cu}" />
-  <meta property="og:image"        content="${imgTag}" />
+  <meta property="og:image"        content="${img_}" />
   <meta property="og:image:width"  content="400" />
   <meta property="og:image:height" content="400" />
   <meta property="og:image:type"   content="image/png" />
@@ -333,9 +237,9 @@ export default async function handler(req, res) {
   <meta name="twitter:card"        content="summary" />
   <meta name="twitter:title"       content="${t}" />
   <meta name="twitter:description" content="${d}" />
-  <meta name="twitter:image"       content="${imgTag}" />
+  <meta name="twitter:image"       content="${img_}" />
 
-  <!-- Redirect humans to the React page immediately -->
+  <!-- Redirect humans to the React badge page immediately -->
   <meta http-equiv="refresh" content="0; url=${ru}" />
   <script>window.location.replace("${ru}");</script>
 </head>

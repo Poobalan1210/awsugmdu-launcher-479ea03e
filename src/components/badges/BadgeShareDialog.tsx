@@ -181,7 +181,7 @@ export function BadgeShareDialog({
           <div className="flex gap-2">
             <Input
               readOnly
-              value={displayUrl}
+              value={badgePageUrl}
               className="text-xs h-9 bg-muted/50"
               aria-label="Badge URL"
               onClick={e => (e.target as HTMLInputElement).select()}
@@ -199,6 +199,9 @@ export function BadgeShareDialog({
               )}
             </Button>
           </div>
+          <p className="text-xs text-muted-foreground mt-1.5">
+            Paste this link on LinkedIn to show the badge preview.
+          </p>
         </div>
 
         <Separator />

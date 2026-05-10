@@ -52,6 +52,12 @@ export function OpenBadgeCard({
   const publicBadgeUrl = getPublicBadgeUrl(badge, user.name, user.id);
   const ogProxyUrl = getOgProxyUrl(badge, user.name, user.id);
 
+  // Debug: log what imageUrl we have
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[OpenBadgeCard] badge.imageUrl:', badge.imageUrl);
+    console.log('[OpenBadgeCard] ogProxyUrl:', ogProxyUrl);
+  }
+
   const handleDownloadJson = async () => {
     await downloadBadgeAssertion(badge, user);
     toast.success('OB v2 assertion downloaded!', {

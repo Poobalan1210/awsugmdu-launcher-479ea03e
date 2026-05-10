@@ -27,6 +27,7 @@ import {
   getLinkedInBadgeUrl,
   getBadgeVerificationUrl,
   getPublicBadgeUrl,
+  getOgProxyUrl,
 } from '@/lib/openBadges';
 import { BadgeShareDialog } from '@/components/badges/BadgeShareDialog';
 import { toast } from 'sonner';
@@ -49,6 +50,7 @@ export function OpenBadgeCard({
   const [shareOpen, setShareOpen] = useState(false);
 
   const publicBadgeUrl = getPublicBadgeUrl(badge, user.name, user.id);
+  const ogProxyUrl = getOgProxyUrl(badge, user.name, user.id);
 
   const handleDownloadJson = async () => {
     await downloadBadgeAssertion(badge, user);
@@ -254,13 +256,14 @@ export function OpenBadgeCard({
         </Card>
       </motion.div>
 
-      {/* Credly-style share dialog */}
+      {/* Credly-style share dialog — uses OG proxy URL so LinkedIn preview works */}
       <BadgeShareDialog
         open={shareOpen}
         onOpenChange={setShareOpen}
         badge={badge}
         recipient={user}
-        badgePageUrl={publicBadgeUrl}
+        badgePageUrl={ogProxyUrl}
+        badgeViewUrl={publicBadgeUrl}
       />
     </>
   );

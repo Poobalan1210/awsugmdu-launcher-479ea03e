@@ -2299,6 +2299,8 @@ resource "aws_api_gateway_deployment" "api" {
       aws_api_gateway_integration.ob2_assertions_post.id,
       aws_api_gateway_integration.ob2_assert_id_get.id,
       aws_api_gateway_integration.ob2_verify_get.id,
+      # OG proxy for social crawlers
+      aws_api_gateway_integration.og_badge_get.id,
     ]))
   }
 
@@ -2483,6 +2485,10 @@ resource "aws_api_gateway_deployment" "api" {
     aws_api_gateway_integration.ob2_verify_get,
     aws_api_gateway_integration.ob2_verify_options,
     aws_api_gateway_integration_response.ob2_verify_options,
+    # OG proxy
+    aws_api_gateway_integration.og_badge_get,
+    aws_api_gateway_integration.og_badge_options,
+    aws_api_gateway_integration_response.og_badge_options,
   ]
 
   rest_api_id = aws_api_gateway_rest_api.api.id

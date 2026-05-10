@@ -24,6 +24,7 @@ const {
   ScanCommand,
 } = require('@aws-sdk/lib-dynamodb');
 const crypto = require('crypto');
+const { handleOgBadge } = require('./og-proxy');
 
 const client = new DynamoDBClient({ region: process.env.AWS_REGION || 'ap-south-1' });
 const db = DynamoDBDocumentClient.from(client);
@@ -424,6 +425,12 @@ exports.handler = async (event) => {
       console.error('DynamoDB error:', e);
       return json(500, { error: 'Failed to store assertion' });
     }
+  }
+
+  // GET /og/badge/{badgeId}/{userSlug} — OG proxy for social crawlers
+  const ogMatch = path.match(/^\/og\/badge\/([^/]+)\/([^/]+)$/);
+  if (method === 'GET' && ogMatch) {
+    return handleOgBadge(ogMatch[1], ogMatch[2]);
   }
 
   return json(404, { error: 'Not found' });

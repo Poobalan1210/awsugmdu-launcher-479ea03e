@@ -117,7 +117,7 @@ export const badgeClassUrl = (badgeId: string) =>
 export const assertionUrl = (badgeId: string, userId: string) =>
   `${BASE_URL}/ob2/assertions/${badgeId}-${userId}.json`;
 
-/** Public human-readable badge page (unchanged) */
+/** Public human-readable badge page — use for internal links */
 export const getPublicBadgeUrl = (
   badge: Badge,
   userName: string,
@@ -125,6 +125,25 @@ export const getPublicBadgeUrl = (
 ): string => {
   const slug = generateProfileSlug(userName, userId);
   return `${BASE_URL}/badges/${badge.id}/${slug}`;
+};
+
+/**
+ * OG proxy URL — use this as the share URL on all social platforms.
+ *
+ * Social crawlers (LinkedIn, Twitter, WhatsApp, Slack, Telegram) fetch this
+ * URL and receive server-rendered HTML with correct OG meta tags baked in.
+ * Human visitors are immediately redirected to the real React badge page.
+ *
+ * Format: {VITE_API_ENDPOINT}/og/badge/{badgeId}/{userSlug}
+ */
+export const getOgProxyUrl = (
+  badge: Badge,
+  userName: string,
+  userId: string
+): string => {
+  const slug = generateProfileSlug(userName, userId);
+  const apiBase = (import.meta as any).env?.VITE_API_ENDPOINT || BASE_URL;
+  return `${apiBase}/og/badge/${badge.id}/${slug}`;
 };
 
 // ─── Recipient hashing ────────────────────────────────────────────────────────

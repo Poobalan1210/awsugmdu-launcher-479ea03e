@@ -24,7 +24,10 @@ interface BadgeShareDialogProps {
   onOpenChange: (open: boolean) => void;
   badge: Badge;
   recipient: Pick<User, 'id' | 'name' | 'email' | 'avatar' | 'designation' | 'company'>;
+  /** OG proxy URL — what gets shared on social (crawlers see OG tags here) */
   badgePageUrl: string;
+  /** Human-readable React page URL — shown in the preview URL bar */
+  badgeViewUrl?: string;
 }
 
 export function BadgeShareDialog({
@@ -33,8 +36,11 @@ export function BadgeShareDialog({
   badge,
   recipient,
   badgePageUrl,
+  badgeViewUrl,
 }: BadgeShareDialogProps) {
   const [copied, setCopied] = useState(false);
+  // The URL shown in the preview bar is the human-readable page
+  const displayUrl = badgeViewUrl || badgePageUrl;
 
   const shareText = `I earned the "${badge.name}" badge from AWS User Group Madurai! ${badge.icon} ${badge.description}`;
   const hashtags = ['AWSUG', 'OpenBadges', 'AWS', 'CloudComputing'];
@@ -157,10 +163,10 @@ export function BadgeShareDialog({
               </div>
             </div>
 
-            {/* URL bar */}
+            {/* URL bar — shows the human-readable badge page */}
             <div className="px-4 py-2 bg-muted/50 border-t flex items-center gap-1.5">
               <ExternalLink className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-              <span className="text-xs text-muted-foreground truncate">{badgePageUrl}</span>
+              <span className="text-xs text-muted-foreground truncate">{displayUrl}</span>
             </div>
           </div>
         </div>
@@ -175,7 +181,7 @@ export function BadgeShareDialog({
           <div className="flex gap-2">
             <Input
               readOnly
-              value={badgePageUrl}
+              value={displayUrl}
               className="text-xs h-9 bg-muted/50"
               aria-label="Badge URL"
               onClick={e => (e.target as HTMLInputElement).select()}

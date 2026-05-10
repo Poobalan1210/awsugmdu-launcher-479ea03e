@@ -522,7 +522,85 @@ resource "aws_api_gateway_integration_response" "ob2_verify_options" {
   depends_on          = [aws_api_gateway_integration.ob2_verify_options]
 }
 
+# ─── OG Proxy: /og/badge/{badgeId}/{userSlug} ────────────────────────────────
+# Social crawlers (LinkedIn, Twitter, WhatsApp, Slack, Telegram) hit this URL.
+# It returns server-rendered HTML with correct OG meta tags, then redirects
+# human visitors to the real React badge page at /badges/{badgeId}/{userSlug}.
+
+resource "aws_api_gateway_resource" "og" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  parent_id   = aws_api_gateway_rest_api.api.root_resource_id
+  path_part   = "og"
+}
+
+resource "aws_api_gateway_resource" "og_badge" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  parent_id   = aws_api_gateway_resource.og.id
+  path_part   = "badge"
+}
+
+resource "aws_api_gateway_resource" "og_badge_id" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  parent_id   = aws_api_gateway_resource.og_badge.id
+  path_part   = "{badgeId}"
+}
+
+resource "aws_api_gateway_resource" "og_badge_id_slug" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  parent_id   = aws_api_gateway_resource.og_badge_id.id
+  path_part   = "{userSlug}"
+}
+
+resource "aws_api_gateway_method" "og_badge_get" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.og_badge_id_slug.id
+  http_method   = "GET"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "og_badge_get" {
+  rest_api_id             = aws_api_gateway_rest_api.api.id
+  resource_id             = aws_api_gateway_resource.og_badge_id_slug.id
+  http_method             = aws_api_gateway_method.og_badge_get.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.badges_crud.invoke_arn
+}
+
+resource "aws_api_gateway_method" "og_badge_options" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.og_badge_id_slug.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "og_badge_options" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.og_badge_id_slug.id
+  http_method = aws_api_gateway_method.og_badge_options.http_method
+  type        = "MOCK"
+  request_templates = { "application/json" = "{\"statusCode\": 200}" }
+}
+
+resource "aws_api_gateway_method_response" "og_badge_options_200" {
+  rest_api_id         = aws_api_gateway_rest_api.api.id
+  resource_id         = aws_api_gateway_resource.og_badge_id_slug.id
+  http_method         = aws_api_gateway_method.og_badge_options.http_method
+  status_code         = "200"
+  response_parameters = local.cors_response_params
+}
+
+resource "aws_api_gateway_integration_response" "og_badge_options" {
+  rest_api_id         = aws_api_gateway_rest_api.api.id
+  resource_id         = aws_api_gateway_resource.og_badge_id_slug.id
+  http_method         = aws_api_gateway_method.og_badge_options.http_method
+  status_code         = aws_api_gateway_method_response.og_badge_options_200.status_code
+  response_parameters = local.cors_headers
+  depends_on          = [aws_api_gateway_integration.og_badge_options]
+}
+
 # ─── Outputs ──────────────────────────────────────────────────────────────────
+
 output "badge_images_bucket_name" {
   description = "S3 bucket for uploaded badge images"
   value       = aws_s3_bucket.badge_images.id

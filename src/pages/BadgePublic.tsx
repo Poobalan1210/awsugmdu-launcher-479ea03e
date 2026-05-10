@@ -31,6 +31,7 @@ import {
   getLinkedInBadgeUrl,
   getBadgeVerificationUrl,
   assertionUrl,
+  getOgProxyUrl,
 } from '@/lib/openBadges';
 import { toast } from 'sonner';
 import { Header } from '@/components/layout/Header';
@@ -183,6 +184,10 @@ export default function BadgePublic() {
 
   const badgePageUrl = window.location.href;
   const profileUrl = recipient ? getShareableProfileUrl(recipient.name, recipient.id) : '/';
+  // OG proxy URL — what gets shared on social platforms
+  const ogShareUrl = (badge && recipient)
+    ? getOgProxyUrl(badge, recipient.name, recipient.id)
+    : badgePageUrl;
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-b from-background to-muted/20">
@@ -436,7 +441,8 @@ export default function BadgePublic() {
           onOpenChange={setShareOpen}
           badge={badge}
           recipient={recipient}
-          badgePageUrl={badgePageUrl}
+          badgePageUrl={ogShareUrl}
+          badgeViewUrl={badgePageUrl}
         />
       )}
     </div>

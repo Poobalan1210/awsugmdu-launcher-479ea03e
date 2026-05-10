@@ -129,8 +129,11 @@ export const getPublicBadgeUrl = (
 
 /**
  * OG proxy URL — use this as the share URL on all social platforms.
- * Passes badge name, imageUrl, and a timestamp so LinkedIn always
- * sees a fresh URL and re-crawls to show the correct image.
+ *
+ * The image version is embedded in the PATH so LinkedIn treats each new
+ * badge image as a completely new URL and re-crawls it fresh.
+ *
+ * Format: /og/badge/{badgeId}/{userSlug}/{imageVersion}?img=...&name=...&desc=...
  */
 export const getOgProxyUrl = (
   badge: Badge,
@@ -138,16 +141,15 @@ export const getOgProxyUrl = (
   userId: string
 ): string => {
   const slug = generateProfileSlug(userName, userId);
-  const base = `${BASE_URL}/og/badge/${badge.id}/${slug}`;
+  // Version = last 8 chars of the S3 filename (changes when image changes)
+  const version = badge.imageUrl
+    ? badge.imageUrl.split('/').pop()?.split('.')[0]?.slice(-8) || 'v1'
+    : 'v1';
+  const base = `${BASE_URL}/og/badge/${badge.id}/${slug}/${version}`;
   const params = new URLSearchParams();
-  if (badge.imageUrl) {
-    params.set('img', badge.imageUrl);
-  }
-  // Always pass name/desc so the Vercel function doesn't need to call the API
+  if (badge.imageUrl) params.set('img', badge.imageUrl);
   params.set('name', badge.name);
   params.set('desc', badge.description);
-  // Timestamp cache-buster — ensures LinkedIn never serves a stale cached preview
-  params.set('t', Date.now().toString().slice(-6));
   return `${base}?${params.toString()}`;
 };
 

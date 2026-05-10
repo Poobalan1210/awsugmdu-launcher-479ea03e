@@ -253,7 +253,7 @@ resource "aws_api_gateway_resource" "ob2_verify" {
 locals {
   cors_headers = {
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
-    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
     "method.response.header.Access-Control-Allow-Origin"  = "'*'"
   }
   cors_response_params = {

@@ -142,7 +142,13 @@ function generateFallbackPng(badgeName) {
 }
 
 export default async function handler(req, res) {
-  const { badgeId, userSlug, img, name, desc, v } = req.query;
+  // The route can be:
+  //   /og/badge/:badgeId/:userSlug           (legacy)
+  //   /og/badge/:badgeId/:userSlug/:version  (new — version in path for LinkedIn cache-busting)
+  // Vercel passes path params via req.query for [badgeId] and [userSlug].
+  // The :version segment is captured by the rewrite but not as a named param,
+  // so we read it from the raw URL path if needed.
+  const { badgeId, userSlug, img, name, desc } = req.query;
 
   // ── Resolve badge name & description ──────────────────────────────────────
   // Prefer params passed from the frontend (always accurate, no API call needed).

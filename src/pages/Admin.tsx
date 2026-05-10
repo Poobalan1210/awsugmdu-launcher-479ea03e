@@ -5234,13 +5234,15 @@ function BadgesTab({ allUsers }: { allUsers: UserType[] }) {
                               try {
                                 const { uploadFileToS3 } = await import('@/lib/s3Upload');
                                 const url = await uploadFileToS3(file, 'badge-images');
+                                // Verify the upload actually succeeded by checking the URL is an S3 URL
+                                if (!url.startsWith('http')) {
+                                  throw new Error('Upload returned invalid URL');
+                                }
                                 setNewBadge(prev => ({ ...prev, imageUrl: url }));
                                 toast.success('Image uploaded!');
                               } catch (err: any) {
-                                // Fallback: use object URL for preview if S3 not configured
-                                const localUrl = URL.createObjectURL(file);
-                                setNewBadge(prev => ({ ...prev, imageUrl: localUrl }));
-                                toast.info('Using local preview (S3 not configured)');
+                                toast.error('Image upload failed. Please try again or paste a URL directly.');
+                                // Do NOT store a local blob URL — it won't work after the dialog closes
                               } finally {
                                 setBadgeImageUploading(false);
                               }

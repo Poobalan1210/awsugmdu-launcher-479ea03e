@@ -39,11 +39,14 @@ export function generateBadgeShare(
     ? `${BASE_URL}/og/badge/${badge.id}/${generateProfileSlug(userName, userId)}`
     : `${BASE_URL}/profile`;
   if (userId) {
+    const version = badge.imageUrl
+      ? badge.imageUrl.split('/').pop()?.split('.')[0]?.slice(-8) || 'v1'
+      : 'v1';
+    shareUrl = `${BASE_URL}/og/badge/${badge.id}/${generateProfileSlug(userName, userId)}/${version}`;
     const params = new URLSearchParams();
     if (badge.imageUrl) params.set('img', badge.imageUrl);
     params.set('name', badge.name);
     params.set('desc', badge.description);
-    params.set('t', Date.now().toString().slice(-6));
     shareUrl += `?${params.toString()}`;
   }
 

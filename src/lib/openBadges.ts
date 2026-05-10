@@ -129,10 +129,8 @@ export const getPublicBadgeUrl = (
 
 /**
  * OG proxy URL — use this as the share URL on all social platforms.
- *
- * Encodes the badge's imageUrl as a query param so the Vercel function
- * can use it directly without making an extra API call.
- * Adds a cache-bust param so LinkedIn re-crawls when the image changes.
+ * Passes badge name and imageUrl as query params so the Vercel function
+ * has everything it needs without making an API call.
  */
 export const getOgProxyUrl = (
   badge: Badge,
@@ -141,13 +139,18 @@ export const getOgProxyUrl = (
 ): string => {
   const slug = generateProfileSlug(userName, userId);
   const base = `${BASE_URL}/og/badge/${badge.id}/${slug}`;
+  const params = new URLSearchParams();
   if (badge.imageUrl) {
-    // v param is a short hash of the imageUrl — changes when image changes,
-    // forcing LinkedIn to re-crawl and show the new image
+    params.set('img', badge.imageUrl);
+    // Cache-bust: last 4 chars of the timestamp in the filename
     const v = badge.imageUrl.split('/').pop()?.split('-')[0]?.slice(-4) || '1';
-    return `${base}?img=${encodeURIComponent(badge.imageUrl)}&v=${v}`;
+    params.set('v', v);
   }
-  return base;
+  // Pass badge name so the Vercel function doesn't need to call the API
+  params.set('name', badge.name);
+  params.set('desc', badge.description);
+  const qs = params.toString();
+  return qs ? `${base}?${qs}` : base;
 };
 
 // ─── Recipient hashing ────────────────────────────────────────────────────────

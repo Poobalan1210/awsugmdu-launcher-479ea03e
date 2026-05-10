@@ -142,18 +142,22 @@ function generateFallbackPng(badgeName) {
 }
 
 export default async function handler(req, res) {
-  const { badgeId, userSlug, img } = req.query;
+  const { badgeId, userSlug, img, name, desc, v } = req.query;
 
   // ── Resolve badge name & description ──────────────────────────────────────
-  // Start with hardcoded fallback, then try the API for dynamic badges
-  let badgeName        = BADGE_DEFINITIONS[badgeId]?.name        || 'Badge';
-  let badgeDescription = BADGE_DEFINITIONS[badgeId]?.description || '';
+  // Prefer params passed from the frontend (always accurate, no API call needed).
+  // Fall back to hardcoded list, then API for anything else.
+  let badgeName        = name || BADGE_DEFINITIONS[badgeId]?.name        || 'Badge';
+  let badgeDescription = desc || BADGE_DEFINITIONS[badgeId]?.description || '';
 
-  try {
-    const badgeClass = await fetchJson(`${API_BASE}/ob2/badges/${badgeId}.json`);
-    if (badgeClass?.name)        badgeName        = badgeClass.name;
-    if (badgeClass?.description) badgeDescription = badgeClass.description;
-  } catch { /* API unreachable — use fallback */ }
+  // Only call the API if we still don't have a name (dynamic badge, no params)
+  if (!name && !BADGE_DEFINITIONS[badgeId]) {
+    try {
+      const badgeClass = await fetchJson(`${API_BASE}/ob2/badges/${badgeId}.json`);
+      if (badgeClass?.name)        badgeName        = badgeClass.name;
+      if (badgeClass?.description) badgeDescription = badgeClass.description;
+    } catch { /* API unreachable — use fallback */ }
+  }
 
   // ── Resolve recipient name from slug ──────────────────────────────────────
   // Slug format: "firstname-lastname-xxxx" — strip the 4-char hash suffix
@@ -207,6 +211,13 @@ export default async function handler(req, res) {
   const canonicalUrl = `${BASE_URL}/og/badge/${badgeId}/${userSlug}`;
   const redirectUrl  = `${BASE_URL}/badges/${badgeId}/${userSlug}`;
 
+  // Detect image type from URL extension
+  const imageExt = (uploadedImageUrl || '').split('?')[0].split('.').pop()?.toLowerCase();
+  const imageType = imageExt === 'jpg' || imageExt === 'jpeg' ? 'image/jpeg'
+    : imageExt === 'svg' ? 'image/svg+xml'
+    : imageExt === 'webp' ? 'image/webp'
+    : 'image/png';
+
   const t   = esc(title);
   const d   = esc(description);
   const img_ = esc(ogImage);
@@ -230,7 +241,7 @@ export default async function handler(req, res) {
   <meta property="og:image"        content="${img_}" />
   <meta property="og:image:width"  content="400" />
   <meta property="og:image:height" content="400" />
-  <meta property="og:image:type"   content="image/png" />
+  <meta property="og:image:type"   content="${imageType}" />
   <meta property="og:image:alt"    content="${t}" />
 
   <!-- Twitter Card -->

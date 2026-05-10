@@ -38,9 +38,16 @@ export function generateBadgeShare(
   let shareUrl = userId
     ? `${BASE_URL}/og/badge/${badge.id}/${generateProfileSlug(userName, userId)}`
     : `${BASE_URL}/profile`;
-  if (userId && badge.imageUrl) {
-    const v = badge.imageUrl.split('/').pop()?.split('-')[0]?.slice(-4) || '1';
-    shareUrl += `?img=${encodeURIComponent(badge.imageUrl)}&v=${v}`;
+  if (userId) {
+    const params = new URLSearchParams();
+    if (badge.imageUrl) {
+      params.set('img', badge.imageUrl);
+      const v = badge.imageUrl.split('/').pop()?.split('-')[0]?.slice(-4) || '1';
+      params.set('v', v);
+    }
+    params.set('name', badge.name);
+    params.set('desc', badge.description);
+    shareUrl += `?${params.toString()}`;
   }
 
   return {

@@ -313,7 +313,14 @@ exports.handler = async (event) => {
     return { statusCode: 200, headers: cors(), body: '' };
   }
 
-  const path = (event.path || '').replace(/^\/[^/]+/, ''); // strip stage prefix
+  const rawPath = event.path || '';
+  // API Gateway may include the stage prefix (e.g. /dev/badges) or not (/badges).
+  // Strip the stage prefix only when present.
+  const stageNames = ['dev', 'staging', 'prod'];
+  const firstSegment = rawPath.split('/')[1]; // e.g. "dev" or "badges"
+  const path = stageNames.includes(firstSegment)
+    ? rawPath.replace(/^\/[^/]+/, '') // strip /dev → /badges
+    : rawPath;                         // already /badges
   const method = event.httpMethod;
   const qs = event.queryStringParameters || {};
 

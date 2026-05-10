@@ -53,6 +53,8 @@ export default function Profile() {
   const [selectedOrderDetail, setSelectedOrderDetail] = useState<Order | null>(null);
   const [showOrderDetailDialog, setShowOrderDetailDialog] = useState(false);
   const [loadingOrderDetail, setLoadingOrderDetail] = useState(false);
+  // All available badges (hardcoded + custom from API)
+  const [allBadges, setAllBadges] = useState<import('@/data/mockData').Badge[]>(mockBadges);
 
   const [showMeetupDialog, setShowMeetupDialog] = useState(false);
   const [meetupUrl, setMeetupUrl] = useState('');
@@ -202,6 +204,20 @@ export default function Profile() {
       }
     };
     fetchColleges();
+  }, []);
+
+  // Fetch all badges (hardcoded + custom) for the "Badges to Unlock" section
+  useEffect(() => {
+    const fetchAllBadges = async () => {
+      try {
+        const { getBadges } = await import('@/lib/badges');
+        const fetched = await getBadges();
+        setAllBadges(fetched);
+      } catch {
+        // Fall back to mockBadges on error
+      }
+    };
+    fetchAllBadges();
   }, []);
 
   const user = profileUser;
@@ -804,7 +820,7 @@ export default function Profile() {
                     <div className="mt-8">
                       <h3 className="font-semibold text-muted-foreground mb-4">Badges to Unlock</h3>
                       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                        {mockBadges
+                        {allBadges
                           .filter((b) => !user.badges.find((cb) => cb.id === b.id))
                           .map((badge) => (
                             <Card key={badge.id} className="border-dashed opacity-60">

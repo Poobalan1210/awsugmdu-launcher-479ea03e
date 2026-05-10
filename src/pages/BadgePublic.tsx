@@ -50,8 +50,20 @@ export default function BadgePublic() {
     const load = async () => {
       setLoading(true);
       try {
-        // Resolve badge
-        const foundBadge = mockBadges.find(b => b.id === badgeId);
+        // Resolve badge — check mockBadges first, then fall back to API
+        let foundBadge: Badge | null = mockBadges.find(b => b.id === badgeId) || null;
+
+        if (!foundBadge) {
+          // Dynamic badge — fetch from API
+          try {
+            const { getBadges } = await import('@/lib/badges');
+            const allBadges = await getBadges();
+            foundBadge = allBadges.find(b => b.id === badgeId) || null;
+          } catch {
+            // API unavailable — badge truly not found
+          }
+        }
+
         if (!foundBadge) { setLoading(false); return; }
         setBadge(foundBadge);
 

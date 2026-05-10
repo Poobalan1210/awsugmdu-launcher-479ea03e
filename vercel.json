@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/badges/:badgeId/:userSlug",
+      "destination": "/api/badges/:badgeId/:userSlug"
+    },
+    {
       "source": "/og/badge/:badgeId/:userSlug/:version",
       "destination": "/api/og/badge/:badgeId/:userSlug"
     },

@@ -57,20 +57,12 @@ export function BadgeShareDialog({
       icon: <Linkedin className="h-4 w-4" />,
       color: 'text-blue-600 border-blue-500/30 hover:bg-blue-500/10',
       action: async () => {
-        // Use LinkedIn's shareArticle endpoint which shows a proper preview
-        // with title, description, and image without relying on OG crawl cache
-        const liParams = new URLSearchParams({
-          mini: 'true',
-          url: articleUrl,
-          title: `${recipient.name} earned ${badge.name} | AWS UG Madurai`,
-          summary: `${badge.description} — Issued by AWS User Group Madurai`,
-          source: 'AWS User Group Madurai',
+        // Copy the badge URL — LinkedIn will crawl it and show the badge image
+        try { await navigator.clipboard.writeText(badgePageUrl); } catch { /* ignore */ }
+        toast.success('Badge link copied!', {
+          description: 'Paste it into your LinkedIn post to show the badge preview.',
         });
-        window.open(
-          `https://www.linkedin.com/shareArticle?${liParams.toString()}`,
-          '_blank',
-          'noopener,noreferrer,width=600,height=600'
-        );
+        window.open('https://www.linkedin.com/feed/?shareActive=true', '_blank', 'noopener,noreferrer');
       },
     },
     {

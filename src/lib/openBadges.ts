@@ -128,12 +128,10 @@ export const getPublicBadgeUrl = (
 };
 
 /**
- * OG proxy URL — use this as the share URL on all social platforms.
- *
- * The image version is embedded in the PATH so LinkedIn treats each new
- * badge image as a completely new URL and re-crawls it fresh.
- *
- * Format: /og/badge/{badgeId}/{userSlug}/{imageVersion}?img=...&name=...&desc=...
+ * OG proxy URL — now points to the canonical badge page URL.
+ * The /badges/:badgeId/:userSlug route is handled by a Vercel function
+ * that serves OG meta tags to crawlers and the React SPA to humans.
+ * The ?img= param passes the badge image URL to the function.
  */
 export const getOgProxyUrl = (
   badge: Badge,
@@ -141,11 +139,7 @@ export const getOgProxyUrl = (
   userId: string
 ): string => {
   const slug = generateProfileSlug(userName, userId);
-  // Version = last 8 chars of the S3 filename (changes when image changes)
-  const version = badge.imageUrl
-    ? badge.imageUrl.split('/').pop()?.split('.')[0]?.slice(-8) || 'v1'
-    : 'v1';
-  const base = `${BASE_URL}/og/badge/${badge.id}/${slug}/${version}`;
+  const base = `${BASE_URL}/badges/${badge.id}/${slug}`;
   const params = new URLSearchParams();
   if (badge.imageUrl) params.set('img', badge.imageUrl);
   params.set('name', badge.name);

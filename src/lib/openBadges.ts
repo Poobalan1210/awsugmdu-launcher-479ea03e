@@ -128,10 +128,9 @@ export const getPublicBadgeUrl = (
 };
 
 /**
- * OG proxy URL — now points to the canonical badge page URL.
- * The /badges/:badgeId/:userSlug route is handled by a Vercel function
- * that serves OG meta tags to crawlers and the React SPA to humans.
- * The ?img= param passes the badge image URL to the function.
+ * OG proxy URL — use this as the share URL on all social platforms.
+ * Points to /og/badge/ which is handled by the Vercel function and
+ * serves correct OG meta tags to crawlers.
  */
 export const getOgProxyUrl = (
   badge: Badge,
@@ -139,7 +138,7 @@ export const getOgProxyUrl = (
   userId: string
 ): string => {
   const slug = generateProfileSlug(userName, userId);
-  const base = `${BASE_URL}/badges/${badge.id}/${slug}`;
+  const base = `${BASE_URL}/og/badge/${badge.id}/${slug}`;
   const params = new URLSearchParams();
   if (badge.imageUrl) params.set('img', badge.imageUrl);
   params.set('name', badge.name);

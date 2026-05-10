@@ -36,7 +36,7 @@ export function generateBadgeShare(
   // Use the OG proxy URL on our own domain — crawlers get server-rendered OG tags,
   // humans get redirected to the React badge page.
   let shareUrl = userId
-    ? `${BASE_URL}/badges/${badge.id}/${generateProfileSlug(userName, userId)}`
+    ? `${BASE_URL}/og/badge/${badge.id}/${generateProfileSlug(userName, userId)}`
     : `${BASE_URL}/profile`;
   if (userId) {
     const params = new URLSearchParams();

@@ -748,7 +748,7 @@ function MessageCard({
               <button 
                 className="flex items-center gap-1 hover:text-primary transition-colors"
                 onClick={() => {
-                  const url = `${window.location.origin}/certification-circle?group=${groupId}&message=${message.id}`;
+                  const url = `${window.location.origin}/circles?group=${groupId}&message=${message.id}`;
                   navigator.clipboard.writeText(url);
                   toast.success('Link copied to clipboard!');
                 }}
@@ -877,7 +877,7 @@ function MessageCard({
                             <button 
                               className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"
                               onClick={() => {
-                                const url = `${window.location.origin}/certification-circle?group=${groupId}&reply=${reply.id}`;
+                                const url = `${window.location.origin}/circles?group=${groupId}&reply=${reply.id}`;
                                 navigator.clipboard.writeText(url);
                                 toast.success('Link copied to clipboard!');
                               }}
@@ -900,7 +900,7 @@ function MessageCard({
   );
 }
 
-export default function CertificationCircle() {
+export default function Circles() {
   const [searchParams] = useSearchParams();
   const messageId = searchParams.get('message');
   const replyId = searchParams.get('reply');
@@ -962,7 +962,7 @@ export default function CertificationCircle() {
                   <Award className="h-4 w-4" />
                   Study Groups & Channels
                 </div>
-                <h1 className="text-3xl md:text-5xl font-bold mb-4">Certification Circle</h1>
+                <h1 className="text-3xl md:text-5xl font-bold mb-4">Circles</h1>
                 <p className="text-muted-foreground max-w-2xl mx-auto mb-8">
                   Join our study group channels to prepare for AWS certifications together. 
                   Share resources, discuss concepts, schedule study sessions, and ace your exams.

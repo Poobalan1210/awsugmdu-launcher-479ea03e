@@ -394,7 +394,7 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
     date: '',
     time: '',
     duration: '',
-    type: 'virtual' as 'virtual' | 'in-person' | 'skill-sprint' | 'certification-circle' | 'college-champ' | 'cloud-club',
+    type: 'virtual' as 'virtual' | 'in-person' | 'skill-sprint' | 'circles' | 'college-champ' | 'cloud-club',
     location: '',
     meetingLink: '',
     meetupUrl: '',
@@ -478,8 +478,8 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
       return;
     }
 
-    // Validate certification group selection if type is certification-circle
-    if (formData.type === 'certification-circle' && !formData.certificationGroupId) {
+    // Validate certification group selection if type is circles
+    if (formData.type === 'circles' && !formData.certificationGroupId) {
       toast.error('Please select a certification group for this session');
       return;
     }
@@ -519,7 +519,7 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
         hosts: peopleData.hosts,
         volunteers: peopleData.volunteers,
         sprintId: (formData.type === 'skill-sprint' && formData.sprintId) ? formData.sprintId : undefined,
-        certificationGroupId: (formData.type === 'certification-circle' && formData.certificationGroupId) ? formData.certificationGroupId : undefined,
+        certificationGroupId: (formData.type === 'circles' && formData.certificationGroupId) ? formData.certificationGroupId : undefined,
         collegeId: (formData.type === 'college-champ' && formData.collegeId) ? formData.collegeId : undefined,
         cloudClubId: (formData.type === 'cloud-club' && formData.cloudClubId) ? formData.cloudClubId : undefined,
         sessionPoints: ((formData.type === 'college-champ' || formData.type === 'cloud-club') && formData.sessionPoints) ? parseInt(formData.sessionPoints) : undefined,
@@ -596,12 +596,12 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
             <Label>Event Type *</Label>
             <Select
               value={formData.type}
-              onValueChange={(value: 'virtual' | 'in-person' | 'skill-sprint' | 'certification-circle' | 'college-champ' | 'cloud-club') =>
+              onValueChange={(value: 'virtual' | 'in-person' | 'skill-sprint' | 'circles' | 'college-champ' | 'cloud-club') =>
                 setFormData({
                   ...formData,
                   type: value,
                   sprintId: value !== 'skill-sprint' ? '' : formData.sprintId,
-                  certificationGroupId: value !== 'certification-circle' ? '' : formData.certificationGroupId,
+                  certificationGroupId: value !== 'circles' ? '' : formData.certificationGroupId,
                   collegeId: value !== 'college-champ' ? '' : formData.collegeId,
                   cloudClubId: value !== 'cloud-club' ? '' : formData.cloudClubId
                 })
@@ -612,14 +612,14 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
                 <SelectItem value="virtual">Virtual Meetup</SelectItem>
                 <SelectItem value="in-person">In-Person Meetup</SelectItem>
                 <SelectItem value="skill-sprint">Skill Sprint Session</SelectItem>
-                <SelectItem value="certification-circle">Certification Circle Session</SelectItem>
+                <SelectItem value="circles">Circles Session</SelectItem>
                 <SelectItem value="college-champ">College Champ Session</SelectItem>
                 <SelectItem value="cloud-club">Cloud Club Session</SelectItem>
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
               {formData.type === 'skill-sprint' && 'This session will be linked to a sprint'}
-              {formData.type === 'certification-circle' && 'This session will be part of the certification circle program'}
+              {formData.type === 'circles' && 'This session will be part of the circles program'}
               {formData.type === 'college-champ' && 'This session will be part of the college champ program'}
               {formData.type === 'cloud-club' && 'This session will be part of the cloud club program'}
               {formData.type === 'virtual' && 'A virtual community meetup event'}
@@ -659,8 +659,8 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
             </div>
           )}
 
-          {/* Certification Group Selection - Only show if type is certification-circle */}
-          {formData.type === 'certification-circle' && (
+          {/* Certification Group Selection - Only show if type is circles */}
+          {formData.type === 'circles' && (
             <div className="space-y-2">
               <Label>Select Certification Group *</Label>
               <Select
@@ -884,7 +884,7 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
           )}
 
           {/* Meeting Link - show for virtual events */}
-          {(formData.type === 'virtual' || formData.type === 'skill-sprint' || formData.type === 'certification-circle' || formData.type === 'college-champ' || formData.type === 'cloud-club') && (
+          {(formData.type === 'virtual' || formData.type === 'skill-sprint' || formData.type === 'circles' || formData.type === 'college-champ' || formData.type === 'cloud-club') && (
             <div className="space-y-2">
               <Label>Meeting Link</Label>
               <Input

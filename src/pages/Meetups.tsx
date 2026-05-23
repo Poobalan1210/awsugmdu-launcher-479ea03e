@@ -70,8 +70,8 @@ function MeetupCard({ meetup, onSelect }: { meetup: Meetup; onSelect: () => void
         return { label: 'In-Person', variant: 'default' as const, icon: <MapPin className="h-3 w-3 mr-1" /> };
       case 'skill-sprint':
         return { label: 'Skill Sprint', variant: 'default' as const, icon: <Rocket className="h-3 w-3 mr-1" /> };
-      case 'certification-circle':
-        return { label: 'Certification Circle', variant: 'default' as const, icon: <Award className="h-3 w-3 mr-1" /> };
+      case 'circles':
+        return { label: 'Circles', variant: 'default' as const, icon: <Award className="h-3 w-3 mr-1" /> };
       case 'college-champ':
         return { label: 'College Champ', variant: 'default' as const, icon: <GraduationCap className="h-3 w-3 mr-1" /> };
       case 'cloud-club':
@@ -200,8 +200,8 @@ function MeetupDetail({ meetup: initialMeetup, onBack }: { meetup: Meetup; onBac
         return { label: 'In-Person', variant: 'default' as const, icon: <MapPin className="h-3 w-3 mr-1" /> };
       case 'skill-sprint':
         return { label: 'Skill Sprint', variant: 'default' as const, icon: <Rocket className="h-3 w-3 mr-1" /> };
-      case 'certification-circle':
-        return { label: 'Certification Circle', variant: 'default' as const, icon: <Award className="h-3 w-3 mr-1" /> };
+      case 'circles':
+        return { label: 'Circles', variant: 'default' as const, icon: <Award className="h-3 w-3 mr-1" /> };
       case 'college-champ':
         return { label: 'College Champ', variant: 'default' as const, icon: <GraduationCap className="h-3 w-3 mr-1" /> };
       case 'cloud-club':

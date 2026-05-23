@@ -326,10 +326,10 @@ async function createMeetup(event) {
     });
   }
 
-  // Validate certification group selection if type is certification-circle
-  if (type === 'certification-circle' && !certificationGroupId) {
+  // Validate certification group selection if type is circles
+  if (type === 'circles' && !certificationGroupId) {
     return createResponse(400, {
-      error: 'Certification Group ID is required when type is certification-circle'
+      error: 'Certification Group ID is required when type is circles'
     });
   }
 
@@ -401,7 +401,7 @@ async function createMeetup(event) {
     maxAttendees: maxAttendees ? parseInt(maxAttendees) : undefined,
     registeredUsers,
     ...(type === 'skill-sprint' && sprintId ? { sprintId } : {}),
-    ...(type === 'certification-circle' && certificationGroupId ? { certificationGroupId } : {}),
+    ...(type === 'circles' && certificationGroupId ? { certificationGroupId } : {}),
     ...(type === 'college-champ' && collegeId ? { collegeId } : {}),
     ...(type === 'college-champ' && sessionPoints ? { sessionPoints: parseInt(sessionPoints) || 0 } : {}),
     speakerPoints: speakerPoints ? parseInt(speakerPoints) : 0,

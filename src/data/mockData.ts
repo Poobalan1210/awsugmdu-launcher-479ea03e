@@ -289,7 +289,7 @@ export interface AgendaItem {
   speakerId?: string;
 }
 
-export type MeetupType = 'virtual' | 'in-person' | 'hybrid' | 'skill-sprint' | 'certification-circle' | 'college-champ' | 'cloud-club';
+export type MeetupType = 'virtual' | 'in-person' | 'hybrid' | 'skill-sprint' | 'circles' | 'college-champ' | 'cloud-club';
 
 export interface Meetup {
   id: string;

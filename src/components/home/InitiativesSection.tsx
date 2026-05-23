@@ -31,10 +31,10 @@ const initiatives = [
     iconColor: 'text-blue-600',
   },
   {
-    title: 'Certification Circle',
+    title: 'Circles',
     description: 'Study groups, resources, and peer support to help you earn AWS certifications faster.',
     icon: Award,
-    path: '/certification-circle',
+    path: '/circles',
     color: 'from-amber-500/20 to-yellow-500/20',
     iconColor: 'text-amber-600',
   },

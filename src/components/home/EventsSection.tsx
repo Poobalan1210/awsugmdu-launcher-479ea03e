@@ -20,8 +20,8 @@ const getEventTypeBadge = (type: string) => {
       return <Badge className="bg-purple-500/10 text-purple-600 border-purple-500/30">Hybrid</Badge>;
     case 'skill-sprint':
       return <Badge className="bg-primary/10 text-primary border-primary/30">Skill Sprint</Badge>;
-    case 'certification-circle':
-      return <Badge className="bg-amber-500/10 text-amber-600 border-amber-500/30">Certification</Badge>;
+    case 'circles':
+      return <Badge className="bg-amber-500/10 text-amber-600 border-amber-500/30">Circles</Badge>;
     case 'college-champ':
       return <Badge className="bg-pink-500/10 text-pink-600 border-pink-500/30">College Champ</Badge>;
     default:

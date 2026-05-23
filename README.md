@@ -23,7 +23,7 @@ A comprehensive community management platform for AWS User Group Madurai, built 
 - **Resource Sharing**: Share learning materials and resources
 - **Leaderboard**: Competitive rankings to motivate participation
 
-### 🎯 Certification Circle
+### 🎯 Circles
 - **Certification Tracking**: Log and showcase AWS certifications
 - **Verification System**: Admin verification of certification claims
 - **Integration Support**: Track certifications from multiple platforms

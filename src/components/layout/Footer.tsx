@@ -45,8 +45,8 @@ export function Footer() {
               </Link>
             </li>
             <li>
-              <Link to="/certification-circle" className="text-sm text-muted-foreground hover:text-primary transition-colors">
-                Certification Circle
+              <Link to="/circles" className="text-sm text-muted-foreground hover:text-primary transition-colors">
+                Circles
               </Link>
             </li>
             <li>

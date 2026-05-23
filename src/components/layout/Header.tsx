@@ -16,8 +16,8 @@ const navItems = [{
   name: 'Builders Skill Sprint',
   path: '/skill-sprint'
 }, {
-  name: 'Certification Circle',
-  path: '/certification-circle'
+  name: 'Circles',
+  path: '/circles'
 }, {
   name: 'Cloud Clubs',
   path: '/cloud-clubs'

@@ -15,7 +15,7 @@ import SkillSprint from "./pages/SkillSprint";
 import CollegeChamps from "./pages/CollegeChamps";
 import CloudClubs from "./pages/CloudClubs";
 import CommunitySpotlight from "./pages/CommunitySpotlight";
-import CertificationCircle from "./pages/CertificationCircle";
+import Circles from "./pages/Circles";
 import Store from "./pages/Store";
 import Meetups from "./pages/Meetups";
 import Leaderboard from "./pages/Leaderboard";
@@ -79,9 +79,9 @@ const App = () => (
                 <CommunitySpotlight />
               </ProtectedRoute>
             } />
-            <Route path="/certification-circle" element={
+            <Route path="/circles" element={
               <ProtectedRoute>
-                <CertificationCircle />
+                <Circles />
               </ProtectedRoute>
             } />
             <Route path="/store" element={

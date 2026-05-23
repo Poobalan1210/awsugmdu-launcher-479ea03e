@@ -17,12 +17,21 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Switch } from '@/components/ui/switch';
 import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
+import {
   Plus, Calendar, Users, CheckCircle, XCircle, Clock,
   Rocket, ExternalLink, MessageSquare, Award, Link2,
   Copy, Mail, Edit, Trash2, Eye, FileText, User, Video,
   Upload, X, UserPlus, Check, ChevronDown, ChevronUp, GraduationCap,
   Trophy, ListTodo, ClipboardCheck, Target, Shield, UserCog, Medal, Github, ShoppingBag, Loader2, Cloud,
-  Star, Quote, Heart, Zap, CheckSquare, Square, List, Hash, Type, Code2, Sparkles, Image as ImageIcon
+  Star, Quote, Heart, Zap, CheckSquare, Square, List, Hash, Type, Code2, Sparkles, Image as ImageIcon,
+  MoreHorizontal
 } from 'lucide-react';
 import { mockSprints, mockMeetups, Submission, Sprint, Session, User as UserType, predefinedTasks, mockColleges, getTaskById, communityRoles, mockUserRoles, CommunityRole, UserRoleAssignment, PointActivity, mockPointActivities, Meetup, mockBadges, Badge as BadgeType, BadgeAward, mockBadgeAwards, BadgeCriteriaType, criteriaTypeLabels, BadgeCriteria, mockUsers, SubmissionField } from '@/data/mockData';
 import { createMeetup, updateMeetup, publishMeetup, getMeetups, CreateMeetupData, UpdateMeetupData, deleteMeetup, endMeetup } from '@/lib/meetups';
@@ -47,10 +56,26 @@ import AWSEventsTab from '@/components/admin/tabs/AWSEventsTab';
 import { SessionPerson, SessionPeopleManager, userToSessionPerson, userToMeetupPerson, UserSelect, UserMultiSelect, MeetupPeopleManager } from '@/components/admin/shared/AdminShared';
 import { TaskSubmissionsPanel } from '@/components/college-champs/TaskSubmissionsPanel';
 import { CloudClubTaskSubmissionsPanel } from '@/components/cloud-clubs/TaskSubmissionsPanel';
+import { listMeetupFeedback, updateMeetupFeedbackSettings } from '@/lib/meetupFeedback';
+import type { MeetupFeedback } from '@/data/mockData';
 
 // Mark Attendance Dialog
-function MarkAttendanceDialog({ meetup, onSuccess }: { meetup: Meetup; onSuccess?: () => void }) {
-  const [open, setOpen] = useState(false);
+function MarkAttendanceDialog({
+  meetup,
+  onSuccess,
+  open: externalOpen,
+  onOpenChange: externalOnOpenChange,
+  hideTrigger = false,
+}: {
+  meetup: Meetup;
+  onSuccess?: () => void;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  hideTrigger?: boolean;
+}) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = externalOpen !== undefined ? externalOpen : internalOpen;
+  const setOpen = externalOnOpenChange ?? setInternalOpen;
   const [loading, setLoading] = useState(false);
   const [emailsText, setEmailsText] = useState('');
   const [pointsPerAttendee, setPointsPerAttendee] = useState(50);
@@ -134,12 +159,14 @@ function MarkAttendanceDialog({ meetup, onSuccess }: { meetup: Meetup; onSuccess
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-1">
-          <ClipboardCheck className="h-4 w-4" />
-          Mark Attendance
-        </Button>
-      </DialogTrigger>
+      {!hideTrigger && (
+        <DialogTrigger asChild>
+          <Button variant="outline" size="sm" className="gap-1">
+            <ClipboardCheck className="h-4 w-4" />
+            Mark Attendance
+          </Button>
+        </DialogTrigger>
+      )}
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Mark Attendance - {meetup.title}</DialogTitle>
@@ -1003,8 +1030,24 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
 
 // ================== MEETUPS MANAGEMENT ==================
 
-function EditMeetupDialog({ meetup, onSuccess, allUsers = [] }: { meetup: Meetup; onSuccess?: () => void; allUsers?: UserType[] }) {
-  const [open, setOpen] = useState(false);
+function EditMeetupDialog({
+  meetup,
+  onSuccess,
+  allUsers = [],
+  open: externalOpen,
+  onOpenChange: externalOnOpenChange,
+  hideTrigger = false,
+}: {
+  meetup: Meetup;
+  onSuccess?: () => void;
+  allUsers?: UserType[];
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  hideTrigger?: boolean;
+}) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = externalOpen !== undefined ? externalOpen : internalOpen;
+  const setOpen = externalOnOpenChange ?? setInternalOpen;
   const [loading, setLoading] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -1065,12 +1108,14 @@ function EditMeetupDialog({ meetup, onSuccess, allUsers = [] }: { meetup: Meetup
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-1">
-          <Edit className="h-4 w-4" />
-          Edit
-        </Button>
-      </DialogTrigger>
+      {!hideTrigger && (
+        <DialogTrigger asChild>
+          <Button variant="outline" size="sm" className="gap-1">
+            <Edit className="h-4 w-4" />
+            Edit
+          </Button>
+        </DialogTrigger>
+      )}
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Meetup</DialogTitle>
@@ -1401,6 +1446,472 @@ function EndEventDialog({ meetup, onSuccess }: { meetup: Meetup; onSuccess?: () 
   );
 }
 
+// =====================================================
+// Feedback admin dialogs
+// =====================================================
+
+// Configure feedback (toggle enabled, set attendee points)
+function FeedbackSettingsDialog({
+  meetup,
+  onSuccess,
+  open: externalOpen,
+  onOpenChange: externalOnOpenChange,
+  hideTrigger = false,
+}: {
+  meetup: Meetup;
+  onSuccess?: () => void;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  hideTrigger?: boolean;
+}) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = externalOpen !== undefined ? externalOpen : internalOpen;
+  const setOpen = externalOnOpenChange ?? setInternalOpen;
+  const [enabled, setEnabled] = useState<boolean>(!!meetup.feedbackEnabled);
+  const [attendeePoints, setAttendeePoints] = useState<string>(
+    meetup.attendeePoints != null ? String(meetup.attendeePoints) : '50'
+  );
+  const [saving, setSaving] = useState(false);
+
+  // Reset local state when dialog opens with the latest meetup values
+  React.useEffect(() => {
+    if (open) {
+      setEnabled(!!meetup.feedbackEnabled);
+      setAttendeePoints(meetup.attendeePoints != null ? String(meetup.attendeePoints) : '50');
+    }
+  }, [open, meetup.feedbackEnabled, meetup.attendeePoints]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const ap = Number(attendeePoints);
+      if (!Number.isFinite(ap) || ap < 0) {
+        toast.error('Attendee points must be a non-negative number');
+        setSaving(false);
+        return;
+      }
+      await updateMeetupFeedbackSettings(meetup.id, {
+        feedbackEnabled: enabled,
+        attendeePoints: ap,
+      });
+      toast.success('Feedback settings updated');
+      setOpen(false);
+      onSuccess?.();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to update settings');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      {!hideTrigger && (
+        <DialogTrigger asChild>
+          <Button
+            variant="outline"
+            size="sm"
+            className={`gap-1 ${meetup.feedbackEnabled ? 'border-green-500/50 text-green-700 dark:text-green-400' : ''}`}
+          >
+            <MessageSquare className="h-4 w-4" />
+            Feedback {meetup.feedbackEnabled ? 'ON' : 'OFF'}
+          </Button>
+        </DialogTrigger>
+      )}
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Feedback settings</DialogTitle>
+          <DialogDescription>
+            Control whether attendees can submit feedback for "{meetup.title}". Submitting feedback
+            also records attendance and awards points.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="flex items-center justify-between rounded-md border p-3">
+            <div>
+              <Label className="cursor-pointer">Enable feedback form</Label>
+              <p className="text-xs text-muted-foreground mt-1">
+                Visible on the public meetup page once the event is completed.
+              </p>
+            </div>
+            <Switch checked={enabled} onCheckedChange={setEnabled} />
+          </div>
+          <div className="space-y-2">
+            <Label>Attendee points</Label>
+            <Input
+              type="number"
+              min={0}
+              value={attendeePoints}
+              onChange={(e) => setAttendeePoints(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Awarded automatically when an attendee submits feedback. Also used as the default in
+              the CSV mark-attendance dialog.
+            </p>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={() => setOpen(false)} disabled={saving}>
+            Cancel
+          </Button>
+          <Button onClick={handleSave} disabled={saving} className="gap-1">
+            {saving ? <Clock className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+            Save settings
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// View submitted feedback for a meetup (admin only)
+function ViewFeedbackDialog({
+  meetup,
+  open: externalOpen,
+  onOpenChange: externalOnOpenChange,
+  hideTrigger = false,
+}: {
+  meetup: Meetup;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  hideTrigger?: boolean;
+}) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = externalOpen !== undefined ? externalOpen : internalOpen;
+  const setOpen = externalOnOpenChange ?? setInternalOpen;
+  const [feedback, setFeedback] = useState<MeetupFeedback[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  React.useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const list = await listMeetupFeedback(meetup.id);
+        if (!cancelled) setFeedback(list);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Failed to load feedback');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, meetup.id]);
+
+  const avgRating = feedback.length
+    ? (feedback.reduce((sum, f) => sum + (f.rating || 0), 0) / feedback.length).toFixed(1)
+    : '0.0';
+  const recommendCount = feedback.filter((f) => f.wouldRecommend).length;
+  const totalPointsAwarded = feedback.reduce((sum, f) => sum + (f.pointsAwarded || 0), 0);
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      {!hideTrigger && (
+        <DialogTrigger asChild>
+          <Button variant="outline" size="sm" className="gap-1">
+            <MessageSquare className="h-4 w-4" />
+            View Feedback
+          </Button>
+        </DialogTrigger>
+      )}
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Feedback - {meetup.title}</DialogTitle>
+          <DialogDescription>
+            Submitted feedback also records attendance and awards points automatically.
+          </DialogDescription>
+        </DialogHeader>
+
+        {loading ? (
+          <div className="p-8 flex items-center justify-center text-muted-foreground gap-2">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading feedback...
+          </div>
+        ) : feedback.length === 0 ? (
+          <div className="p-8 text-center text-muted-foreground">
+            No feedback has been submitted yet.
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {/* Summary */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <Card>
+                <CardContent className="p-3 text-center">
+                  <div className="text-2xl font-bold text-primary">{feedback.length}</div>
+                  <p className="text-xs text-muted-foreground">Submissions</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-3 text-center">
+                  <div className="text-2xl font-bold text-amber-500">{avgRating}</div>
+                  <p className="text-xs text-muted-foreground">Avg rating (1-5)</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-3 text-center">
+                  <div className="text-2xl font-bold text-green-600">{recommendCount}</div>
+                  <p className="text-xs text-muted-foreground">Would recommend</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-3 text-center">
+                  <div className="text-2xl font-bold text-blue-600">+{totalPointsAwarded}</div>
+                  <p className="text-xs text-muted-foreground">Points awarded</p>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* List */}
+            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+              {feedback.map((f) => (
+                <Card key={f.id}>
+                  <CardContent className="p-4 space-y-2">
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <div className="flex items-center gap-3">
+                        <Avatar className="h-9 w-9">
+                          <AvatarImage src={f.userAvatar} alt={f.userName} />
+                          <AvatarFallback>{(f.userName || 'U').charAt(0)}</AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <div className="font-medium">{f.userName || 'Unknown user'}</div>
+                          <div className="text-xs text-muted-foreground">{f.userEmail}</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-0.5" aria-label={`Rated ${f.rating} of 5`}>
+                          {[1, 2, 3, 4, 5].map((n) => (
+                            <Star
+                              key={n}
+                              className={`h-4 w-4 ${
+                                n <= (f.rating || 0)
+                                  ? 'fill-amber-400 text-amber-400'
+                                  : 'text-muted-foreground'
+                              }`}
+                            />
+                          ))}
+                        </div>
+                        {f.pointsAwarded > 0 ? (
+                          <Badge variant="outline" className="text-green-600">
+                            +{f.pointsAwarded} pts
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-muted-foreground">
+                            already attended
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                      <span>
+                        Submitted {format(parseISO(f.submittedAt), 'PPp')}
+                      </span>
+                      <span>•</span>
+                      <span>
+                        {f.wouldRecommend ? 'Would recommend' : 'Would not recommend'}
+                      </span>
+                    </div>
+                    {f.learnings && (
+                      <div className="text-sm">
+                        <span className="font-medium">Learnings: </span>
+                        <span className="text-muted-foreground whitespace-pre-wrap">
+                          {f.learnings}
+                        </span>
+                      </div>
+                    )}
+                    {f.suggestions && (
+                      <div className="text-sm">
+                        <span className="font-medium">Suggestions: </span>
+                        <span className="text-muted-foreground whitespace-pre-wrap">
+                          {f.suggestions}
+                        </span>
+                      </div>
+                    )}
+                    {f.favoritePart && (
+                      <div className="text-sm">
+                        <span className="font-medium">Favorite part: </span>
+                        <span className="text-muted-foreground">{f.favoritePart}</span>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// =====================================================
+// Meetup row actions (compact, organised)
+// =====================================================
+function MeetupRowActions({
+  meetup,
+  onPublish,
+  onDelete,
+  onSuccess,
+  allUsers = [],
+}: {
+  meetup: Meetup;
+  onPublish: (meetup: Meetup, publish: boolean) => void;
+  onDelete: (meetup: Meetup) => void;
+  onSuccess: () => void;
+  allUsers?: UserType[];
+}) {
+  // Centralised dialog state so menu items can open the right dialog
+  const [editOpen, setEditOpen] = useState(false);
+  const [attendanceOpen, setAttendanceOpen] = useState(false);
+  const [feedbackSettingsOpen, setFeedbackSettingsOpen] = useState(false);
+  const [feedbackListOpen, setFeedbackListOpen] = useState(false);
+
+  const isDraft = meetup.status === 'draft';
+  const isUpcoming = meetup.status === 'upcoming';
+  const isCompleted = meetup.status === 'completed';
+  const showAttendance = isUpcoming || isCompleted;
+  const showFeedback = isUpcoming || isCompleted;
+
+  return (
+    <div className="flex items-center gap-2">
+      {/* Primary lifecycle action */}
+      {isDraft && (
+        <Button
+          variant="default"
+          size="sm"
+          className="gap-1"
+          onClick={() => onPublish(meetup, true)}
+        >
+          <Rocket className="h-4 w-4" />
+          Publish
+        </Button>
+      )}
+      {isUpcoming && (
+        <EndEventDialog meetup={meetup} onSuccess={onSuccess} />
+      )}
+
+      {/* View public page */}
+      <Button
+        variant="outline"
+        size="sm"
+        className="gap-1"
+        onClick={() => window.open(`/meetups?id=${meetup.id}`, '_blank')}
+        title="View public meetup page"
+      >
+        <Eye className="h-4 w-4" />
+        View
+      </Button>
+
+      {/* Quick feedback toggle for completed/upcoming meetups */}
+      {showFeedback && (
+        <Button
+          variant="outline"
+          size="sm"
+          className={`gap-1 ${
+            meetup.feedbackEnabled
+              ? 'border-green-500/50 text-green-700 dark:text-green-400'
+              : ''
+          }`}
+          onClick={() => setFeedbackSettingsOpen(true)}
+          title="Feedback form settings"
+        >
+          <MessageSquare className="h-4 w-4" />
+          Feedback {meetup.feedbackEnabled ? 'ON' : 'OFF'}
+        </Button>
+      )}
+
+      {/* Everything else under one kebab menu */}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="sm" className="gap-1" title="More actions">
+            <MoreHorizontal className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-56">
+          <DropdownMenuLabel>Manage meetup</DropdownMenuLabel>
+          <DropdownMenuItem onSelect={() => setEditOpen(true)}>
+            <Edit className="h-4 w-4 mr-2" />
+            Edit details
+          </DropdownMenuItem>
+
+          {isUpcoming && (
+            <DropdownMenuItem onSelect={() => onPublish(meetup, false)}>
+              <XCircle className="h-4 w-4 mr-2" />
+              Unpublish
+            </DropdownMenuItem>
+          )}
+
+          {showAttendance && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>Attendance & feedback</DropdownMenuLabel>
+              <DropdownMenuItem onSelect={() => setAttendanceOpen(true)}>
+                <ClipboardCheck className="h-4 w-4 mr-2" />
+                Mark attendance (CSV)
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setFeedbackListOpen(true)}>
+                <MessageSquare className="h-4 w-4 mr-2" />
+                View feedback submissions
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setFeedbackSettingsOpen(true)}>
+                <Sparkles className="h-4 w-4 mr-2" />
+                Feedback settings
+              </DropdownMenuItem>
+            </>
+          )}
+
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onSelect={() => onDelete(meetup)}
+            className="text-destructive focus:text-destructive"
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            Delete meetup
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      {/* Controlled dialogs (mounted with hidden triggers) */}
+      <EditMeetupDialog
+        meetup={meetup}
+        onSuccess={onSuccess}
+        allUsers={allUsers}
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        hideTrigger
+      />
+      {showAttendance && (
+        <MarkAttendanceDialog
+          meetup={meetup}
+          onSuccess={onSuccess}
+          open={attendanceOpen}
+          onOpenChange={setAttendanceOpen}
+          hideTrigger
+        />
+      )}
+      {showFeedback && (
+        <>
+          <FeedbackSettingsDialog
+            meetup={meetup}
+            onSuccess={onSuccess}
+            open={feedbackSettingsOpen}
+            onOpenChange={setFeedbackSettingsOpen}
+            hideTrigger
+          />
+          <ViewFeedbackDialog
+            meetup={meetup}
+            open={feedbackListOpen}
+            onOpenChange={setFeedbackListOpen}
+            hideTrigger
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
 function MeetupsManagementTab({ allUsers = [] }: { allUsers?: UserType[] }) {
   const [meetups, setMeetups] = useState<Meetup[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1552,7 +2063,7 @@ function MeetupsManagementTab({ allUsers = [] }: { allUsers?: UserType[] }) {
               <CardContent className="p-4">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
+                    <div className="flex items-center gap-2 mb-2 flex-wrap">
                       <h3 className="font-semibold text-lg">{meetup.title}</h3>
                       <Badge
                         variant={
@@ -1567,6 +2078,12 @@ function MeetupsManagementTab({ allUsers = [] }: { allUsers?: UserType[] }) {
                       <Badge variant="outline" className="capitalize">
                         {meetup.type}
                       </Badge>
+                      {meetup.feedbackEnabled && (
+                        <Badge variant="outline" className="border-green-500/50 text-green-700 dark:text-green-400 gap-1">
+                          <MessageSquare className="h-3 w-3" />
+                          Feedback open
+                        </Badge>
+                      )}
                     </div>
                     <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
                       <span className="flex items-center gap-1">
@@ -1594,54 +2111,14 @@ function MeetupsManagementTab({ allUsers = [] }: { allUsers?: UserType[] }) {
                       )}
                     </div>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    {meetup.status === 'draft' && (
-                      <Button
-                        variant="default"
-                        size="sm"
-                        className="gap-1"
-                        onClick={() => handlePublish(meetup, true)}
-                      >
-                        <Rocket className="h-4 w-4" />
-                        Publish
-                      </Button>
-                    )}
-                    {meetup.status === 'upcoming' && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="gap-1"
-                        onClick={() => handlePublish(meetup, false)}
-                      >
-                        <XCircle className="h-4 w-4" />
-                        Unpublish
-                      </Button>
-                    )}
-                    {meetup.status === 'upcoming' && (
-                      <EndEventDialog meetup={meetup} onSuccess={loadMeetups} />
-                    )}
-                    {(meetup.status === 'completed' || meetup.status === 'upcoming') && (
-                      <MarkAttendanceDialog meetup={meetup} onSuccess={loadMeetups} />
-                    )}
-                    <EditMeetupDialog meetup={meetup} onSuccess={loadMeetups} allUsers={allUsers} />
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="gap-1"
-                      onClick={() => window.open(`/meetups?id=${meetup.id}`, '_blank')}
-                    >
-                      <Eye className="h-4 w-4" />
-                      View
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      className="gap-1"
-                      onClick={() => handleDelete(meetup)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      Delete
-                    </Button>
+                  <div className="flex flex-wrap gap-2 md:flex-shrink-0">
+                    <MeetupRowActions
+                      meetup={meetup}
+                      onPublish={handlePublish}
+                      onDelete={handleDelete}
+                      onSuccess={loadMeetups}
+                      allUsers={allUsers}
+                    />
                   </div>
                 </div>
               </CardContent>

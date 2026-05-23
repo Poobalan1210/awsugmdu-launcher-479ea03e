@@ -7,6 +7,7 @@ const docClient = DynamoDBDocumentClient.from(client);
 
 const MEETUPS_TABLE = process.env.MEETUPS_TABLE_NAME || 'awsug-meetups';
 const USERS_TABLE = process.env.USERS_TABLE_NAME || 'awsug-users';
+const FEEDBACK_TABLE = process.env.MEETUP_FEEDBACK_TABLE_NAME || 'awsug-meetup-feedback';
 
 // Helper function to generate CORS headers
 function getCorsHeaders() {
@@ -65,8 +66,12 @@ exports.handler = async (event) => {
 
   // Skip authorization for GET requests (read-only operations)
   // This allows public access to view meetups
-  if (event.httpMethod !== 'GET') {
-    // Authorize request for write operations
+  // EXCEPT for feedback paths which always require authentication so we can identify the user
+  const _path = event.path || event.requestContext?.path || '';
+  const _isFeedbackPath = _path.includes('/feedback');
+
+  if (event.httpMethod !== 'GET' || _isFeedbackPath) {
+    // Authorize request for write operations (and feedback reads)
     const authResult = await authorize(event, USERS_TABLE);
     if (!authResult.authorized) {
       return createUnauthorizedResponse(authResult.error, getCorsHeaders());
@@ -134,6 +139,18 @@ exports.handler = async (event) => {
       } else if (method === 'DELETE' && id && action === 'photos') {
         // DELETE /meetups/{id}/photos - Remove a photo
         return await removeEventPhoto(id, event);
+      } else if (method === 'POST' && id && action === 'feedback') {
+        // POST /meetups/{id}/feedback - Submit feedback (and auto-mark attendance)
+        return await submitFeedback(id, event);
+      } else if (method === 'GET' && id && action === 'feedback' && routeParts[3] === 'me') {
+        // GET /meetups/{id}/feedback/me - Get current user's feedback for this meetup
+        return await getMyFeedback(id, event);
+      } else if (method === 'GET' && id && action === 'feedback') {
+        // GET /meetups/{id}/feedback - List all feedback for a meetup (admin only)
+        return await listFeedback(id, event);
+      } else if (method === 'PATCH' && id && action === 'feedback-settings') {
+        // PATCH /meetups/{id}/feedback-settings - Update feedback settings (admin only)
+        return await updateFeedbackSettings(id, event);
       }
     }
 
@@ -468,7 +485,8 @@ async function updateMeetup(id, event) {
     'title', 'description', 'richDescription', 'date', 'time', 'duration', 'type',
     'location', 'meetingLink', 'meetupUrl', 'image', 'maxAttendees',
     'speakers', 'hosts', 'volunteers', 'sprintId', 'certificationGroupId', 'endDate', 'sessionPoints',
-    'speakerPoints', 'volunteerPoints', 'hostPoints'
+    'speakerPoints', 'volunteerPoints', 'hostPoints',
+    'feedbackEnabled', 'attendeePoints'
   ];
 
   allowedFields.forEach(field => {
@@ -776,14 +794,6 @@ async function deleteMeetup(id) {
 // Mark attendance for meetup
 async function markAttendance(id, event) {
   const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
-  const {
-    emails,
-    pointsPerAttendee = 50
-  } = body;
-
-  if (!emails || !Array.isArray(emails) || emails.length === 0) {
-    return createResponse(400, { error: 'Missing required field: emails (array)' });
-  }
 
   // Check if meetup exists
   const meetupResult = await docClient.send(new GetCommand({
@@ -796,6 +806,16 @@ async function markAttendance(id, event) {
   }
 
   const meetup = meetupResult.Item;
+
+  // Default points: explicit body value > meetup.attendeePoints > 50 (legacy default)
+  const {
+    emails,
+    pointsPerAttendee = (meetup.attendeePoints != null ? meetup.attendeePoints : 50)
+  } = body;
+
+  if (!emails || !Array.isArray(emails) || emails.length === 0) {
+    return createResponse(400, { error: 'Missing required field: emails (array)' });
+  }
 
   // Get volunteer and speaker user IDs
   const volunteerIds = new Set((meetup.volunteers || []).map(v => v.userId).filter(Boolean));
@@ -1266,3 +1286,332 @@ async function addEventReport(id, event) {
 }
 
 
+
+
+// =====================================================
+// FEEDBACK / SELF-SERVICE ATTENDANCE
+// =====================================================
+
+// Roles that can read all feedback / change feedback settings
+const ADMIN_ROLES = new Set(['admin', 'organiser', 'volunteer']);
+
+function isAdminUser(userContext) {
+  if (!userContext || !Array.isArray(userContext.roles)) return false;
+  return userContext.roles.some(r => ADMIN_ROLES.has(r));
+}
+
+// POST /meetups/{id}/feedback
+// Authenticated user submits feedback. If they are not already in attendedUsers
+// for this meetup, this submission also marks attendance and awards points
+// (using meetup.attendeePoints, falling back to 50 for backward compatibility).
+async function submitFeedback(meetupId, event) {
+  const userContext = event.userContext || {};
+  const userId = userContext.userId;
+  if (!userId) {
+    return createResponse(401, { error: 'Authentication required' });
+  }
+
+  let body = {};
+  try {
+    body = typeof event.body === 'string' ? JSON.parse(event.body) : (event.body || {});
+  } catch (e) {
+    return createResponse(400, { error: 'Invalid JSON body' });
+  }
+
+  // Validate body
+  const ratingNum = Number(body.rating);
+  if (!Number.isFinite(ratingNum) || ratingNum < 1 || ratingNum > 5) {
+    return createResponse(400, { error: 'rating must be a number between 1 and 5' });
+  }
+
+  // Load meetup
+  const meetupResult = await docClient.send(new GetCommand({
+    TableName: MEETUPS_TABLE,
+    Key: { id: meetupId }
+  }));
+
+  if (!meetupResult.Item) {
+    return createResponse(404, { error: 'Meetup not found' });
+  }
+
+  const meetup = meetupResult.Item;
+
+  if (meetup.feedbackEnabled !== true) {
+    return createResponse(403, { error: 'Feedback is not enabled for this meetup' });
+  }
+
+  // Reject duplicate submissions for the same user/meetup
+  try {
+    const existing = await docClient.send(new QueryCommand({
+      TableName: FEEDBACK_TABLE,
+      IndexName: 'meetupId-index',
+      KeyConditionExpression: 'meetupId = :m',
+      FilterExpression: 'userId = :u',
+      ExpressionAttributeValues: {
+        ':m': meetupId,
+        ':u': userId
+      }
+    }));
+
+    if (existing.Items && existing.Items.length > 0) {
+      return createResponse(409, {
+        error: 'You have already submitted feedback for this meetup',
+        feedback: existing.Items[0]
+      });
+    }
+  } catch (queryError) {
+    console.error('Error checking existing feedback:', queryError);
+    // Continue - allow submission. Worst case duplicate at db level.
+  }
+
+  // Load user (needed for denormalized fields and points update)
+  let user = null;
+  try {
+    const userResult = await docClient.send(new GetCommand({
+      TableName: USERS_TABLE,
+      Key: { userId }
+    }));
+    user = userResult.Item || null;
+  } catch (e) {
+    console.error('Error fetching user:', e);
+  }
+
+  if (!user) {
+    return createResponse(404, { error: 'User profile not found' });
+  }
+
+  const now = new Date().toISOString();
+  const attendedUsers = Array.isArray(meetup.attendedUsers) ? [...meetup.attendedUsers] : [];
+  const wasAlreadyAttended = attendedUsers.includes(userId);
+
+  // Determine points to award (only if not already attended)
+  const attendeePoints = (meetup.attendeePoints != null ? Number(meetup.attendeePoints) : 50) || 0;
+  const pointsToAward = wasAlreadyAttended ? 0 : attendeePoints;
+
+  // Award points and add to attendedUsers
+  let pointActivityId = null;
+  if (!wasAlreadyAttended && pointsToAward > 0) {
+    const currentPoints = user.points || 0;
+    const currentRedeemable = user.redeemablePoints != null ? user.redeemablePoints : currentPoints;
+
+    pointActivityId = `pa-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+    const pointActivity = {
+      id: pointActivityId,
+      userId,
+      points: pointsToAward,
+      reason: `Submitted feedback for ${meetup.title}`,
+      type: 'event',
+      awardedBy: 'system',
+      awardedAt: now
+    };
+
+    const pointActivities = Array.isArray(user.pointActivities) ? [...user.pointActivities] : [];
+    pointActivities.push(pointActivity);
+
+    const activity = {
+      type: 'meetup_attended',
+      meetupId,
+      meetupTitle: meetup.title,
+      points: pointsToAward,
+      timestamp: now,
+      source: 'feedback'
+    };
+    const userActivities = Array.isArray(user.activities) ? [...user.activities] : [];
+    userActivities.push(activity);
+
+    try {
+      await docClient.send(new UpdateCommand({
+        TableName: USERS_TABLE,
+        Key: { userId },
+        UpdateExpression: 'SET points = :points, redeemablePoints = :redeemablePoints, activities = :activities, pointActivities = :pointActivities, updatedAt = :updatedAt',
+        ExpressionAttributeValues: {
+          ':points': currentPoints + pointsToAward,
+          ':redeemablePoints': currentRedeemable + pointsToAward,
+          ':activities': userActivities,
+          ':pointActivities': pointActivities,
+          ':updatedAt': now
+        }
+      }));
+    } catch (e) {
+      console.error('Error updating user points:', e);
+      return createResponse(500, { error: 'Failed to award points' });
+    }
+  }
+
+  // Update meetup's attendedUsers if newly attended
+  if (!wasAlreadyAttended) {
+    attendedUsers.push(userId);
+    try {
+      await docClient.send(new UpdateCommand({
+        TableName: MEETUPS_TABLE,
+        Key: { id: meetupId },
+        UpdateExpression: 'SET attendedUsers = :a, updatedAt = :u',
+        ExpressionAttributeValues: {
+          ':a': attendedUsers,
+          ':u': now
+        }
+      }));
+    } catch (e) {
+      console.error('Error updating attendedUsers:', e);
+      // Continue - feedback is more important; points already awarded
+    }
+  }
+
+  // Save feedback record
+  const feedbackId = `fb-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const feedback = {
+    id: feedbackId,
+    meetupId,
+    userId,
+    userName: user.name || '',
+    userEmail: user.email || '',
+    userAvatar: user.avatar || user.profilePicture || '',
+    rating: ratingNum,
+    wouldRecommend: body.wouldRecommend === true,
+    learnings: typeof body.learnings === 'string' ? body.learnings : '',
+    suggestions: typeof body.suggestions === 'string' ? body.suggestions : '',
+    favoritePart: typeof body.favoritePart === 'string' ? body.favoritePart : '',
+    submittedAt: now,
+    pointsAwarded: pointsToAward,
+    pointActivityId: pointActivityId
+  };
+
+  try {
+    await docClient.send(new PutCommand({
+      TableName: FEEDBACK_TABLE,
+      Item: feedback
+    }));
+  } catch (e) {
+    console.error('Error saving feedback:', e);
+    return createResponse(500, { error: 'Failed to save feedback' });
+  }
+
+  return createResponse(201, {
+    feedback,
+    pointsAwarded: pointsToAward,
+    alreadyAttended: wasAlreadyAttended,
+    message: pointsToAward > 0
+      ? `Feedback submitted. +${pointsToAward} points awarded.`
+      : 'Feedback submitted. Your attendance was already recorded; no additional points awarded.'
+  });
+}
+
+// GET /meetups/{id}/feedback/me
+async function getMyFeedback(meetupId, event) {
+  const userId = event.userContext && event.userContext.userId;
+  if (!userId) {
+    return createResponse(401, { error: 'Authentication required' });
+  }
+
+  try {
+    const result = await docClient.send(new QueryCommand({
+      TableName: FEEDBACK_TABLE,
+      IndexName: 'meetupId-index',
+      KeyConditionExpression: 'meetupId = :m',
+      FilterExpression: 'userId = :u',
+      ExpressionAttributeValues: {
+        ':m': meetupId,
+        ':u': userId
+      }
+    }));
+
+    return createResponse(200, {
+      feedback: (result.Items && result.Items[0]) || null
+    });
+  } catch (e) {
+    console.error('Error fetching my feedback:', e);
+    return createResponse(500, { error: 'Failed to fetch feedback' });
+  }
+}
+
+// GET /meetups/{id}/feedback - admin only
+async function listFeedback(meetupId, event) {
+  if (!isAdminUser(event.userContext)) {
+    return createResponse(403, { error: 'Admin access required' });
+  }
+
+  try {
+    const result = await docClient.send(new QueryCommand({
+      TableName: FEEDBACK_TABLE,
+      IndexName: 'meetupId-index',
+      KeyConditionExpression: 'meetupId = :m',
+      ExpressionAttributeValues: {
+        ':m': meetupId
+      }
+    }));
+
+    const items = (result.Items || []).slice().sort((a, b) => {
+      const ta = a.submittedAt || '';
+      const tb = b.submittedAt || '';
+      return tb.localeCompare(ta);
+    });
+
+    return createResponse(200, { feedback: items });
+  } catch (e) {
+    console.error('Error listing feedback:', e);
+    return createResponse(500, { error: 'Failed to list feedback' });
+  }
+}
+
+// PATCH /meetups/{id}/feedback-settings - admin only
+async function updateFeedbackSettings(meetupId, event) {
+  if (!isAdminUser(event.userContext)) {
+    return createResponse(403, { error: 'Admin access required' });
+  }
+
+  let body = {};
+  try {
+    body = typeof event.body === 'string' ? JSON.parse(event.body) : (event.body || {});
+  } catch (e) {
+    return createResponse(400, { error: 'Invalid JSON body' });
+  }
+
+  // Verify meetup exists
+  const existing = await docClient.send(new GetCommand({
+    TableName: MEETUPS_TABLE,
+    Key: { id: meetupId }
+  }));
+
+  if (!existing.Item) {
+    return createResponse(404, { error: 'Meetup not found' });
+  }
+
+  const updateExpressions = [];
+  const expressionAttributeValues = {};
+
+  if (typeof body.feedbackEnabled === 'boolean') {
+    updateExpressions.push('feedbackEnabled = :fe');
+    expressionAttributeValues[':fe'] = body.feedbackEnabled;
+  }
+
+  if (body.attendeePoints !== undefined && body.attendeePoints !== null) {
+    const ap = Number(body.attendeePoints);
+    if (!Number.isFinite(ap) || ap < 0) {
+      return createResponse(400, { error: 'attendeePoints must be a non-negative number' });
+    }
+    updateExpressions.push('attendeePoints = :ap');
+    expressionAttributeValues[':ap'] = ap;
+  }
+
+  if (updateExpressions.length === 0) {
+    return createResponse(400, { error: 'No settings provided to update' });
+  }
+
+  updateExpressions.push('updatedAt = :u');
+  expressionAttributeValues[':u'] = new Date().toISOString();
+
+  await docClient.send(new UpdateCommand({
+    TableName: MEETUPS_TABLE,
+    Key: { id: meetupId },
+    UpdateExpression: 'SET ' + updateExpressions.join(', '),
+    ExpressionAttributeValues: expressionAttributeValues
+  }));
+
+  const updated = await docClient.send(new GetCommand({
+    TableName: MEETUPS_TABLE,
+    Key: { id: meetupId }
+  }));
+
+  return createResponse(200, { meetup: updated.Item });
+}

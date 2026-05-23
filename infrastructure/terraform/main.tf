@@ -575,9 +575,10 @@ resource "aws_lambda_function" "meetups_crud" {
 
   environment {
     variables = {
-      MEETUPS_TABLE_NAME   = aws_dynamodb_table.meetups.name
-      USERS_TABLE_NAME     = aws_dynamodb_table.users.name
-      COLLEGES_TABLE_NAME  = aws_dynamodb_table.colleges.name
+      MEETUPS_TABLE_NAME         = aws_dynamodb_table.meetups.name
+      USERS_TABLE_NAME           = aws_dynamodb_table.users.name
+      COLLEGES_TABLE_NAME        = aws_dynamodb_table.colleges.name
+      MEETUP_FEEDBACK_TABLE_NAME = aws_dynamodb_table.meetup_feedback.name
     }
   }
 
@@ -2267,6 +2268,14 @@ resource "aws_api_gateway_deployment" "api" {
       aws_api_gateway_integration.meetups_id_report_options_lambda.id,
       aws_api_gateway_integration.meetups_id_mark_attendance_lambda.id,
       aws_api_gateway_integration.meetups_id_mark_attendance_options_lambda.id,
+      # Meetup feedback (post-event self-service attendance)
+      aws_api_gateway_integration.meetups_id_feedback_post_lambda.id,
+      aws_api_gateway_integration.meetups_id_feedback_get_lambda.id,
+      aws_api_gateway_integration.meetups_id_feedback_options_mock.id,
+      aws_api_gateway_integration.meetups_id_feedback_me_get_lambda.id,
+      aws_api_gateway_integration.meetups_id_feedback_me_options_mock.id,
+      aws_api_gateway_integration.meetups_id_feedback_settings_patch_lambda.id,
+      aws_api_gateway_integration.meetups_id_feedback_settings_options_mock.id,
       aws_api_gateway_integration.sprints_id_sessions_sessionid_register_lambda.id,
       aws_api_gateway_integration.sprints_id_sessions_sessionid_register_options_lambda.id,
       aws_api_gateway_integration.upload_lambda.id,
@@ -2333,6 +2342,13 @@ resource "aws_api_gateway_deployment" "api" {
     aws_api_gateway_integration_response.meetups_id_report_options,
     aws_api_gateway_integration.meetups_id_register_lambda,
     aws_api_gateway_integration.meetups_id_participants_lambda,
+    aws_api_gateway_integration.meetups_id_feedback_post_lambda,
+    aws_api_gateway_integration.meetups_id_feedback_get_lambda,
+    aws_api_gateway_integration.meetups_id_feedback_options_mock,
+    aws_api_gateway_integration.meetups_id_feedback_me_get_lambda,
+    aws_api_gateway_integration.meetups_id_feedback_me_options_mock,
+    aws_api_gateway_integration.meetups_id_feedback_settings_patch_lambda,
+    aws_api_gateway_integration.meetups_id_feedback_settings_options_mock,
     aws_api_gateway_integration.upload_lambda,
     aws_api_gateway_integration.upload_options_lambda,
     aws_api_gateway_integration.sprints_get_lambda,

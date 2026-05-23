@@ -18,6 +18,7 @@ import {
 import { PersonCard } from '@/components/common/PersonCard';
 import { PostEventUploads } from '@/components/meetups/PostEventUploads';
 import { EventPhotoGallery } from '@/components/meetups/EventPhotoGallery';
+import { MeetupFeedbackForm } from '@/components/meetups/MeetupFeedbackForm';
 import { Meetup } from '@/data/mockData';
 import { format, parseISO, isPast } from 'date-fns';
 import { getMeetups, registerForMeetup, getMeetupParticipants, getMeetup } from '@/lib/meetups';
@@ -501,6 +502,9 @@ function MeetupDetail({ meetup: initialMeetup, onBack }: { meetup: Meetup; onBac
 
           {/* Event Photos - Public gallery for all users */}
           <EventPhotoGallery meetup={meetup} />
+
+          {/* Post-event feedback form (admins toggle visibility per meetup) */}
+          <MeetupFeedbackForm meetup={meetup} />
 
           {/* Post-Event Uploads - Admin only */}
           <PostEventUploads meetup={meetup} />

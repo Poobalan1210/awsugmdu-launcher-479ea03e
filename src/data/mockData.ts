@@ -320,6 +320,8 @@ export interface Meetup {
   speakerPoints?: number;
   volunteerPoints?: number;
   hostPoints?: number;
+  attendeePoints?: number; // Points awarded per attendee (used by both feedback flow and CSV markAttendance)
+  feedbackEnabled?: boolean; // Admin toggle - when true, post-event feedback form is visible to attendees
   eventPhotos?: string[]; // URLs of post-event photos
   eventReport?: { url: string; fileName: string }; // Post-event report (for college-champ sessions)
 }
@@ -346,6 +348,23 @@ export interface MeetupSpeaker {
   bio?: string;
   linkedIn?: string;
   sessionDetails?: string;
+}
+
+export interface MeetupFeedback {
+  id: string;
+  meetupId: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  userAvatar?: string;
+  rating: number; // 1..5
+  wouldRecommend: boolean;
+  learnings: string;
+  suggestions: string;
+  favoritePart?: string;
+  submittedAt: string;
+  pointsAwarded: number;
+  pointActivityId?: string | null;
 }
 
 export interface Event {

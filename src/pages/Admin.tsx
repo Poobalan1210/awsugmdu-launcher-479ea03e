@@ -480,7 +480,7 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
 
     // Validate certification group selection if type is circles
     if (formData.type === 'circles' && !formData.certificationGroupId) {
-      toast.error('Please select a certification group for this session');
+      toast.error('Please select a circle group for this session');
       return;
     }
 
@@ -662,18 +662,18 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
           {/* Certification Group Selection - Only show if type is circles */}
           {formData.type === 'circles' && (
             <div className="space-y-2">
-              <Label>Select Certification Group *</Label>
+              <Label>Select Circle Group *</Label>
               <Select
                 value={formData.certificationGroupId}
                 onValueChange={(value) => setFormData({ ...formData, certificationGroupId: value })}
                 required
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Choose a certification group..." />
+                  <SelectValue placeholder="Choose a circle group..." />
                 </SelectTrigger>
                 <SelectContent>
                   {certificationGroups.length === 0 ? (
-                    <SelectItem value="none" disabled>No certification groups available</SelectItem>
+                    <SelectItem value="none" disabled>No circle groups available</SelectItem>
                   ) : (
                     certificationGroups.map((group) => (
                       <SelectItem key={group.id} value={group.id}>
@@ -685,7 +685,7 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
               </Select>
               {certificationGroups.length === 0 && (
                 <p className="text-xs text-amber-600">
-                  ⚠️ No certification groups found. Please create a certification group first.
+                  ⚠️ No circle groups found. Please create a circle group first.
                 </p>
               )}
             </div>
@@ -6493,7 +6493,7 @@ export default function Admin() {
                   </TabsTrigger>
                   <TabsTrigger value="certifications" className="gap-2">
                     <Award className="h-4 w-4" />
-                    Certifications
+                    Circles
                   </TabsTrigger>
                   <TabsTrigger value="spotlight" className="gap-2">
                     <Star className="h-4 w-4" />

@@ -57,7 +57,7 @@ function CreateGroupDialog({ onSuccess, allUsers }: { onSuccess: () => void; all
         color: formData.color
       });
       
-      toast.success('Certification group created successfully!');
+      toast.success('Circle group created successfully!');
       setOpen(false);
       onSuccess();
       setFormData({ name: '', level: 'Associate', description: '', color: 'bg-blue-500', ownerIds: [] });
@@ -84,7 +84,7 @@ function CreateGroupDialog({ onSuccess, allUsers }: { onSuccess: () => void; all
       </DialogTrigger>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Create Certification Group</DialogTitle>
+          <DialogTitle>Create Circle Group</DialogTitle>
           <DialogDescription>Create a new study group for AWS certification preparation</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -213,7 +213,7 @@ export default function CertificationGroupsManagement({ allUsers }: Certificatio
       const data = await listCertificationGroups();
       setGroups(data);
     } catch (error) {
-      toast.error('Failed to load certification groups');
+      toast.error('Failed to load circle groups');
     } finally {
       setLoading(false);
     }
@@ -242,7 +242,7 @@ export default function CertificationGroupsManagement({ allUsers }: Certificatio
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold">Manage Certification Groups</h2>
+        <h2 className="text-xl font-semibold">Manage Circle Groups</h2>
         <CreateGroupDialog onSuccess={fetchGroups} allUsers={allUsers} />
       </div>
 
@@ -255,7 +255,7 @@ export default function CertificationGroupsManagement({ allUsers }: Certificatio
         <Card className="glass-card">
           <CardContent className="p-8 text-center">
             <Award className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <p className="text-muted-foreground">No certification groups found. Create your first group!</p>
+            <p className="text-muted-foreground">No circle groups found. Create your first group!</p>
           </CardContent>
         </Card>
       ) : (

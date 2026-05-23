@@ -1003,7 +1003,7 @@ export default function Circles() {
                 <Card className="glass-card">
                   <CardContent className="p-12 text-center">
                     <Award className="h-12 w-12 mx-auto mb-4 text-muted-foreground animate-pulse" />
-                    <p className="text-muted-foreground">Loading certification groups...</p>
+                    <p className="text-muted-foreground">Loading circle groups...</p>
                   </CardContent>
                 </Card>
               )}
@@ -1013,7 +1013,7 @@ export default function Circles() {
                 <Card className="glass-card">
                   <CardContent className="p-12 text-center">
                     <Award className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                    <h3 className="text-lg font-semibold mb-2">No Certification Groups Yet</h3>
+                    <h3 className="text-lg font-semibold mb-2">No Circle Groups Yet</h3>
                     <p className="text-muted-foreground">Check back soon for new study groups!</p>
                   </CardContent>
                 </Card>

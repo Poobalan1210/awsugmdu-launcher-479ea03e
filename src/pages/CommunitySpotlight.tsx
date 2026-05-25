@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo, forwardRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import { formatDistanceToNow } from 'date-fns';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
 import { Card, CardContent } from '@/components/ui/card';
@@ -9,11 +11,12 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   Search, Filter, ExternalLink, Plus, Loader2, Image as ImageIcon,
-  Code2, FileText, Video, Sparkles, X, Tag, Upload, CheckCircle, Clock, XCircle
+  Code2, FileText, Video, Sparkles, X, Tag, Upload, CheckCircle, Clock, XCircle,
+  Share2, Calendar, User as UserIcon, Copy, Check, ChevronRight
 } from 'lucide-react';
 import { SpotlightSubmission, SpotlightType } from '@/data/mockData';
 import { getSpotlightSubmissions, submitSpotlight } from '@/lib/spotlight';
@@ -28,7 +31,7 @@ const typeConfig: Record<SpotlightType, { label: string; icon: typeof Code2; col
   other: { label: 'Other', icon: Sparkles, color: 'text-amber-400', gradient: 'from-amber-500/20 to-orange-500/20' },
 };
 
-const SpotlightCard = forwardRef<HTMLDivElement, { item: SpotlightSubmission }>(({ item }, ref) => {
+const SpotlightCard = forwardRef<HTMLDivElement, { item: SpotlightSubmission; onClick: () => void }>(({ item, onClick }, ref) => {
   const config = typeConfig[item.type];
   const Icon = config.icon;
 
@@ -40,7 +43,18 @@ const SpotlightCard = forwardRef<HTMLDivElement, { item: SpotlightSubmission }>(
       exit={{ opacity: 0, y: -10 }}
       transition={{ duration: 0.3 }}
     >
-      <Card className="group glass-card overflow-hidden border-border/40 hover:border-primary/40 transition-all duration-500 hover:shadow-xl hover:shadow-primary/5">
+      <Card
+        onClick={onClick}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onClick();
+          }
+        }}
+        className="group glass-card overflow-hidden border-border/40 hover:border-primary/40 transition-all duration-500 hover:shadow-xl hover:shadow-primary/5 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/40"
+      >
         {/* Image */}
         <div className={`relative h-48 overflow-hidden bg-gradient-to-br ${config.gradient}`}>
           {item.imageUrl ? (
@@ -104,24 +118,19 @@ const SpotlightCard = forwardRef<HTMLDivElement, { item: SpotlightSubmission }>(
 
           {/* Footer */}
           <div className="flex items-center justify-between pt-2 border-t border-border/30">
-            <div className="flex items-center gap-2">
-              <Avatar className="h-7 w-7 border border-border/50">
+            <div className="flex items-center gap-2 min-w-0">
+              <Avatar className="h-7 w-7 border border-border/50 flex-shrink-0">
                 <AvatarImage src={item.userAvatar} />
                 <AvatarFallback className="text-[10px] bg-primary/10 text-primary font-bold">
                   {item.userName.charAt(0)}
                 </AvatarFallback>
               </Avatar>
-              <span className="text-xs font-medium text-muted-foreground">{item.userName}</span>
+              <span className="text-xs font-medium text-muted-foreground truncate">{item.userName}</span>
             </div>
-            <a
-              href={item.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:text-primary/80 transition-colors group/link"
-            >
-              View
-              <ExternalLink className="h-3 w-3 transition-transform group-hover/link:translate-x-0.5" />
-            </a>
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary group-hover:text-primary/80 transition-colors flex-shrink-0">
+              View details
+              <ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+            </span>
           </div>
         </CardContent>
       </Card>
@@ -333,7 +342,13 @@ function SubmitSpotlightDialog({ onSuccess }: { onSuccess: () => void }) {
   );
 }
 
-function MySubmissions({ submissions }: { submissions: SpotlightSubmission[] }) {
+function MySubmissions({
+  submissions,
+  onSelect,
+}: {
+  submissions: SpotlightSubmission[];
+  onSelect: (item: SpotlightSubmission) => void;
+}) {
   if (submissions.length === 0) return null;
 
   const statusIcon = {
@@ -356,7 +371,19 @@ function MySubmissions({ submissions }: { submissions: SpotlightSubmission[] }) 
       </h3>
       <div className="grid gap-3">
         {submissions.map((sub) => (
-          <Card key={sub.id} className="glass-card border-border/40">
+          <Card
+            key={sub.id}
+            onClick={() => onSelect(sub)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onSelect(sub);
+              }
+            }}
+            className="glass-card border-border/40 cursor-pointer hover:border-primary/40 transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40"
+          >
             <CardContent className="p-4 flex items-center justify-between gap-4">
               <div className="flex items-center gap-3 min-w-0">
                 {sub.imageUrl ? (
@@ -383,6 +410,173 @@ function MySubmissions({ submissions }: { submissions: SpotlightSubmission[] }) 
   );
 }
 
+function SpotlightDetailDialog({
+  item,
+  open,
+  onClose,
+}: {
+  item: SpotlightSubmission | null;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  // Reset copied state when dialog reopens
+  useEffect(() => {
+    if (!open) setCopied(false);
+  }, [open]);
+
+  if (!item) return null;
+
+  const config = typeConfig[item.type];
+  const Icon = config.icon;
+
+  const shareUrl = `${window.location.origin}/community-spotlight?id=${item.id}`;
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopied(true);
+      toast.success('Link copied to clipboard');
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error('Failed to copy link');
+    }
+  };
+
+  const handleShare = async () => {
+    const shareData = {
+      title: item.title,
+      text: `${item.title} — shared from AWS UG Madurai Community Spotlight`,
+      url: shareUrl,
+    };
+    if (navigator.share && navigator.canShare?.(shareData)) {
+      try {
+        await navigator.share(shareData);
+      } catch (err: any) {
+        if (err?.name !== 'AbortError') {
+          handleCopy();
+        }
+      }
+    } else {
+      handleCopy();
+    }
+  };
+
+  let submittedLabel: string | null = null;
+  if (item.submittedAt) {
+    try {
+      submittedLabel = formatDistanceToNow(new Date(item.submittedAt), { addSuffix: true });
+    } catch {
+      submittedLabel = null;
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="w-[calc(100%-1rem)] sm:w-full max-w-2xl h-[90vh] sm:h-auto sm:max-h-[90vh] p-0 gap-0 rounded-xl flex flex-col overflow-hidden">
+        {/* Hero image / gradient — fixed */}
+        <div className={`relative h-28 sm:h-48 md:h-56 flex-shrink-0 overflow-hidden bg-gradient-to-br ${config.gradient}`}>
+          {item.imageUrl ? (
+            <img src={item.imageUrl} alt={item.title} className="w-full h-full object-cover" />
+          ) : (
+            <div className="flex items-center justify-center h-full">
+              <Icon className={`h-12 w-12 sm:h-20 sm:w-20 ${config.color} opacity-40`} />
+            </div>
+          )}
+          <div className="absolute inset-0 bg-gradient-to-t from-background via-background/30 to-transparent" />
+          <div className="absolute top-3 left-3 flex flex-wrap items-center gap-1.5 sm:gap-2 max-w-[calc(100%-3.5rem)]">
+            <Badge className={`bg-background/80 backdrop-blur-sm border-border/50 ${config.color} gap-1.5 py-1 px-2.5 text-[11px] font-bold uppercase tracking-wider`}>
+              <Icon className="h-3 w-3" />
+              {config.label}
+            </Badge>
+            {item.points > 0 && (
+              <Badge className="bg-amber-500/90 text-white border-0 py-1 px-2.5 text-[11px] font-bold">
+                ⭐ {item.points} pts
+              </Badge>
+            )}
+          </div>
+        </div>
+
+        {/* Header — fixed */}
+        <div className="px-4 sm:px-6 pt-3 sm:pt-5 pb-3 flex-shrink-0 border-b border-border/40">
+          <DialogHeader className="text-left space-y-2 sm:space-y-3">
+            <DialogTitle className="text-lg sm:text-2xl font-extrabold tracking-tight leading-tight pr-8 line-clamp-2">
+              {item.title}
+            </DialogTitle>
+            <DialogDescription asChild>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Avatar className="h-5 w-5 sm:h-6 sm:w-6 border border-border/50 flex-shrink-0">
+                    <AvatarImage src={item.userAvatar} />
+                    <AvatarFallback className="text-[10px] bg-primary/10 text-primary font-bold">
+                      {item.userName.charAt(0)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="font-medium text-foreground/80 truncate">{item.userName}</span>
+                </div>
+                {submittedLabel && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Calendar className="h-3.5 w-3.5" />
+                    {submittedLabel}
+                  </span>
+                )}
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+        </div>
+
+        {/* Scrollable body */}
+        <div className="flex-1 overflow-y-auto overscroll-contain px-4 sm:px-6 py-4 space-y-4 sm:space-y-5">
+          {/* Description */}
+          <div>
+            <h4 className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5 sm:mb-2">
+              About
+            </h4>
+            <p className="text-sm leading-relaxed text-foreground/90 whitespace-pre-wrap break-words">
+              {item.description}
+            </p>
+          </div>
+
+          {/* Tags */}
+          {item.tags && item.tags.length > 0 && (
+            <div>
+              <h4 className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5 sm:mb-2">
+                Tags
+              </h4>
+              <div className="flex flex-wrap gap-1.5">
+                {item.tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider bg-muted/50 text-muted-foreground px-2 py-1 rounded-full border border-border/40"
+                  >
+                    <Tag className="h-2.5 w-2.5" />
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer — fixed */}
+        <DialogFooter className="px-4 sm:px-6 py-3 sm:py-4 border-t border-border/40 bg-background flex-shrink-0 flex-row gap-2 sm:justify-end">
+          <Button variant="outline" onClick={handleShare} className="gap-2 flex-1 sm:flex-initial">
+            <Share2 className="h-4 w-4" />
+            Share
+          </Button>
+          <Button asChild className="gap-2 flex-1 sm:flex-initial bg-gradient-to-r from-primary to-orange-500 hover:from-primary/90 hover:to-orange-500/90">
+            <a href={item.url} target="_blank" rel="noopener noreferrer">
+              Open
+              <ExternalLink className="h-4 w-4" />
+            </a>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function CommunitySpotlight() {
   const { user, isAuthenticated } = useAuth();
   const [submissions, setSubmissions] = useState<SpotlightSubmission[]>([]);
@@ -391,6 +585,8 @@ export default function CommunitySpotlight() {
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<SpotlightType | 'all'>('all');
   const [tagFilter, setTagFilter] = useState<string>('');
+  const [selected, setSelected] = useState<SpotlightSubmission | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const fetchData = async () => {
     setLoading(true);
@@ -412,6 +608,43 @@ export default function CommunitySpotlight() {
   useEffect(() => {
     fetchData();
   }, [user?.id]);
+
+  // Open modal automatically when ?id= is in URL and submissions are loaded
+  useEffect(() => {
+    const id = searchParams.get('id');
+    if (!id) {
+      if (selected) setSelected(null);
+      return;
+    }
+    if (loading) return;
+
+    // Look in approved submissions first, then user's own
+    const found =
+      submissions.find((s) => s.id === id) ||
+      mySubmissions.find((s) => s.id === id) ||
+      null;
+
+    if (found) {
+      setSelected(found);
+    } else if (selected?.id !== id) {
+      // ID in URL but not in our list — silently ignore
+      setSelected(null);
+    }
+  }, [searchParams, submissions, mySubmissions, loading]);
+
+  const openDetail = (item: SpotlightSubmission) => {
+    setSelected(item);
+    const next = new URLSearchParams(searchParams);
+    next.set('id', item.id);
+    setSearchParams(next, { replace: false });
+  };
+
+  const closeDetail = () => {
+    setSelected(null);
+    const next = new URLSearchParams(searchParams);
+    next.delete('id');
+    setSearchParams(next, { replace: true });
+  };
 
   // Gather all unique tags from approved submissions
   const allTags = useMemo(() => {
@@ -596,7 +829,7 @@ export default function CommunitySpotlight() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                 <AnimatePresence mode="popLayout">
                   {filteredSubmissions.map((item) => (
-                    <SpotlightCard key={item.id} item={item} />
+                    <SpotlightCard key={item.id} item={item} onClick={() => openDetail(item)} />
                   ))}
                 </AnimatePresence>
               </div>
@@ -607,10 +840,12 @@ export default function CommunitySpotlight() {
         {/* My Submissions Section */}
         {isAuthenticated && mySubmissions.length > 0 && (
           <section className="container mx-auto px-4 pb-16">
-            <MySubmissions submissions={mySubmissions} />
+            <MySubmissions submissions={mySubmissions} onSelect={openDetail} />
           </section>
         )}
       </main>
+
+      <SpotlightDetailDialog item={selected} open={!!selected} onClose={closeDetail} />
 
       <Footer />
     </div>

@@ -5,6 +5,8 @@ import {
   signUp as amplifySignUp,
   confirmSignUp as amplifyConfirmSignUp,
   resendSignUpCode as amplifyResendSignUpCode,
+  resetPassword as amplifyResetPassword,
+  confirmResetPassword as amplifyConfirmResetPassword,
   getCurrentUser,
   fetchAuthSession,
   type SignInOutput,
@@ -25,6 +27,8 @@ interface AuthContextType {
   confirmSignUp: (email: string, code: string) => Promise<void>;
   signOut: () => Promise<void>;
   resendConfirmationCode: (email: string) => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
+  confirmResetPassword: (email: string, code: string, newPassword: string) => Promise<void>;
   uploadProfilePhoto: (file: File, userId: string) => Promise<string>;
   refreshUser: () => Promise<void>;
   deleteAccount: () => Promise<void>;
@@ -240,6 +244,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const resetPassword = async (email: string) => {
+    try {
+      await amplifyResetPassword({ username: email });
+    } catch (error: any) {
+      console.error('Reset password error:', error);
+      throw new Error(error.message || 'Failed to send password reset code');
+    }
+  };
+
+  const confirmResetPassword = async (email: string, code: string, newPassword: string) => {
+    try {
+      await amplifyConfirmResetPassword({
+        username: email,
+        confirmationCode: code,
+        newPassword,
+      });
+    } catch (error: any) {
+      console.error('Confirm reset password error:', error);
+      throw new Error(error.message || 'Failed to reset password');
+    }
+  };
+
   const uploadProfilePhoto = async (file: File, userId: string): Promise<string> => {
     try {
       // Check if user is authenticated
@@ -330,6 +356,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     confirmSignUp,
     signOut,
     resendConfirmationCode,
+    resetPassword,
+    confirmResetPassword,
     uploadProfilePhoto,
     refreshUser,
     deleteAccount,

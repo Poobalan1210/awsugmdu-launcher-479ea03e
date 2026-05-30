@@ -96,6 +96,14 @@ function SprintCard({ sprint, sessionCount, onSelect }: { sprint: Sprint; sessio
             <span className="text-sm text-muted-foreground">
               {format(parseISO(sprint.startDate), 'MMM yyyy')}
             </span>
+            <div onClick={(e) => e.stopPropagation()}>
+              <ShareButton
+                data={generateSprintShare(sprint.title, sprint.id)}
+                variant="ghost"
+                size="sm"
+                className="-mt-1 -mr-2 h-8 px-2 text-muted-foreground hover:text-primary"
+              />
+            </div>
           </div>
           
           <h3 className="text-xl font-bold mb-2">{sprint.title}</h3>

@@ -1,6 +1,7 @@
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, PutCommand, GetCommand, UpdateCommand, ScanCommand, QueryCommand, DeleteCommand, BatchGetCommand } = require('@aws-sdk/lib-dynamodb');
 const { authorize, createUnauthorizedResponse } = require('./shared/auth');
+const { sendEmail, renderEmail, APP_URL } = require('./shared/email');
 
 const client = new DynamoDBClient({ region: process.env.AWS_REGION });
 let docClient = DynamoDBDocumentClient.from(client);
@@ -899,6 +900,67 @@ async function buildMemberIdIndex() {
   return map;
 }
 
+// Send a "thanks for attending" email with the points earned and a CTA to
+// redeem in the store. Best-effort: never throws, so an email failure cannot
+// affect point-awarding. Skips silently if the user has no email on file.
+async function sendAttendanceThankYouEmail(user, meetup, pointsAwarded, redeemableBalance) {
+  try {
+    if (!user || !user.email) return;
+
+    const name = user.name ? String(user.name).trim().split(/\s+/)[0] : 'there';
+    const eventTitle = meetup.title || 'our event';
+    const balanceLine = redeemableBalance != null
+      ? `<p style="margin:0 0 16px;">Your redeemable balance is now
+           <strong style="color:#232f3e;">${redeemableBalance} points</strong>.</p>`
+      : '';
+
+    const bodyHtml = `
+      <p style="margin:0 0 16px;">Thanks for joining us at <strong>${escapeHtmlInline(eventTitle)}</strong>, ${escapeHtmlInline(name)}! It was great to have you there.</p>
+      <p style="margin:0 0 16px;">You've been awarded
+        <strong style="color:#ff9900;">${pointsAwarded} points</strong> for attending. 🎉</p>
+      ${balanceLine}
+      <p style="margin:0 0 8px;">Put them to good use - redeem your points for community swag and rewards in our store.</p>
+    `;
+
+    const html = renderEmail({
+      heading: `Thanks for attending, ${name}! 🎉`,
+      bodyHtml,
+      cta: { label: 'Redeem in Store', url: `${APP_URL}/store` },
+      footerNote: 'You received this because you attended an AWS User Group Madurai event.',
+    });
+
+    await sendEmail({
+      to: user.email,
+      subject: `Thanks for attending ${eventTitle}! You earned ${pointsAwarded} points 🎉`,
+      html,
+    });
+  } catch (err) {
+    console.error('sendAttendanceThankYouEmail failed:', err.message);
+  }
+}
+
+// Minimal inline HTML escape for values interpolated into email body.
+function escapeHtmlInline(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// Send a batch of attendance thank-you emails with a small delay between each
+// to stay comfortably under the SES per-second send rate. Best-effort.
+async function sendThankYouEmailsThrottled(queue, meetup) {
+  if (!Array.isArray(queue) || queue.length === 0) return;
+
+  const DELAY_MS = 120; // ~8/sec, well under the 14/sec SES rate
+  let sent = 0;
+  for (const item of queue) {
+    await sendAttendanceThankYouEmail(item.user, meetup, item.points, item.redeemable);
+    sent++;
+    if (sent < queue.length) {
+      await new Promise(resolve => setTimeout(resolve, DELAY_MS));
+    }
+  }
+  console.log(`Attendance thank-you emails dispatched: ${sent}/${queue.length}`);
+}
+
 // Atomically award attendance points to a user for a meetup, exactly once.
 //
 // Idempotency is enforced at the database level: each award adds the meetup ID
@@ -977,7 +1039,8 @@ async function awardAttendancePointsAtomic(user, meetup, meetupId, points, opts 
     }));
 
     const newTotal = result.Attributes?.points ?? ((user.points || 0) + points);
-    return { status: 'awarded', newTotal, pointActivity };
+    const newRedeemable = result.Attributes?.redeemablePoints ?? (redeemBaseline + points);
+    return { status: 'awarded', newTotal, newRedeemable, pointActivity };
   } catch (err) {
     if (err.name === 'ConditionalCheckFailedException') {
       return { status: 'already' };
@@ -1038,6 +1101,9 @@ async function markAttendance(id, event) {
   const attendedUsers = new Set(meetup.attendedUsers || []);
   const registeredUsers = new Set(meetup.registeredUsers || []);
 
+  // Collect users who were freshly awarded so we can email them after persisting.
+  const emailQueue = [];
+
   for (const memberId of memberIds) {
     try {
       const user = memberIdToUser.get(memberId);
@@ -1074,6 +1140,9 @@ async function markAttendance(id, event) {
         continue;
       }
 
+      // Freshly awarded -> queue a thank-you email (sent after persistence).
+      emailQueue.push({ user, points: pointsPerAttendee, redeemable: award.newRedeemable });
+
       results.success.push({
         memberId,
         userId,
@@ -1100,6 +1169,10 @@ async function markAttendance(id, event) {
       ':updatedAt': new Date().toISOString()
     }
   }));
+
+  // Send thank-you emails to freshly-awarded attendees. Throttled to stay well
+  // under the SES send rate, and best-effort (failures are logged, not fatal).
+  await sendThankYouEmailsThrottled(emailQueue, meetup);
 
   return createResponse(200, {
     message: 'Attendance marked successfully',
@@ -1537,6 +1610,8 @@ async function submitFeedback(meetupId, event) {
       if (award.status === 'awarded') {
         pointsToAward = attendeePoints;
         pointActivityId = award.pointActivity.id;
+        // Best-effort thank-you email (never blocks/breaks the feedback flow).
+        await sendAttendanceThankYouEmail(user, meetup, attendeePoints, award.newRedeemable);
       }
       // status 'already' -> pointsToAward stays 0 (already awarded for this meetup)
     } catch (e) {

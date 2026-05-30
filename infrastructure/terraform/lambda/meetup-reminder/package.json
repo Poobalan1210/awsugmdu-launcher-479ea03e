@@ -1,7 +1,7 @@
 {
-  "name": "meetups-crud",
+  "name": "meetup-reminder",
   "version": "1.0.0",
-  "description": "Lambda function for meetups CRUD operations",
+  "description": "Weekly reminder email for users who have not completed Meetup verification",
   "main": "index.js",
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.0.0",

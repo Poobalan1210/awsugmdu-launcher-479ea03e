@@ -139,6 +139,7 @@ LAMBDA_FUNCTIONS=(
   "colleges-crud"
   "meetups-crud"
   "points-crud"
+  "meetup-reminder"
 )
 
 # ─── Header ───────────────────────────────────────────────────────────────────
@@ -152,9 +153,27 @@ echo "Step 1: Saving pre-deploy state snapshot..."
 SNAPSHOT_PATH=$(save_snapshot "pre-deploy")
 echo ""
 
-# ─── Step 2: Install Lambda dependencies ─────────────────────────────────────
-echo "Step 2: Installing Lambda dependencies..."
+# ─── Step 2: Sync shared modules + install Lambda dependencies ───────────────
+echo "Step 2: Syncing shared modules and installing Lambda dependencies..."
 echo ""
+
+# Lambdas that consume the master lambda/shared/email.js helper. Keep the master
+# copy in lambda/shared/email.js and let deploy sync it in so they never drift.
+EMAIL_SHARED_CONSUMERS=(
+  "meetups-crud"
+  "meetup-reminder"
+)
+
+if [ -f "lambda/shared/email.js" ]; then
+  for func in "${EMAIL_SHARED_CONSUMERS[@]}"; do
+    if [ -d "lambda/$func" ]; then
+      mkdir -p "lambda/$func/shared"
+      cp "lambda/shared/email.js" "lambda/$func/shared/email.js"
+      ok "Synced shared/email.js → $func"
+    fi
+  done
+  echo ""
+fi
 
 for func in "${LAMBDA_FUNCTIONS[@]}"; do
   # Deduplicate (meetups-crud appears twice in the list above)

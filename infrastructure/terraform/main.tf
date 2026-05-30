@@ -580,6 +580,8 @@ resource "aws_lambda_function" "meetups_crud" {
       USERS_TABLE_NAME           = aws_dynamodb_table.users.name
       COLLEGES_TABLE_NAME        = aws_dynamodb_table.colleges.name
       MEETUP_FEEDBACK_TABLE_NAME = aws_dynamodb_table.meetup_feedback.name
+      SES_FROM_EMAIL             = "info@awsugmdu.in"
+      APP_URL                    = "https://www.awsugmdu.in"
     }
   }
 

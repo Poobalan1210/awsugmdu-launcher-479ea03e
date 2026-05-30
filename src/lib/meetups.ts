@@ -145,12 +145,13 @@ export async function getMeetupsByCertificationGroup(certificationGroupId: strin
 }
 
 export interface MarkAttendanceRequest {
-  emails: string[];
+  // Meetup member IDs (from the "Member ID" column of the Meetup attendees CSV)
+  memberIds: string[];
   pointsPerAttendee?: number;
 }
 
 export interface MarkAttendanceResult {
-  email: string;
+  memberId: string;
   userId?: string;
   name?: string;
   pointsAwarded?: number;
@@ -162,8 +163,9 @@ export interface MarkAttendanceResponse {
   message: string;
   results: {
     success: MarkAttendanceResult[];
-    notFound: string[];
-    alreadyMarked: string[];
+    notFound: string[]; // member IDs with no matching member in our system
+    alreadyMarked: MarkAttendanceResult[]; // already attended, not re-awarded
+    notVerified: MarkAttendanceResult[]; // matched but not Meetup-verified
     errors: MarkAttendanceResult[];
   };
   summary: {
@@ -171,6 +173,7 @@ export interface MarkAttendanceResponse {
     successful: number;
     notFound: number;
     alreadyMarked: number;
+    notVerified: number;
     errors: number;
   };
 }

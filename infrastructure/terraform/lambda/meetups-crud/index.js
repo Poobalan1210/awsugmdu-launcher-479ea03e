@@ -1,9 +1,9 @@
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
-const { DynamoDBDocumentClient, PutCommand, GetCommand, UpdateCommand, ScanCommand, QueryCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
+const { DynamoDBDocumentClient, PutCommand, GetCommand, UpdateCommand, ScanCommand, QueryCommand, DeleteCommand, BatchGetCommand } = require('@aws-sdk/lib-dynamodb');
 const { authorize, createUnauthorizedResponse } = require('./shared/auth');
 
 const client = new DynamoDBClient({ region: process.env.AWS_REGION });
-const docClient = DynamoDBDocumentClient.from(client);
+let docClient = DynamoDBDocumentClient.from(client);
 
 const MEETUPS_TABLE = process.env.MEETUPS_TABLE_NAME || 'awsug-meetups';
 const USERS_TABLE = process.env.USERS_TABLE_NAME || 'awsug-users';
@@ -739,31 +739,85 @@ async function getMeetupParticipants(id) {
     return createResponse(200, { participants: [] });
   }
 
-  // Fetch user details for all registered users
+  // Fetch user details for all registered users in batches (BatchGetItem
+  // supports up to 100 keys per request). This replaces the previous
+  // one-GetItem-per-user loop, which caused a multi-second delay for large
+  // participant lists.
   const USERS_TABLE = process.env.USERS_TABLE_NAME || 'awsug-users';
-  const participants = [];
 
-  for (const userId of registeredUsers) {
-    try {
-      const userResult = await docClient.send(new GetCommand({
-        TableName: USERS_TABLE,
-        Key: { userId }
-      }));
+  // De-duplicate userIds while preserving first-seen order
+  const uniqueUserIds = [...new Set(registeredUsers)];
 
-      if (userResult.Item) {
-        const user = userResult.Item;
-        participants.push({
-          id: user.userId,
-          name: user.name || 'Unknown User',
-          email: user.email,
-          avatar: user.avatar || user.profilePicture,
-          designation: user.designation,
-          company: user.company
-        });
+  // Map userId -> user item so we can return results in registration order
+  const userById = new Map();
+
+  // Chunk into groups of 100 (BatchGetItem hard limit)
+  for (let i = 0; i < uniqueUserIds.length; i += 100) {
+    const chunk = uniqueUserIds.slice(i, i + 100);
+    let keys = chunk.map(userId => ({ userId }));
+
+    // Retry any UnprocessedKeys with simple backoff
+    let attempt = 0;
+    while (keys.length > 0) {
+      try {
+        const resp = await docClient.send(new BatchGetCommand({
+          RequestItems: {
+            [USERS_TABLE]: { Keys: keys }
+          }
+        }));
+
+        const returned = (resp.Responses && resp.Responses[USERS_TABLE]) || [];
+        for (const user of returned) {
+          userById.set(user.userId, user);
+        }
+
+        const unprocessed = resp.UnprocessedKeys
+          && resp.UnprocessedKeys[USERS_TABLE]
+          && resp.UnprocessedKeys[USERS_TABLE].Keys;
+
+        keys = unprocessed && unprocessed.length > 0 ? unprocessed : [];
+
+        if (keys.length > 0 && ++attempt <= 5) {
+          await new Promise(r => setTimeout(r, 50 * attempt));
+        } else if (keys.length > 0) {
+          console.error(`Giving up on ${keys.length} unprocessed user keys after ${attempt} retries`);
+          break;
+        }
+      } catch (error) {
+        console.error('Error batch-fetching users:', error);
+        // Fall back to individual GetItem calls (in parallel) so a BatchGetItem
+        // failure never silently returns an incomplete participant list.
+        const fallback = await Promise.all(keys.map(async (key) => {
+          try {
+            const r = await docClient.send(new GetCommand({ TableName: USERS_TABLE, Key: key }));
+            return r.Item || null;
+          } catch (e) {
+            console.error(`Error fetching user ${key.userId}:`, e);
+            return null;
+          }
+        }));
+        for (const user of fallback) {
+          if (user) userById.set(user.userId, user);
+        }
+        keys = [];
       }
-    } catch (error) {
-      console.error(`Error fetching user ${userId}:`, error);
-      // Continue with other users even if one fails
+    }
+  }
+
+  // Build participant list in original registration order, skipping any
+  // userIds that no longer resolve to a user record.
+  const participants = [];
+  for (const userId of uniqueUserIds) {
+    const user = userById.get(userId);
+    if (user) {
+      participants.push({
+        id: user.userId,
+        name: user.name || 'Unknown User',
+        email: user.email,
+        avatar: user.avatar || user.profilePicture,
+        designation: user.designation,
+        company: user.company
+      });
     }
   }
 
@@ -791,7 +845,153 @@ async function deleteMeetup(id) {
   return createResponse(200, { message: 'Meetup deleted successfully' });
 }
 
-// Mark attendance for meetup
+// Extract the numeric Meetup member ID from a stored membership URL.
+// Verification stores the URL in user.meetupEmail, e.g.
+//   https://www.meetup.com/members/456181201/group/36938462/
+function extractMeetupMemberId(meetupUrl) {
+  if (!meetupUrl || typeof meetupUrl !== 'string') {
+    return null;
+  }
+  const match = meetupUrl.match(/\/members\/(\d+)/);
+  return match ? match[1] : null;
+}
+
+// Determine whether a user counts as Meetup-verified.
+// Mirrors the front-end derivation in src/lib/userProfile.ts. Because a member
+// ID is only ever stored as a result of completing verification, any user we
+// can match by member ID is verified by definition (final fallback).
+function isMeetupVerified(user) {
+  if (!user) return false;
+  if (user.meetupVerified === true) return true;
+  if (user.meetupVerificationStatus === 'approved') return true;
+  const pointActivities = user.pointActivities || [];
+  if (pointActivities.some(a =>
+    a.type === 'signup' ||
+    a.type === 'meetup_verification' ||
+    (a.reason && a.reason.toLowerCase().includes('meetup'))
+  )) {
+    return true;
+  }
+  return !!extractMeetupMemberId(user.meetupEmail);
+}
+
+// Build a map of Meetup member ID -> user record by scanning the users table.
+// There is no GSI on the member ID (it lives inside the meetupEmail URL), so a
+// paginated scan is used. This is acceptable for the group's current scale.
+async function buildMemberIdIndex() {
+  const map = new Map();
+  let lastKey;
+  do {
+    const resp = await docClient.send(new ScanCommand({
+      TableName: USERS_TABLE,
+      ProjectionExpression: 'userId, email, #nm, points, redeemablePoints, meetupEmail, meetupVerified, meetupVerificationStatus, pointActivities, activities',
+      ExpressionAttributeNames: { '#nm': 'name' },
+      ExclusiveStartKey: lastKey,
+    }));
+    for (const item of resp.Items || []) {
+      const memberId = extractMeetupMemberId(item.meetupEmail);
+      if (memberId && !map.has(memberId)) {
+        map.set(memberId, item);
+      }
+    }
+    lastKey = resp.LastEvaluatedKey;
+  } while (lastKey);
+  return map;
+}
+
+// Atomically award attendance points to a user for a meetup, exactly once.
+//
+// Idempotency is enforced at the database level: each award adds the meetup ID
+// to a per-user string set (attendedMeetupIds) under a ConditionExpression that
+// the meetup ID is not already present. Concurrent attempts (e.g. a CSV import
+// and a feedback submission landing at the same time) therefore cannot
+// double-award - the first write wins and any subsequent one fails the
+// condition. Point/redeemable increments use additive server-side expressions
+// so they remain correct regardless of read staleness.
+//
+// Returns { status: 'awarded', newTotal, pointActivity } on success,
+// or { status: 'already' } if points were already awarded for this meetup.
+async function awardAttendancePointsAtomic(user, meetup, meetupId, points, opts = {}) {
+  const userId = user.userId;
+  const now = new Date().toISOString();
+
+  // Legacy idempotency guard: awards made before attendedMeetupIds existed only
+  // left a meetup_attended activity. Honour that so a re-run doesn't double-award
+  // users who earned points under the previous implementation.
+  const existingActivities = Array.isArray(user.activities) ? user.activities : [];
+  if (existingActivities.some(a => a.type === 'meetup_attended' && a.meetupId === meetupId)) {
+    return { status: 'already' };
+  }
+
+  const pointActivity = {
+    id: `pa-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    userId,
+    points,
+    reason: opts.reason || `Attended ${meetup.title}`,
+    type: 'event',
+    awardedBy: opts.awardedBy || 'system',
+    awardedAt: now,
+  };
+
+  const activity = {
+    type: 'meetup_attended',
+    meetupId,
+    meetupTitle: meetup.title,
+    points,
+    timestamp: now,
+  };
+  if (opts.source) {
+    activity.source = opts.source;
+  }
+
+  // Baseline only used if redeemablePoints doesn't exist yet (legacy users):
+  // mirrors the historic `redeemablePoints ?? points` semantics.
+  const redeemBaseline = user.redeemablePoints != null
+    ? user.redeemablePoints
+    : (user.points || 0);
+
+  try {
+    const result = await docClient.send(new UpdateCommand({
+      TableName: USERS_TABLE,
+      Key: { userId },
+      UpdateExpression:
+        'SET points = if_not_exists(points, :zero) + :p, ' +
+        'redeemablePoints = if_not_exists(redeemablePoints, :rb) + :p, ' +
+        'activities = list_append(if_not_exists(activities, :empty), :actList), ' +
+        'pointActivities = list_append(if_not_exists(pointActivities, :empty), :paList), ' +
+        'updatedAt = :now ' +
+        'ADD attendedMeetupIds :midSet',
+      ConditionExpression: 'attribute_not_exists(attendedMeetupIds) OR NOT contains(attendedMeetupIds, :mid)',
+      ExpressionAttributeValues: {
+        ':p': points,
+        ':zero': 0,
+        ':rb': redeemBaseline,
+        ':empty': [],
+        ':actList': [activity],
+        ':paList': [pointActivity],
+        ':now': now,
+        ':midSet': new Set([meetupId]),
+        ':mid': meetupId,
+      },
+      ReturnValues: 'UPDATED_NEW',
+    }));
+
+    const newTotal = result.Attributes?.points ?? ((user.points || 0) + points);
+    return { status: 'awarded', newTotal, pointActivity };
+  } catch (err) {
+    if (err.name === 'ConditionalCheckFailedException') {
+      return { status: 'already' };
+    }
+    throw err;
+  }
+}
+
+// Mark attendance for meetup (by Meetup member ID).
+//
+// Matches each member ID against verified members, awards attendance points,
+// and registers them as participants (added to both attendedUsers and
+// registeredUsers). Idempotent: a member already in attendedUsers is not
+// awarded again. Body: { memberIds: string[], pointsPerAttendee?: number }
 async function markAttendance(id, event) {
   const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
 
@@ -808,161 +1008,95 @@ async function markAttendance(id, event) {
   const meetup = meetupResult.Item;
 
   // Default points: explicit body value > meetup.attendeePoints > 50 (legacy default)
-  const {
-    emails,
-    pointsPerAttendee = (meetup.attendeePoints != null ? meetup.attendeePoints : 50)
-  } = body;
+  const pointsPerAttendee = body.pointsPerAttendee != null
+    ? body.pointsPerAttendee
+    : (meetup.attendeePoints != null ? meetup.attendeePoints : 50);
 
-  if (!emails || !Array.isArray(emails) || emails.length === 0) {
-    return createResponse(400, { error: 'Missing required field: emails (array)' });
+  // Normalize and de-duplicate incoming member IDs
+  const memberIds = [...new Set(
+    (Array.isArray(body.memberIds) ? body.memberIds : [])
+      .map(m => String(m).trim())
+      .filter(Boolean)
+  )];
+
+  if (memberIds.length === 0) {
+    return createResponse(400, { error: 'Missing required field: memberIds (array)' });
   }
 
-  // Get volunteer and speaker user IDs
-  const volunteerIds = new Set((meetup.volunteers || []).map(v => v.userId).filter(Boolean));
-  const speakerIds = new Set((meetup.speakers || []).map(s => s.userId).filter(Boolean));
+  // Build member ID -> user index from the users table
+  const memberIdToUser = await buildMemberIdIndex();
 
-  // Fetch users by email
-  const USERS_TABLE = process.env.USERS_TABLE_NAME || 'awsug-users';
   const results = {
     success: [],
     notFound: [],
     alreadyMarked: [],
-    errors: [],
-    volunteersAwarded: [],
-    speakersAwarded: []
+    notVerified: [],
+    errors: []
   };
 
-  // Get current attendedUsers list
-  const attendedUsers = meetup.attendedUsers || [];
-  const attendedEmails = new Set();
+  // Track attendance and participation as sets so we can persist once at the end
+  const attendedUsers = new Set(meetup.attendedUsers || []);
+  const registeredUsers = new Set(meetup.registeredUsers || []);
 
-  // Build a map of already attended users
-  for (const userId of attendedUsers) {
+  for (const memberId of memberIds) {
     try {
-      const userResult = await docClient.send(new GetCommand({
-        TableName: USERS_TABLE,
-        Key: { userId }
-      }));
-      if (userResult.Item) {
-        attendedEmails.add(userResult.Item.email.toLowerCase());
-      }
-    } catch (error) {
-      console.error(`Error fetching user ${userId}:`, error);
-    }
-  }
+      const user = memberIdToUser.get(memberId);
 
-  // Process each email
-  for (const email of emails) {
-    const normalizedEmail = email.trim().toLowerCase();
-
-    if (!normalizedEmail) {
-      continue;
-    }
-
-    // Check if already marked
-    if (attendedEmails.has(normalizedEmail)) {
-      results.alreadyMarked.push(email);
-      continue;
-    }
-
-    try {
-      // Find user by email using GSI
-      const userQueryResult = await docClient.send(new QueryCommand({
-        TableName: USERS_TABLE,
-        IndexName: 'email-index',
-        KeyConditionExpression: 'email = :email',
-        ExpressionAttributeValues: {
-          ':email': normalizedEmail
-        }
-      }));
-
-      if (!userQueryResult.Items || userQueryResult.Items.length === 0) {
-        results.notFound.push(email);
+      // No matching member in our system
+      if (!user) {
+        results.notFound.push(memberId);
         continue;
       }
 
-      const user = userQueryResult.Items[0];
       const userId = user.userId;
 
-      // Add to attendedUsers list
-      attendedUsers.push(userId);
-      attendedEmails.add(normalizedEmail);
+      // They appear in the attendees CSV, so record attendance and register
+      // them as a participant regardless of verification status.
+      attendedUsers.add(userId);
+      registeredUsers.add(userId);
 
-      // Determine points based on role
-      let pointsToAward = pointsPerAttendee;
-      let role = 'attendee';
+      // Enforce Meetup verification: only verified members earn points.
+      // Unverified members are still recorded as attended/participants above.
+      if (!isMeetupVerified(user)) {
+        results.notVerified.push({ memberId, userId, name: user.name });
+        continue;
+      }
 
-      // Award points to user
-      const currentPoints = user.points || 0;
-      const currentRedeemable = user.redeemablePoints ?? currentPoints;
-      const newPoints = currentPoints + pointsToAward;
-      const newRedeemable = currentRedeemable + pointsToAward;
+      // Award points atomically (idempotent per meetup, race-safe across the
+      // CSV import and feedback flows). A re-run also awards points to someone
+      // who attended while unverified and has since verified.
+      const award = await awardAttendancePointsAtomic(user, meetup, id, pointsPerAttendee, {
+        awardedBy: event.userContext?.userId || 'system'
+      });
 
-      // Create point activity
-      const pointActivity = {
-        id: `pa-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        userId,
-        points: pointsToAward,
-        reason: `Attended ${meetup.title} as ${role}`,
-        type: 'event',
-        awardedBy: event.userContext?.userId || 'system',
-        awardedAt: new Date().toISOString()
-      };
+      if (award.status === 'already') {
+        results.alreadyMarked.push({ memberId, userId, name: user.name });
+        continue;
+      }
 
-      const pointActivities = user.pointActivities || [];
-      pointActivities.push(pointActivity);
-
-      // Update user's points and add activity
-      const activity = {
-        type: 'meetup_attended',
-        meetupId: id,
-        meetupTitle: meetup.title,
-        points: pointsToAward,
-        timestamp: new Date().toISOString()
-      };
-
-      const userActivities = user.activities || [];
-      userActivities.push(activity);
-
-      await docClient.send(new UpdateCommand({
-        TableName: USERS_TABLE,
-        Key: { userId },
-        UpdateExpression: 'SET points = :points, redeemablePoints = :redeemablePoints, activities = :activities, pointActivities = :pointActivities, updatedAt = :updatedAt',
-        ExpressionAttributeValues: {
-          ':points': newPoints,
-          ':redeemablePoints': newRedeemable,
-          ':activities': userActivities,
-          ':pointActivities': pointActivities,
-          ':updatedAt': new Date().toISOString()
-        }
-      }));
-
-      const result = {
-        email,
+      results.success.push({
+        memberId,
         userId,
         name: user.name,
-        role,
-        pointsAwarded: pointsToAward,
-        newTotal: newPoints
-      };
-
-      results.success.push(result);
-    } catch (error) {
-      console.error(`Error processing email ${email}:`, error);
-      results.errors.push({
-        email,
-        error: error.message
+        pointsAwarded: pointsPerAttendee,
+        newTotal: award.newTotal
       });
+    } catch (error) {
+      console.error(`Error processing member ID ${memberId}:`, error);
+      results.errors.push({ memberId, error: error.message });
     }
   }
 
-  // Update meetup with new attendedUsers list
+  // Persist attendance + participation on the meetup
+  const registeredArray = [...registeredUsers];
   await docClient.send(new UpdateCommand({
     TableName: MEETUPS_TABLE,
     Key: { id },
-    UpdateExpression: 'SET attendedUsers = :attendedUsers, updatedAt = :updatedAt',
+    UpdateExpression: 'SET attendedUsers = :attendedUsers, registeredUsers = :registeredUsers, attendees = :attendees, updatedAt = :updatedAt',
     ExpressionAttributeValues: {
-      ':attendedUsers': attendedUsers,
+      ':attendedUsers': [...attendedUsers],
+      ':registeredUsers': registeredArray,
+      ':attendees': registeredArray.length,
       ':updatedAt': new Date().toISOString()
     }
   }));
@@ -971,13 +1105,11 @@ async function markAttendance(id, event) {
     message: 'Attendance marked successfully',
     results,
     summary: {
-      total: emails.length,
+      total: memberIds.length,
       successful: results.success.length,
-      attendees: results.success.length - results.volunteersAwarded.length - results.speakersAwarded.length,
-      volunteers: results.volunteersAwarded.length,
-      speakers: results.speakersAwarded.length,
       notFound: results.notFound.length,
       alreadyMarked: results.alreadyMarked.length,
+      notVerified: results.notVerified.length,
       errors: results.errors.length
     }
   });
@@ -1384,71 +1516,52 @@ async function submitFeedback(meetupId, event) {
   const attendedUsers = Array.isArray(meetup.attendedUsers) ? [...meetup.attendedUsers] : [];
   const wasAlreadyAttended = attendedUsers.includes(userId);
 
-  // Determine points to award (only if not already attended)
+  // Enforce Meetup verification: only verified members earn attendance points.
+  // Unverified members still get their feedback saved and attendance recorded.
+  const verified = isMeetupVerified(user);
+
   const attendeePoints = (meetup.attendeePoints != null ? Number(meetup.attendeePoints) : 50) || 0;
-  const pointsToAward = wasAlreadyAttended ? 0 : attendeePoints;
 
-  // Award points and add to attendedUsers
+  // Award points atomically. The helper is idempotent and race-safe across the
+  // feedback and CSV import flows (a per-user/meetup conditional write), so a
+  // concurrent CSV import cannot cause a double award. Unverified members are
+  // not awarded here but still have their attendance recorded below.
+  let pointsToAward = 0;
   let pointActivityId = null;
-  if (!wasAlreadyAttended && pointsToAward > 0) {
-    const currentPoints = user.points || 0;
-    const currentRedeemable = user.redeemablePoints != null ? user.redeemablePoints : currentPoints;
-
-    pointActivityId = `pa-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
-    const pointActivity = {
-      id: pointActivityId,
-      userId,
-      points: pointsToAward,
-      reason: `Submitted feedback for ${meetup.title}`,
-      type: 'event',
-      awardedBy: 'system',
-      awardedAt: now
-    };
-
-    const pointActivities = Array.isArray(user.pointActivities) ? [...user.pointActivities] : [];
-    pointActivities.push(pointActivity);
-
-    const activity = {
-      type: 'meetup_attended',
-      meetupId,
-      meetupTitle: meetup.title,
-      points: pointsToAward,
-      timestamp: now,
-      source: 'feedback'
-    };
-    const userActivities = Array.isArray(user.activities) ? [...user.activities] : [];
-    userActivities.push(activity);
-
+  if (verified && attendeePoints > 0) {
     try {
-      await docClient.send(new UpdateCommand({
-        TableName: USERS_TABLE,
-        Key: { userId },
-        UpdateExpression: 'SET points = :points, redeemablePoints = :redeemablePoints, activities = :activities, pointActivities = :pointActivities, updatedAt = :updatedAt',
-        ExpressionAttributeValues: {
-          ':points': currentPoints + pointsToAward,
-          ':redeemablePoints': currentRedeemable + pointsToAward,
-          ':activities': userActivities,
-          ':pointActivities': pointActivities,
-          ':updatedAt': now
-        }
-      }));
+      const award = await awardAttendancePointsAtomic(user, meetup, meetupId, attendeePoints, {
+        reason: `Submitted feedback for ${meetup.title}`,
+        source: 'feedback'
+      });
+      if (award.status === 'awarded') {
+        pointsToAward = attendeePoints;
+        pointActivityId = award.pointActivity.id;
+      }
+      // status 'already' -> pointsToAward stays 0 (already awarded for this meetup)
     } catch (e) {
       console.error('Error updating user points:', e);
       return createResponse(500, { error: 'Failed to award points' });
     }
   }
 
-  // Update meetup's attendedUsers if newly attended
+  // Record attendance and participation regardless of verification/points
+  // (they did attend). Mirrors the CSV import which also registers participants.
   if (!wasAlreadyAttended) {
     attendedUsers.push(userId);
+    const registeredUsers = Array.isArray(meetup.registeredUsers) ? [...meetup.registeredUsers] : [];
+    if (!registeredUsers.includes(userId)) {
+      registeredUsers.push(userId);
+    }
     try {
       await docClient.send(new UpdateCommand({
         TableName: MEETUPS_TABLE,
         Key: { id: meetupId },
-        UpdateExpression: 'SET attendedUsers = :a, updatedAt = :u',
+        UpdateExpression: 'SET attendedUsers = :a, registeredUsers = :r, attendees = :n, updatedAt = :u',
         ExpressionAttributeValues: {
           ':a': attendedUsers,
+          ':r': registeredUsers,
+          ':n': registeredUsers.length,
           ':u': now
         }
       }));
@@ -1491,9 +1604,12 @@ async function submitFeedback(meetupId, event) {
     feedback,
     pointsAwarded: pointsToAward,
     alreadyAttended: wasAlreadyAttended,
+    verified,
     message: pointsToAward > 0
       ? `Feedback submitted. +${pointsToAward} points awarded.`
-      : 'Feedback submitted. Your attendance was already recorded; no additional points awarded.'
+      : (!verified
+          ? 'Feedback submitted. Complete Meetup verification to earn your attendance points.'
+          : 'Feedback submitted. Your attendance points were already awarded for this meetup.')
   });
 }
 
@@ -1615,3 +1731,13 @@ async function updateFeedbackSettings(meetupId, event) {
 
   return createResponse(200, { meetup: updated.Item });
 }
+
+// Test-only hooks. Not used in production; allows unit tests to inject a fake
+// DynamoDB document client and exercise the pure award/verification helpers.
+exports.__test__ = {
+  extractMeetupMemberId,
+  isMeetupVerified,
+  awardAttendancePointsAtomic,
+  __setDocClient: (fake) => { docClient = fake; },
+  __getCommands: () => ({ UpdateCommand, GetCommand, ScanCommand }),
+};

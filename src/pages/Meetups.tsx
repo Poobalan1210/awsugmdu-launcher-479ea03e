@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import {
   Calendar, MapPin, Users, Video, Clock,
   ArrowLeft, ExternalLink, PlayCircle,
-  Linkedin, Github, CheckCircle, Search, Rocket, Award, GraduationCap, Cloud
+  Linkedin, Github, CheckCircle, Search, Rocket, Award, GraduationCap, Cloud, Loader2
 } from 'lucide-react';
 import { PersonCard } from '@/components/common/PersonCard';
 import { PostEventUploads } from '@/components/meetups/PostEventUploads';
@@ -179,7 +179,7 @@ function MeetupDetail({ meetup: initialMeetup, onBack }: { meetup: Meetup; onBac
   });
 
   // Fetch participants for this meetup
-  const { data: participants = [] } = useQuery({
+  const { data: participants = [], isLoading: participantsLoading } = useQuery({
     queryKey: ['meetup-participants', meetup.id],
     queryFn: () => getMeetupParticipants(meetup.id),
     enabled: !!meetup.id,
@@ -517,6 +517,9 @@ function MeetupDetail({ meetup: initialMeetup, onBack }: { meetup: Meetup; onBac
               <CardTitle className="flex items-center gap-2">
                 <Users className="h-5 w-5" />
                 People ({allPeople.length})
+                {participantsLoading && (
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                )}
               </CardTitle>
               <div className="relative mt-3">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -545,10 +548,22 @@ function MeetupDetail({ meetup: initialMeetup, onBack }: { meetup: Meetup; onBac
                   ))
                 ) : (
                   <p className="text-sm text-muted-foreground text-center py-8">
-                    {searchQuery ? 'No people found matching your search.' : 'No people registered yet.'}
+                    {searchQuery
+                      ? 'No people found matching your search.'
+                      : participantsLoading
+                        ? 'Loading people...'
+                        : 'No people registered yet.'}
                   </p>
                 )}
               </div>
+              {/* Show a subtle loader at the end while the full participant
+                  list is still being fetched (roled people render instantly). */}
+              {participantsLoading && allPeople.length > 0 && (
+                <div className="flex items-center justify-center gap-2 py-4 text-xs text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Loading remaining participants...
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

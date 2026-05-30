@@ -59,6 +59,56 @@ import { CloudClubTaskSubmissionsPanel } from '@/components/cloud-clubs/TaskSubm
 import { listMeetupFeedback, updateMeetupFeedbackSettings } from '@/lib/meetupFeedback';
 import type { MeetupFeedback } from '@/data/mockData';
 
+// Minimal CSV parser supporting quoted fields, escaped quotes ("") and
+// commas/newlines inside quotes. Returns an array of rows (arrays of cells).
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = '';
+  let inQuotes = false;
+
+  // Normalize line endings
+  const input = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+  for (let i = 0; i < input.length; i++) {
+    const char = input[i];
+
+    if (inQuotes) {
+      if (char === '"') {
+        if (input[i + 1] === '"') {
+          field += '"';
+          i++; // skip escaped quote
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        field += char;
+      }
+    } else if (char === '"') {
+      inQuotes = true;
+    } else if (char === ',') {
+      row.push(field);
+      field = '';
+    } else if (char === '\n') {
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = '';
+    } else {
+      field += char;
+    }
+  }
+
+  // Flush trailing field/row
+  if (field.length > 0 || row.length > 0) {
+    row.push(field);
+    rows.push(row);
+  }
+
+  // Drop fully-empty rows
+  return rows.filter(r => r.some(cell => cell.trim().length > 0));
+}
+
 // Mark Attendance Dialog
 function MarkAttendanceDialog({
   meetup,
@@ -77,10 +127,36 @@ function MarkAttendanceDialog({
   const open = externalOpen !== undefined ? externalOpen : internalOpen;
   const setOpen = externalOnOpenChange ?? setInternalOpen;
   const [loading, setLoading] = useState(false);
-  const [emailsText, setEmailsText] = useState('');
+  const [memberIdsText, setMemberIdsText] = useState('');
   const [pointsPerAttendee, setPointsPerAttendee] = useState(50);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [results, setResults] = useState<any>(null);
+
+  // Parse a Meetup attendees CSV and extract the "Member ID" column.
+  // Handles quoted fields (values may contain commas) and a header row.
+  const parseMemberIdsFromCsv = (text: string): string[] => {
+    const rows = parseCsv(text);
+    if (rows.length === 0) return [];
+
+    // Locate the "Member ID" column from the header row
+    const header = rows[0].map(h => h.trim().toLowerCase());
+    let memberIdCol = header.findIndex(h => h === 'member id' || h === 'memberid');
+    if (memberIdCol === -1) {
+      // Fallback: the 3rd column in Meetup's export is the Member ID
+      memberIdCol = 2;
+    }
+
+    const ids: string[] = [];
+    for (let i = 1; i < rows.length; i++) {
+      const value = (rows[i][memberIdCol] || '').trim();
+      // Keep only numeric member IDs (Meetup profile IDs). Non-numeric
+      // "URL name" values can't be matched against stored membership URLs.
+      if (/^\d+$/.test(value)) {
+        ids.push(value);
+      }
+    }
+    return [...new Set(ids)];
+  };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -89,20 +165,15 @@ function MarkAttendanceDialog({
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target?.result as string;
-      // Parse CSV - handle both comma and newline separated
-      const emails = text
-        .split(/[\n,]/)
-        .map(line => {
-          // Remove quotes and trim
-          return line.replace(/['"]/g, '').trim();
-        })
-        .filter(email => {
-          // Basic email validation
-          return email.length > 0 && email.includes('@');
-        });
+      const ids = parseMemberIdsFromCsv(text);
 
-      setEmailsText(emails.join('\n'));
-      toast.success(`Loaded ${emails.length} email addresses from CSV`);
+      if (ids.length === 0) {
+        toast.error('No numeric Member IDs found. Make sure this is the Meetup attendees CSV.');
+        return;
+      }
+
+      setMemberIdsText(ids.join('\n'));
+      toast.success(`Loaded ${ids.length} Meetup member IDs from CSV`);
     };
     reader.readAsText(file);
   };
@@ -113,21 +184,21 @@ function MarkAttendanceDialog({
     setResults(null);
 
     try {
-      // Parse emails from textarea (one per line or comma-separated)
-      const emails = emailsText
+      // Parse member IDs from textarea (one per line or comma-separated)
+      const memberIds = memberIdsText
         .split(/[\n,]/)
-        .map(e => e.trim())
-        .filter(e => e.length > 0);
+        .map(s => s.trim())
+        .filter(s => /^\d+$/.test(s));
 
-      if (emails.length === 0) {
-        toast.error('Please enter at least one email address');
+      if (memberIds.length === 0) {
+        toast.error('Please provide at least one numeric Meetup member ID');
         setLoading(false);
         return;
       }
 
       const { markMeetupAttendance } = await import('@/lib/meetups');
       const response = await markMeetupAttendance(meetup.id, {
-        emails,
+        memberIds,
         pointsPerAttendee
       });
 
@@ -149,7 +220,7 @@ function MarkAttendanceDialog({
 
   const handleClose = () => {
     setOpen(false);
-    setEmailsText('');
+    setMemberIdsText('');
     setPointsPerAttendee(50);
     setResults(null);
     if (fileInputRef.current) {
@@ -171,14 +242,15 @@ function MarkAttendanceDialog({
         <DialogHeader>
           <DialogTitle>Mark Attendance - {meetup.title}</DialogTitle>
           <DialogDescription>
-            Upload a CSV file or enter email addresses manually. Points will be awarded to each attendee.
+            Upload the Meetup event attendees CSV (or paste Member IDs). Points are
+            awarded to Meetup-verified members and they're added as participants.
           </DialogDescription>
         </DialogHeader>
 
         {!results ? (
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label>Upload CSV File</Label>
+              <Label>Upload Meetup Attendees CSV</Label>
               <div className="flex gap-2">
                 <Input
                   ref={fileInputRef}
@@ -197,7 +269,8 @@ function MarkAttendanceDialog({
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                CSV file with email addresses (one per line or comma-separated)
+                The exported Meetup CSV with the "Member ID" column. Only numeric
+                Member IDs are matched.
               </p>
             </div>
 
@@ -211,17 +284,17 @@ function MarkAttendanceDialog({
             </div>
 
             <div className="space-y-2">
-              <Label>Attendee Email Addresses *</Label>
+              <Label>Meetup Member IDs *</Label>
               <Textarea
-                placeholder="user1@example.com&#10;user2@example.com&#10;user3@example.com"
-                value={emailsText}
-                onChange={(e) => setEmailsText(e.target.value)}
+                placeholder="456181201&#10;481383694&#10;479139978"
+                value={memberIdsText}
+                onChange={(e) => setMemberIdsText(e.target.value)}
                 rows={10}
                 required
                 className="font-mono text-sm"
               />
               <p className="text-xs text-muted-foreground">
-                Enter one email per line or separate with commas
+                Enter one numeric Member ID per line or separate with commas
               </p>
             </div>
 
@@ -264,7 +337,7 @@ function MarkAttendanceDialog({
         ) : (
           <div className="space-y-4">
             {/* Summary */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
               <Card className="border-green-500/20 bg-green-500/5">
                 <CardContent className="p-3 text-center">
                   <div className="text-2xl font-bold text-green-600">{results.summary.successful}</div>
@@ -275,6 +348,12 @@ function MarkAttendanceDialog({
                 <CardContent className="p-3 text-center">
                   <div className="text-2xl font-bold text-amber-600">{results.summary.alreadyMarked}</div>
                   <p className="text-xs text-muted-foreground">Already Marked</p>
+                </CardContent>
+              </Card>
+              <Card className="border-purple-500/20 bg-purple-500/5">
+                <CardContent className="p-3 text-center">
+                  <div className="text-2xl font-bold text-purple-600">{results.summary.notVerified}</div>
+                  <p className="text-xs text-muted-foreground">Not Verified</p>
                 </CardContent>
               </Card>
               <Card className="border-blue-500/20 bg-blue-500/5">
@@ -307,7 +386,30 @@ function MarkAttendanceDialog({
                           +{item.pointsAwarded} pts
                         </Badge>
                       </div>
-                      <div className="text-xs text-muted-foreground">{item.email}</div>
+                      <div className="text-xs text-muted-foreground">Member ID: {item.memberId}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Not Verified */}
+            {results.results.notVerified?.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="font-semibold text-sm text-purple-600 flex items-center gap-2">
+                  <Shield className="h-4 w-4" />
+                  Not Meetup-Verified ({results.results.notVerified.length})
+                </h4>
+                <p className="text-xs text-muted-foreground">
+                  Recorded as attended and added as participants, but no points awarded
+                  until they complete Meetup verification. Re-run this import after they
+                  verify to award the points.
+                </p>
+                <div className="space-y-1 max-h-32 overflow-y-auto">
+                  {results.results.notVerified.map((item: any, index: number) => (
+                    <div key={index} className="text-xs p-2 rounded bg-purple-500/5 border border-purple-500/20">
+                      <span className="font-medium">{item.name || 'Unknown'}</span>
+                      <span className="text-muted-foreground"> — Member ID: {item.memberId}</span>
                     </div>
                   ))}
                 </div>
@@ -322,9 +424,9 @@ function MarkAttendanceDialog({
                   Already Marked ({results.results.alreadyMarked.length})
                 </h4>
                 <div className="text-xs text-muted-foreground space-y-1 max-h-32 overflow-y-auto">
-                  {results.results.alreadyMarked.map((email: string, index: number) => (
+                  {results.results.alreadyMarked.map((item: any, index: number) => (
                     <div key={index} className="p-2 rounded bg-amber-500/5 border border-amber-500/20">
-                      {email}
+                      {item.name ? `${item.name} — Member ID: ${item.memberId}` : `Member ID: ${item.memberId}`}
                     </div>
                   ))}
                 </div>
@@ -336,12 +438,15 @@ function MarkAttendanceDialog({
               <div className="space-y-2">
                 <h4 className="font-semibold text-sm text-blue-600 flex items-center gap-2">
                   <User className="h-4 w-4" />
-                  Users Not Found ({results.results.notFound.length})
+                  Members Not Found ({results.results.notFound.length})
                 </h4>
+                <p className="text-xs text-muted-foreground">
+                  No member in our system matches these Meetup Member IDs (they may not have signed up or completed verification).
+                </p>
                 <div className="text-xs text-muted-foreground space-y-1 max-h-32 overflow-y-auto">
-                  {results.results.notFound.map((email: string, index: number) => (
+                  {results.results.notFound.map((memberId: string, index: number) => (
                     <div key={index} className="p-2 rounded bg-blue-500/5 border border-blue-500/20">
-                      {email}
+                      Member ID: {memberId}
                     </div>
                   ))}
                 </div>
@@ -358,7 +463,7 @@ function MarkAttendanceDialog({
                 <div className="text-xs space-y-1 max-h-32 overflow-y-auto">
                   {results.results.errors.map((item: any, index: number) => (
                     <div key={index} className="p-2 rounded bg-red-500/5 border border-red-500/20">
-                      <div className="font-medium">{item.email}</div>
+                      <div className="font-medium">Member ID: {item.memberId}</div>
                       <div className="text-red-600">{item.error}</div>
                     </div>
                   ))}

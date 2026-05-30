@@ -13,6 +13,8 @@ export interface SubmitFeedbackResponse {
   feedback: MeetupFeedback;
   pointsAwarded: number;
   alreadyAttended: boolean;
+  /** Whether the user is Meetup-verified. When false, no attendance points are awarded. */
+  verified?: boolean;
   message: string;
 }
 

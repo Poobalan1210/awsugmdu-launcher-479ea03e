@@ -157,6 +157,8 @@ export function MeetupFeedbackForm({ meetup }: MeetupFeedbackFormProps) {
       });
       if (res.pointsAwarded > 0) {
         toast.success(`Feedback submitted. +${res.pointsAwarded} points awarded.`);
+      } else if (res.verified === false) {
+        toast.success(res.message || 'Feedback submitted. Complete Meetup verification to earn your attendance points.');
       } else {
         toast.success('Feedback submitted. Thanks!');
       }

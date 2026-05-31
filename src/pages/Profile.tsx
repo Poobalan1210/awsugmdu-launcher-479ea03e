@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import {
   Trophy, Calendar, Target, FileText, Medal, Zap,
   Linkedin, Github, Twitter, ExternalLink, Building, User,
-  Mic, BookOpen, CheckCircle, Clock, Award, Shield, ShoppingBag, Loader2, Package, Users, AlertCircle
+  Mic, BookOpen, CheckCircle, Clock, Award, Shield, ShoppingBag, Loader2, Package, Users, AlertCircle, Pencil
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -35,9 +35,11 @@ import { getShareableProfileUrl, matchesSlug } from '@/lib/profileSlug';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { Trash2 } from 'lucide-react';
+import { EditProfileDialog } from '@/components/profile/EditProfileDialog';
 
 export default function Profile() {
   const { slug } = useParams();
+  const navigate = useNavigate();
   const [profileUser, setProfileUser] = useState<UserType | null>(null);
   const [loading, setLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -61,6 +63,7 @@ export default function Profile() {
   const [meetupVerifying, setMeetupVerifying] = useState(false);
   const [meetupError, setMeetupError] = useState<string | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [showEditDialog, setShowEditDialog] = useState(false);
 
   // Fetch meetups from backend
   const { data: allMeetups = [] } = useQuery({
@@ -720,7 +723,14 @@ export default function Profile() {
                       variant="outline"
                       size="sm"
                       useDialog
-                    />                  </div>
+                    />
+                    {isOwnProfile && (
+                      <Button variant="outline" size="sm" onClick={() => setShowEditDialog(true)}>
+                        <Pencil className="h-4 w-4 mr-2" />
+                        Edit Profile
+                      </Button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="text-center">
@@ -1489,6 +1499,24 @@ export default function Profile() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Edit Profile Modal */}
+      {isOwnProfile && user && (
+        <EditProfileDialog
+          user={user}
+          open={showEditDialog}
+          onOpenChange={setShowEditDialog}
+          onUpdated={(updated) => {
+            setProfileUser(updated);
+            // If viewing via a slug URL, the slug is derived from the (possibly
+            // changed) name. Move to the canonical /profile route so the current
+            // session never sits on a stale slug.
+            if (slug) {
+              navigate('/profile', { replace: true });
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

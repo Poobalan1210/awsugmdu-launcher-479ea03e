@@ -7,6 +7,7 @@ export interface CreateUserProfileData {
   email: string;
   name: string;
   avatar?: string;
+  bio?: string;
   userType: 'student' | 'professional';
   meetupEmail?: string;
   collegeName?: string;

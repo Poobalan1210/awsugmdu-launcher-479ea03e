@@ -327,7 +327,7 @@ async function updateUser(userId, requestBody) {
       'isCloudClub', 'cloudClubId',
       'linkedIn', 'github', 'twitter', 'meetupEmail', 'userType',
       'points', 'redeemablePoints', 'rank', 'badges', 'role', 'meetupVerified', 'meetupVerificationStatus',
-      'pointActivities', 'activities'
+      'pointActivities', 'activities', 'hideFromLeaderboard'
     ];
     
     updatableFields.forEach(field => {

@@ -5095,6 +5095,11 @@ function MembersTab({ allUsers, onRefresh }: { allUsers: UserType[]; onRefresh?:
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isAwardDialogOpen, setIsAwardDialogOpen] = useState(false);
   const [awardForm, setAwardForm] = useState({ points: '', reason: '' });
+  // Tracks leaderboard visibility per user (true = hidden from leaderboard)
+  const [hiddenFromLeaderboard, setHiddenFromLeaderboard] = useState<Record<string, boolean>>(
+    () => allUsers.reduce((acc, u) => ({ ...acc, [u.id]: !!u.hideFromLeaderboard }), {})
+  );
+  const [updatingVisibility, setUpdatingVisibility] = useState<string | null>(null);
 
   // Load roles from API on mount
   useEffect(() => {
@@ -5213,6 +5218,25 @@ function MembersTab({ allUsers, onRefresh }: { allUsers: UserType[]; onRefresh?:
     return communityRoles.find(r => r.value === role);
   };
 
+  const handleToggleLeaderboardVisibility = async (userId: string, hide: boolean) => {
+    setUpdatingVisibility(userId);
+    // Optimistic update
+    setHiddenFromLeaderboard(prev => ({ ...prev, [userId]: hide }));
+    try {
+      const { updateUserProfile } = await import('@/lib/userProfile');
+      await updateUserProfile(userId, { hideFromLeaderboard: hide });
+      toast.success(hide ? 'User hidden from leaderboard' : 'User shown on leaderboard');
+      onRefresh?.();
+    } catch (error) {
+      console.error('Error updating leaderboard visibility:', error);
+      toast.error('Failed to update leaderboard visibility');
+      // Revert on failure
+      setHiddenFromLeaderboard(prev => ({ ...prev, [userId]: !hide }));
+    } finally {
+      setUpdatingVisibility(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <Card className="glass-card">
@@ -5260,6 +5284,12 @@ function MembersTab({ allUsers, onRefresh }: { allUsers: UserType[]; onRefresh?:
                           <div>
                             <p className="font-medium">{user.name}</p>
                             <p className="text-xs text-muted-foreground">{user.designation}</p>
+                            {hiddenFromLeaderboard[user.id] && (
+                              <Badge variant="outline" className="mt-1 gap-1 text-[10px] py-0 h-4 text-muted-foreground border-muted-foreground/30">
+                                <Eye className="h-2.5 w-2.5" />
+                                Hidden from leaderboard
+                              </Badge>
+                            )}
                           </div>
                         </div>
                       </TableCell>
@@ -5373,6 +5403,29 @@ function MembersTab({ allUsers, onRefresh }: { allUsers: UserType[]; onRefresh?:
                                     </Button>
                                   </div>
                                 )}
+                              </div>
+
+                              {/* Leaderboard Visibility */}
+                              <div>
+                                <h4 className="font-medium mb-3 flex items-center gap-2">
+                                  <Trophy className="h-4 w-4 text-primary" />
+                                  Leaderboard Visibility
+                                </h4>
+                                <div className="flex items-center justify-between gap-3 p-3 bg-muted/50 rounded-lg">
+                                  <div>
+                                    <p className="text-sm font-medium">Show on leaderboard</p>
+                                    <p className="text-xs text-muted-foreground">
+                                      {hiddenFromLeaderboard[user.id]
+                                        ? 'This member is hidden from the public leaderboard'
+                                        : 'This member appears on the public leaderboard'}
+                                    </p>
+                                  </div>
+                                  <Switch
+                                    checked={!hiddenFromLeaderboard[user.id]}
+                                    disabled={updatingVisibility === user.id}
+                                    onCheckedChange={(checked) => handleToggleLeaderboardVisibility(user.id, !checked)}
+                                  />
+                                </div>
                               </div>
 
                               {/* Current Roles */}

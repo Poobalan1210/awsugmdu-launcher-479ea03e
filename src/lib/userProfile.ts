@@ -25,6 +25,7 @@ export interface CreateUserProfileData {
   twitter?: string;
   meetupVerified?: boolean;
   meetupVerificationStatus?: string;
+  hideFromLeaderboard?: boolean;
 }
 
 export async function createUserProfile(data: CreateUserProfileData): Promise<{ success: boolean; userId: string }> {

@@ -104,6 +104,8 @@ export interface User {
   meetupEmail?: string;
   pointActivities?: PointActivity[];
   userId?: string;
+  // When true, the user is excluded from the public leaderboard
+  hideFromLeaderboard?: boolean;
 }
 
 export interface UserActivity {

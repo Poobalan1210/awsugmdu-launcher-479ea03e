@@ -51,6 +51,7 @@ const Leaderboard = () => {
 
   const rankedUsers = Array.isArray(users)
     ? users
+        .filter((user) => !user.hideFromLeaderboard)
         .sort((a, b) => (b.points || 0) - (a.points || 0))
         .map((user, index) => ({ ...user, rank: index + 1 }))
     : [];

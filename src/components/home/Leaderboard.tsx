@@ -57,6 +57,7 @@ export function Leaderboard() {
 
   const topUsers = Array.isArray(users) 
     ? users
+        .filter((user) => !user.hideFromLeaderboard) // Exclude users hidden by admins
         .sort((a, b) => (b.points || 0) - (a.points || 0)) // Sort by points descending
         .slice(0, 10) // Show top 10 users
         .map((user, index) => ({ ...user, rank: index + 1 })) // Assign ranks based on position

@@ -28,9 +28,9 @@ resource "aws_lambda_function" "meetup_reminder" {
       SES_FROM_EMAIL   = "info@awsugmdu.in"
       APP_URL          = "https://www.awsugmdu.in"
       ADMIN_EMAILS     = var.admin_emails
-      # Safety: ships in DRY_RUN so the first scheduled run only logs recipients.
-      # Set to "false" (here or in the console) to start sending real emails.
-      DRY_RUN          = "true"
+      # Live: reminder emails are sent to unverified users on each scheduled run.
+      # Set back to "true" to return to log-only (no-send) mode.
+      DRY_RUN          = "false"
       # Optional: redirect all reminder emails to one inbox while testing.
       TEST_EMAIL       = ""
       # Optional: stop reminding a user after this many reminders (0 = no cap).

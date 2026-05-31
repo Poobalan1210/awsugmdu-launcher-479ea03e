@@ -5,8 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { profilePath } from '@/lib/profileSlug';
 import { Button } from '@/components/ui/button';
-import { User } from '@/data/mockData';
-import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { getAllUsers } from '@/lib/userProfile';
 
 const getRankIcon = (rank: number) => {
@@ -51,23 +50,10 @@ const itemVariants: Variants = {
 };
 
 export function Leaderboard() {
-  const [users, setUsers] = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const fetchUsers = async () => {
-      try {
-        const allUsers = await getAllUsers();
-        setUsers(Array.isArray(allUsers) ? allUsers : []);
-      } catch (error) {
-        console.error('Failed to fetch users:', error);
-        setUsers([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchUsers();
-  }, []);
+  const { data: users = [], isLoading: loading } = useQuery({
+    queryKey: ['all-users'],
+    queryFn: getAllUsers,
+  });
 
   const topUsers = Array.isArray(users) 
     ? users

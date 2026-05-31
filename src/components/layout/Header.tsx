@@ -1,42 +1,41 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Menu, X, User, LogOut, Shield, Activity } from 'lucide-react';
+import { Menu, X, User, LogOut, Shield, Activity, Rocket, GraduationCap, Cloud, Users, Sparkles, CalendarDays } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import {
+  NavigationMenu,
+  NavigationMenuContent,
+  NavigationMenuItem,
+  NavigationMenuLink,
+  NavigationMenuList,
+  NavigationMenuTrigger,
+  navigationMenuTriggerStyle,
+} from '@/components/ui/navigation-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/contexts/AuthContext';
+import { cn } from '@/lib/utils';
 import logo from '@/assets/logo.png';
 
-// Sorted alphabetically with Home first
-const navItems = [{
-  name: 'Home',
-  path: '/'
-}, {
-  name: 'Builders Skill Sprint',
-  path: '/skill-sprint'
-}, {
-  name: 'Circles',
-  path: '/circles'
-}, {
-  name: 'Cloud Clubs',
-  path: '/cloud-clubs'
-}, {
-  name: 'Community Spotlight',
-  path: '/community-spotlight'
-}, {
-  name: 'College Champs',
-  path: '/college-champs'
-}, {
-  name: 'Meetups',
-  path: '/meetups'
-}, {
-  name: 'Store',
-  path: '/store'
-}, {
-  name: 'AWS Events',
-  path: '/aws-events'
-}];
+// Core destinations shown as direct links (stable, rarely changes)
+const primaryNavItems = [
+  { name: 'Home', path: '/' },
+  { name: 'Meetups', path: '/meetups' },
+  { name: 'Store', path: '/store' },
+];
+
+// Community initiatives grouped under the "Programs" dropdown.
+// Add new initiatives here instead of cluttering the top bar.
+const programItems = [
+  { name: 'Builders Skill Sprint', path: '/skill-sprint', description: 'Monthly hands-on AWS challenges', icon: Rocket },
+  { name: 'College Champs', path: '/college-champs', description: 'Student leaders driving campus initiatives', icon: GraduationCap },
+  { name: 'Cloud Clubs', path: '/cloud-clubs', description: 'College cloud communities', icon: Cloud },
+  { name: 'Circles', path: '/circles', description: 'Focused peer learning groups', icon: Users },
+  { name: 'Community Spotlight', path: '/community-spotlight', description: 'Celebrating member achievements', icon: Sparkles },
+  { name: 'AWS Events', path: '/aws-events', description: 'Official AWS events and conferences', icon: CalendarDays },
+];
+
 export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const location = useLocation();
@@ -54,6 +53,11 @@ export function Header() {
 
   const isAdmin = user?.role === 'organiser' || user?.role === 'admin';
   const isSpeaker = user?.role === 'speaker';
+  const isProgramsActive = programItems.some(item => location.pathname === item.path);
+
+  const linkClass = (active: boolean) =>
+    `px-3 py-2 rounded-md text-sm font-medium transition-colors ${active ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`;
+
   return <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
     <div className="container mx-auto flex h-16 items-center justify-between px-4">
       {/* Logo */}
@@ -64,9 +68,58 @@ export function Header() {
 
       {/* Desktop Navigation */}
       <nav className="hidden lg:flex items-center gap-1">
-        {navItems.map(item => <Link key={item.path} to={item.path} className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${location.pathname === item.path ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}>
+        {primaryNavItems.map(item => <Link key={item.path} to={item.path} className={linkClass(location.pathname === item.path)}>
           {item.name}
         </Link>)}
+
+        {/* Programs dropdown */}
+        <NavigationMenu>
+          <NavigationMenuList>
+            <NavigationMenuItem>
+              <NavigationMenuTrigger
+                className={cn(
+                  navigationMenuTriggerStyle(),
+                  'h-auto px-3 py-2 bg-transparent text-sm font-medium',
+                  isProgramsActive
+                    ? 'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary data-[state=open]:bg-primary'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted focus:bg-muted data-[state=open]:bg-muted',
+                )}
+              >
+                Programs
+              </NavigationMenuTrigger>
+              <NavigationMenuContent>
+                <ul className="grid w-[420px] gap-1 p-2">
+                  {programItems.map(item => {
+                    const Icon = item.icon;
+                    const active = location.pathname === item.path;
+                    return (
+                      <li key={item.path}>
+                        <NavigationMenuLink asChild>
+                          <Link
+                            to={item.path}
+                            className={cn(
+                              'flex items-start gap-3 rounded-md p-3 transition-colors hover:bg-muted focus:bg-muted',
+                              active && 'bg-muted',
+                            )}
+                          >
+                            <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                              <Icon className="h-4 w-4" />
+                            </span>
+                            <span className="flex flex-col">
+                              <span className="text-sm font-medium leading-none">{item.name}</span>
+                              <span className="mt-1 text-xs text-muted-foreground">{item.description}</span>
+                            </span>
+                          </Link>
+                        </NavigationMenuLink>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </NavigationMenuContent>
+            </NavigationMenuItem>
+          </NavigationMenuList>
+        </NavigationMenu>
+
         {(isAdmin || isSpeaker) && <Link to="/admin" className={`px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-1 ${location.pathname.startsWith('/admin') ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}>
           <Shield className="h-4 w-4" />
           Admin
@@ -150,9 +203,23 @@ export function Header() {
     {/* Mobile Navigation */}
     {mobileMenuOpen && <div className="lg:hidden border-t border-border bg-background animate-fade-in">
       <nav className="container mx-auto px-4 py-4 flex flex-col gap-2">
-        {navItems.map(item => <Link key={item.path} to={item.path} onClick={() => setMobileMenuOpen(false)} className={`px-4 py-3 rounded-md text-sm font-medium transition-colors ${location.pathname === item.path ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}>
+        {primaryNavItems.map(item => <Link key={item.path} to={item.path} onClick={() => setMobileMenuOpen(false)} className={`px-4 py-3 rounded-md text-sm font-medium transition-colors ${location.pathname === item.path ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}>
           {item.name}
         </Link>)}
+
+        {/* Programs section */}
+        <p className="px-4 pt-3 pb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Programs</p>
+        {programItems.map(item => {
+          const Icon = item.icon;
+          const active = location.pathname === item.path;
+          return (
+            <Link key={item.path} to={item.path} onClick={() => setMobileMenuOpen(false)} className={`flex items-center gap-3 px-4 py-3 rounded-md text-sm font-medium transition-colors ${active ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}>
+              <Icon className="h-4 w-4 shrink-0" />
+              {item.name}
+            </Link>
+          );
+        })}
+
         {(isAdmin || isSpeaker) && <Link to="/admin" onClick={() => setMobileMenuOpen(false)} className={`px-4 py-3 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${location.pathname.startsWith('/admin') ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}>
           <Shield className="h-4 w-4" />
           Admin Panel

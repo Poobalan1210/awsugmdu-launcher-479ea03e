@@ -2,44 +2,21 @@ import { Link } from 'react-router-dom';
 import { motion, Variants } from 'framer-motion';
 import { ArrowRight, Rocket, Users, Calendar, Award } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Sprint } from '@/data/mockData';
-import { useState, useEffect } from 'react';
-import { getAllUsers } from '@/lib/userProfile';
-import { getSprints } from '@/lib/sprints';
-import { getMeetups } from '@/lib/meetups';
+import { useQuery } from '@tanstack/react-query';
+import { getCommunityStats } from '@/lib/stats';
 
 export function HeroSection() {
-  const [userCount, setUserCount] = useState(0);
-  const [activeSprint, setActiveSprint] = useState<Sprint | null>(null);
-  const [meetupCount, setMeetupCount] = useState(0);
-  const [badgeCount, setBadgeCount] = useState(0);
+  const { data: stats, isLoading: statsLoading } = useQuery({
+    queryKey: ['community-stats'],
+    queryFn: getCommunityStats,
+  });
 
-  useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        const [users, sprints, meetups] = await Promise.all([
-          getAllUsers(),
-          getSprints(),
-          getMeetups(),
-        ]);
-        setUserCount(Array.isArray(users) ? users.length : 0);
-        if (Array.isArray(users)) {
-          const totalBadges = users.reduce((acc, user) => acc + (user.badges?.length || 0), 0);
-          setBadgeCount(totalBadges);
-        }
-        setActiveSprint(sprints.find((s) => s.status === 'active') || null);
-        setMeetupCount(Array.isArray(meetups) ? meetups.length : 0);
-      } catch (error) {
-        console.error('Failed to fetch stats:', error);
-      }
-    };
-    fetchStats();
-  }, []);
+  const activeSprint = stats?.activeSprint ?? null;
 
-  const stats = [
-    { label: 'Active Members', value: userCount || 4, icon: Users },
-    { label: 'Events Hosted', value: meetupCount || 0, icon: Calendar },
-    { label: 'Badges Awarded', value: badgeCount, icon: Award },
+  const statCards = [
+    { label: 'Active Members', value: stats?.memberCount ?? 0, icon: Users },
+    { label: 'Events Hosted', value: stats?.meetupCount ?? 0, icon: Calendar },
+    { label: 'Badges Awarded', value: stats?.badgeCount ?? 0, icon: Award },
   ];
 
 const containerVariants: Variants = {
@@ -142,7 +119,7 @@ const itemVariants: Variants = {
             variants={itemVariants}
             className="grid grid-cols-1 sm:grid-cols-3 gap-6 max-w-2xl mx-auto"
           >
-            {stats.map((stat, index) => (
+            {statCards.map((stat, index) => (
               <motion.div
                 key={stat.label}
                 className="glass-card rounded-xl p-4 text-center"
@@ -150,15 +127,18 @@ const itemVariants: Variants = {
                 transition={{ duration: 0.2 }}
               >
                 <stat.icon className="h-6 w-6 mx-auto mb-2 text-primary" />
-                <motion.p
-                  className="text-2xl md:text-3xl font-bold"
-                  initial={{ opacity: 0, scale: 0.5 }}
-                  whileInView={{ opacity: 1, scale: 1 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: 0.3 + index * 0.1 }}
-                >
-                  {stat.value}+
-                </motion.p>
+                {statsLoading ? (
+                  <div className="mx-auto mb-1 h-8 md:h-9 w-16 rounded-md bg-muted animate-pulse" />
+                ) : (
+                  <motion.p
+                    className="text-2xl md:text-3xl font-bold"
+                    initial={{ opacity: 0, scale: 0.5 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: index * 0.1 }}
+                  >
+                    {stat.value}+
+                  </motion.p>
+                )}
                 <p className="text-sm text-muted-foreground">{stat.label}</p>
               </motion.div>
             ))}

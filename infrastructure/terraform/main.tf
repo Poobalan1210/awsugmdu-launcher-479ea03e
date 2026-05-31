@@ -308,23 +308,6 @@ resource "aws_s3_bucket_cors_configuration" "meetup_posters" {
   }
 }
 
-resource "aws_s3_bucket_policy" "meetup_posters" {
-  bucket = aws_s3_bucket.meetup_posters.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid       = "PublicReadGetObject"
-        Effect    = "Allow"
-        Principal = "*"
-        Action    = "s3:GetObject"
-        Resource  = "${aws_s3_bucket.meetup_posters.arn}/*"
-      }
-    ]
-  })
-}
-
 resource "aws_s3_bucket_public_access_block" "profile_photos" {
   bucket = aws_s3_bucket.profile_photos.id
 
@@ -344,23 +327,6 @@ resource "aws_s3_bucket_cors_configuration" "profile_photos" {
     expose_headers  = ["ETag", "x-amz-server-side-encryption", "x-amz-request-id", "x-amz-id-2"]
     max_age_seconds = 3000
   }
-}
-
-resource "aws_s3_bucket_policy" "profile_photos" {
-  bucket = aws_s3_bucket.profile_photos.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid       = "PublicReadGetObject"
-        Effect    = "Allow"
-        Principal = "*"
-        Action    = "s3:GetObject"
-        Resource  = "${aws_s3_bucket.profile_photos.arn}/*"
-      }
-    ]
-  })
 }
 
 # IAM Role for Lambda Functions
@@ -2319,6 +2285,10 @@ resource "aws_api_gateway_deployment" "api" {
       aws_api_gateway_integration.badges_id_get.id,
       aws_api_gateway_integration.badges_id_put.id,
       aws_api_gateway_integration.badges_id_delete.id,
+      # Stats endpoint (lightweight home-page aggregate counts)
+      aws_api_gateway_integration.stats_get_lambda.id,
+      aws_api_gateway_integration.stats_options.id,
+      aws_lambda_function.stats_crud.source_code_hash,
     ]))
   }
 
@@ -2524,6 +2494,10 @@ resource "aws_api_gateway_deployment" "api" {
     aws_api_gateway_integration.badges_id_delete,
     aws_api_gateway_integration.badges_id_options,
     aws_api_gateway_integration_response.badges_id_options,
+    # Stats endpoint
+    aws_api_gateway_integration.stats_get_lambda,
+    aws_api_gateway_integration.stats_options,
+    aws_api_gateway_integration_response.stats_options,
   ]
 
   rest_api_id = aws_api_gateway_rest_api.api.id

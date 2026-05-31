@@ -25,7 +25,19 @@ import Dashboard from "./pages/Dashboard";
 import AWSEvents from "./pages/AWSEvents";
 import NotFound from "./pages/NotFound";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Serve cached data instantly for 1 min before considering it stale.
+      staleTime: 60 * 1000,
+      // Keep unused cache around for 5 min so back-navigation is instant.
+      gcTime: 5 * 60 * 1000,
+      // Avoid refetch storms when users tab away and back.
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  },
+});
 
 const App = () => (
   <QueryClientProvider client={queryClient}>

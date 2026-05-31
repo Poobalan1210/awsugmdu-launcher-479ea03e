@@ -140,6 +140,7 @@ LAMBDA_FUNCTIONS=(
   "meetups-crud"
   "points-crud"
   "meetup-reminder"
+  "stats-crud"
 )
 
 # ─── Header ───────────────────────────────────────────────────────────────────

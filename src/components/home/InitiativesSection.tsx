@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { motion, Variants } from 'framer-motion';
-import { Rocket, GraduationCap, Award, ShoppingBag, ArrowRight, Calendar } from 'lucide-react';
+import { Rocket, GraduationCap, Award, ShoppingBag, ArrowRight, Calendar, Cloud, Sparkles, CalendarDays } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 
@@ -31,12 +31,36 @@ const initiatives = [
     iconColor: 'text-blue-600',
   },
   {
+    title: 'Cloud Clubs',
+    description: 'College-based cloud communities where students collaborate, build projects, and grow together.',
+    icon: Cloud,
+    path: '/cloud-clubs',
+    color: 'from-sky-500/20 to-cyan-500/20',
+    iconColor: 'text-sky-600',
+  },
+  {
     title: 'Circles',
     description: 'Study groups, resources, and peer support to help you earn AWS certifications faster.',
     icon: Award,
     path: '/circles',
     color: 'from-amber-500/20 to-yellow-500/20',
     iconColor: 'text-amber-600',
+  },
+  {
+    title: 'Community Spotlight',
+    description: 'Celebrating member achievements, projects, and contributions across the community.',
+    icon: Sparkles,
+    path: '/community-spotlight',
+    color: 'from-rose-500/20 to-pink-500/20',
+    iconColor: 'text-rose-600',
+  },
+  {
+    title: 'AWS Events',
+    description: 'Stay updated on official AWS events, conferences, and summits happening near you.',
+    icon: CalendarDays,
+    path: '/aws-events',
+    color: 'from-orange-500/20 to-amber-500/20',
+    iconColor: 'text-orange-600',
   },
   {
     title: 'Community Store',

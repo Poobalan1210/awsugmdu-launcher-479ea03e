@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
 import { motion } from 'framer-motion';
@@ -6,7 +6,7 @@ import { Trophy, Medal, Award, TrendingUp, Search } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
-import { User } from '@/data/mockData';
+import { useQuery } from '@tanstack/react-query';
 import { getAllUsers } from '@/lib/userProfile';
 import { profilePath } from '@/lib/profileSlug';
 import { Link } from 'react-router-dom';
@@ -41,25 +41,13 @@ const getRankStyle = (rank: number) => {
 };
 
 const Leaderboard = () => {
-  const [users, setUsers] = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const { user: currentUser } = useAuth();
 
-  useEffect(() => {
-    const fetchUsers = async () => {
-      try {
-        const allUsers = await getAllUsers();
-        setUsers(Array.isArray(allUsers) ? allUsers : []);
-      } catch (error) {
-        console.error('Failed to fetch users:', error);
-        setUsers([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchUsers();
-  }, []);
+  const { data: users = [], isLoading: loading } = useQuery({
+    queryKey: ['all-users'],
+    queryFn: getAllUsers,
+  });
 
   const rankedUsers = Array.isArray(users)
     ? users

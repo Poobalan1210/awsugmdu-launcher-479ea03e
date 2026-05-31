@@ -11,18 +11,18 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Plus, Edit, Trash2, Users, Crown, Award, Clock } from 'lucide-react';
 import { toast } from 'sonner';
 import { 
-  listCertificationGroups, 
-  createCertificationGroup, 
-  updateCertificationGroup, 
-  deleteCertificationGroup,
-  CertificationGroup 
-} from '@/lib/certifications';
+  listCircles, 
+  createCircle, 
+  updateCircle, 
+  deleteCircle,
+  Circle 
+} from '@/lib/circles';
 import { User as UserType } from '@/data/mockData';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Check, ChevronDown } from 'lucide-react';
 
-interface CertificationGroupsManagementProps {
+interface CirclesManagementProps {
   allUsers: UserType[];
 }
 
@@ -49,7 +49,7 @@ function CreateGroupDialog({ onSuccess, allUsers }: { onSuccess: () => void; all
     
     setLoading(true);
     try {
-      await createCertificationGroup({
+      await createCircle({
         name: formData.name,
         level: formData.level,
         description: formData.description,
@@ -203,17 +203,17 @@ function CreateGroupDialog({ onSuccess, allUsers }: { onSuccess: () => void; all
   );
 }
 
-export default function CertificationGroupsManagement({ allUsers }: CertificationGroupsManagementProps) {
-  const [groups, setGroups] = useState<CertificationGroup[]>([]);
+export default function CirclesManagement({ allUsers }: CirclesManagementProps) {
+  const [groups, setGroups] = useState<Circle[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchGroups = async () => {
     setLoading(true);
     try {
-      const data = await listCertificationGroups();
+      const data = await listCircles();
       setGroups(data);
     } catch (error) {
-      toast.error('Failed to load circle groups');
+      toast.error('Failed to load circles');
     } finally {
       setLoading(false);
     }
@@ -227,7 +227,7 @@ export default function CertificationGroupsManagement({ allUsers }: Certificatio
     if (!confirm(`Are you sure you want to delete "${name}"?`)) return;
     
     try {
-      await deleteCertificationGroup(id);
+      await deleteCircle(id);
       toast.success('Group deleted successfully');
       fetchGroups();
     } catch (error) {

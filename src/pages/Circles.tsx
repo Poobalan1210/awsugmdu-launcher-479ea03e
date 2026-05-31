@@ -16,17 +16,17 @@ import {
   ChevronDown, Crown, ArrowLeft, Link2, Trash2
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { CertificationGroup } from '@/data/mockData';
+import { Circle } from '@/data/mockData';
 import { format, parseISO } from 'date-fns';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useAuth } from '@/contexts/AuthContext';
 import { getMeetupsByCertificationGroup } from '@/lib/meetups';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { listCertificationGroups, joinCertificationGroup, postGroupMessage, getCertificationGroup, addMessageReply, toggleMessageLike, toggleReplyLike } from '@/lib/certifications';
+import { listCircles, joinCircle, postGroupMessage, getCircle, addMessageReply, toggleMessageLike, toggleReplyLike } from '@/lib/circles';
 import { API_BASE_URL } from '@/lib/aws-config';
 import { profilePath } from '@/lib/profileSlug';
 
-function GroupCard({ group, onSelect }: { group: CertificationGroup; onSelect: () => void }) {
+function GroupCard({ group, onSelect }: { group: Circle; onSelect: () => void }) {
   const { user } = useAuth();
   const isOwner = user && group.owners.includes(user.id);
   const isMember = user && group.members.includes(user.id);
@@ -74,7 +74,7 @@ function GroupCard({ group, onSelect }: { group: CertificationGroup; onSelect: (
   );
 }
 
-function GroupDetail({ group: initialGroup, onBack }: { group: CertificationGroup; onBack: () => void }) {
+function GroupDetail({ group: initialGroup, onBack }: { group: Circle; onBack: () => void }) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -87,8 +87,8 @@ function GroupDetail({ group: initialGroup, onBack }: { group: CertificationGrou
 
   // Fetch fresh group data
   const { data: group = initialGroup } = useQuery({
-    queryKey: ['certification-group', initialGroup.id],
-    queryFn: () => getCertificationGroup(initialGroup.id),
+    queryKey: ['circle', initialGroup.id],
+    queryFn: () => getCircle(initialGroup.id),
     initialData: initialGroup,
     staleTime: 0, // Always refetch
   });
@@ -146,7 +146,7 @@ function GroupDetail({ group: initialGroup, onBack }: { group: CertificationGrou
 
   // Fetch meetups for this certification group
   const { data: groupMeetups = [] } = useQuery({
-    queryKey: ['certification-group-meetups', group.id],
+    queryKey: ['circle-meetups', group.id],
     queryFn: () => getMeetupsByCertificationGroup(group.id),
     staleTime: 60000, // Cache for 1 minute
   });
@@ -220,7 +220,7 @@ function GroupDetail({ group: initialGroup, onBack }: { group: CertificationGrou
       toast.success('Message posted!');
       
       // Refetch group data
-      queryClient.invalidateQueries({ queryKey: ['certification-group', group.id] });
+      queryClient.invalidateQueries({ queryKey: ['circle', group.id] });
     } catch (error) {
       console.error('Error posting message:', error);
       toast.error('Failed to post message');
@@ -248,7 +248,7 @@ function GroupDetail({ group: initialGroup, onBack }: { group: CertificationGrou
       toast.success('Reply posted!');
       
       // Refetch group data
-      queryClient.invalidateQueries({ queryKey: ['certification-group', group.id] });
+      queryClient.invalidateQueries({ queryKey: ['circle', group.id] });
     } catch (error) {
       console.error('Error posting reply:', error);
       toast.error('Failed to post reply');
@@ -301,11 +301,11 @@ function GroupDetail({ group: initialGroup, onBack }: { group: CertificationGrou
               return;
             }
             try {
-              await joinCertificationGroup(group.id, user.id);
+              await joinCircle(group.id, user.id);
               toast.success('Joined group successfully!');
               // Refresh the group data without full page reload
-              queryClient.invalidateQueries({ queryKey: ['certification-group', group.id] });
-              queryClient.invalidateQueries({ queryKey: ['certification-groups'] });
+              queryClient.invalidateQueries({ queryKey: ['circle', group.id] });
+              queryClient.invalidateQueries({ queryKey: ['circles'] });
             } catch (error) {
               console.error('Error joining group:', error);
               toast.error('Failed to join group');
@@ -638,7 +638,7 @@ function MessageCard({
   currentUser,
   messageRefs
 }: { 
-  message: CertificationGroup['messages'][0];
+  message: Circle['messages'][0];
   groupId: string;
   isExpanded: boolean;
   onToggle: () => void;
@@ -682,8 +682,8 @@ function MessageCard({
       await toggleMessageLike(groupId, message.id, currentUserId);
       
       // Refresh the group data to show updated likes
-      await queryClient.invalidateQueries({ queryKey: ['certification-group', groupId] });
-      await queryClient.refetchQueries({ queryKey: ['certification-group', groupId] });
+      await queryClient.invalidateQueries({ queryKey: ['circle', groupId] });
+      await queryClient.refetchQueries({ queryKey: ['circle', groupId] });
     } catch (error) {
       console.error('Error toggling like:', error);
       toast.error('Failed to toggle like');
@@ -833,8 +833,8 @@ function MessageCard({
                         await toggleReplyLike(groupId, message.id, reply.id, currentUserId);
                         
                         // Refresh the group data
-                        await queryClient.invalidateQueries({ queryKey: ['certification-group', groupId] });
-                        await queryClient.refetchQueries({ queryKey: ['certification-group', groupId] });
+                        await queryClient.invalidateQueries({ queryKey: ['circle', groupId] });
+                        await queryClient.refetchQueries({ queryKey: ['circle', groupId] });
                       } catch (error) {
                         console.error('Error toggling reply like:', error);
                         toast.error('Failed to toggle like');
@@ -906,12 +906,12 @@ export default function Circles() {
   const replyId = searchParams.get('reply');
   const groupId = searchParams.get('group');
   
-  const [selectedGroup, setSelectedGroup] = useState<CertificationGroup | null>(null);
+  const [selectedGroup, setSelectedGroup] = useState<Circle | null>(null);
 
   // Fetch certification groups from backend
   const { data: allGroups = [], isLoading } = useQuery({
-    queryKey: ['certification-groups'],
-    queryFn: () => listCertificationGroups(),
+    queryKey: ['circles'],
+    queryFn: () => listCircles(),
     staleTime: 60000, // Cache for 1 minute
   });
 

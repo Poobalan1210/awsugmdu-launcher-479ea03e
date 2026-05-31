@@ -41,7 +41,7 @@ import { getSprints, deleteSprint, deleteSession } from '@/lib/sprints';
 import { uploadFileToS3 } from '@/lib/s3Upload';
 import { getAllUsers } from '@/lib/userProfile';
 import { callApi } from '@/lib/api';
-import { listCertificationGroups, CertificationGroup } from '@/lib/certifications';
+import { listCircles, Circle } from '@/lib/circles';
 import { College, CollegeEvent, CollegeTask } from '@/lib/colleges';
 import { Progress } from '@/components/ui/progress';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -50,7 +50,7 @@ import { format, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import StoreManagement from '@/components/admin/StoreManagement';
-import CertificationGroupsManagement from '@/components/admin/CertificationGroupsManagement';
+import CirclesManagement from '@/components/admin/CirclesManagement';
 import SprintsTab from '@/components/admin/tabs/SprintsTab';
 import AWSEventsTab from '@/components/admin/tabs/AWSEventsTab';
 import { SessionPerson, SessionPeopleManager, userToSessionPerson, userToMeetupPerson, UserSelect, UserMultiSelect, MeetupPeopleManager } from '@/components/admin/shared/AdminShared';
@@ -489,7 +489,7 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
   const [uploadingImage, setUploadingImage] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [sprints, setSprints] = useState<Sprint[]>([]);
-  const [certificationGroups, setCertificationGroups] = useState<CertificationGroup[]>([]);
+  const [certificationGroups, setCertificationGroups] = useState<Circle[]>([]);
   const [colleges, setColleges] = useState<College[]>([]);
   const [cloudClubs, setCloudClubs] = useState<any[]>([]);
   const [formData, setFormData] = useState({
@@ -547,10 +547,10 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
 
   const loadCertificationGroups = async () => {
     try {
-      const groups = await listCertificationGroups();
+      const groups = await listCircles();
       setCertificationGroups(groups);
     } catch (error) {
-      console.error('Error loading certification groups:', error);
+      console.error('Error loading circles:', error);
     }
   };
 
@@ -6705,7 +6705,7 @@ export default function Admin() {
                 </TabsContent>
 
                 <TabsContent value="certifications">
-                  <CertificationGroupsManagement allUsers={allUsers} />
+                  <CirclesManagement allUsers={allUsers} />
                 </TabsContent>
 
                 <TabsContent value="spotlight">

@@ -133,7 +133,7 @@ LAMBDA_FUNCTIONS=(
   "s3-upload"
   "user-profile-creation"
   "badges-crud"          # Open Badges v2.0
-  "certifications-crud"
+  "circles-crud"
   "discussions-crud"
   "cloud-clubs-crud"
   "colleges-crud"

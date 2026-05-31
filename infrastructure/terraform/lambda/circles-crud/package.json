@@ -1,7 +1,7 @@
 {
-  "name": "certifications-crud",
+  "name": "circles-crud",
   "version": "1.0.0",
-  "description": "Lambda function for certification groups CRUD operations",
+  "description": "Lambda function for circles CRUD operations",
   "main": "index.js",
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.621.0",

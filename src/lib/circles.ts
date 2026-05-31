@@ -1,6 +1,6 @@
 import { API_BASE_URL } from './aws-config';
 
-export interface CertificationGroup {
+export interface Circle {
   id: string;
   name: string;
   level: 'Foundational' | 'Associate' | 'Professional' | 'Specialty';
@@ -52,102 +52,102 @@ export interface GroupReply {
   likedBy: string[];
 }
 
-// List all certification groups or filter by level
-export async function listCertificationGroups(level?: string): Promise<CertificationGroup[]> {
+// List all circles or filter by level
+export async function listCircles(level?: string): Promise<Circle[]> {
   const url = level 
-    ? `${API_BASE_URL}/certification-groups?level=${encodeURIComponent(level)}`
-    : `${API_BASE_URL}/certification-groups`;
+    ? `${API_BASE_URL}/circles?level=${encodeURIComponent(level)}`
+    : `${API_BASE_URL}/circles`;
   
   const response = await fetch(url);
-  if (!response.ok) throw new Error('Failed to fetch certification groups');
+  if (!response.ok) throw new Error('Failed to fetch circles');
   const data = await response.json();
   return data.groups;
 }
 
-// Get a single certification group
-export async function getCertificationGroup(id: string): Promise<CertificationGroup> {
-  const response = await fetch(`${API_BASE_URL}/certification-groups/${id}`);
-  if (!response.ok) throw new Error('Failed to fetch certification group');
+// Get a single circle
+export async function getCircle(id: string): Promise<Circle> {
+  const response = await fetch(`${API_BASE_URL}/circles/${id}`);
+  if (!response.ok) throw new Error('Failed to fetch circle');
   const data = await response.json();
   return data.group;
 }
 
-// Create a new certification group
-export async function createCertificationGroup(group: {
+// Create a new circle
+export async function createCircle(group: {
   name: string;
   level: string;
   description: string;
   ownerId?: string;
   ownerIds?: string[];
   color?: string;
-}): Promise<CertificationGroup> {
-  const response = await fetch(`${API_BASE_URL}/certification-groups`, {
+}): Promise<Circle> {
+  const response = await fetch(`${API_BASE_URL}/circles`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(group)
   });
-  if (!response.ok) throw new Error('Failed to create certification group');
+  if (!response.ok) throw new Error('Failed to create circle');
   const data = await response.json();
   return data.group;
 }
 
-// Update a certification group
-export async function updateCertificationGroup(id: string, updates: {
+// Update a circle
+export async function updateCircle(id: string, updates: {
   name?: string;
   description?: string;
   color?: string;
-}): Promise<CertificationGroup> {
-  const response = await fetch(`${API_BASE_URL}/certification-groups/${id}`, {
+}): Promise<Circle> {
+  const response = await fetch(`${API_BASE_URL}/circles/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(updates)
   });
-  if (!response.ok) throw new Error('Failed to update certification group');
+  if (!response.ok) throw new Error('Failed to update circle');
   const data = await response.json();
   return data.group;
 }
 
-// Delete a certification group
-export async function deleteCertificationGroup(id: string): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/certification-groups/${id}`, {
+// Delete a circle
+export async function deleteCircle(id: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/circles/${id}`, {
     method: 'DELETE'
   });
-  if (!response.ok) throw new Error('Failed to delete certification group');
+  if (!response.ok) throw new Error('Failed to delete circle');
 }
 
-// Join a certification group
-export async function joinCertificationGroup(id: string, userId: string): Promise<CertificationGroup> {
-  const response = await fetch(`${API_BASE_URL}/certification-groups/${id}/join`, {
+// Join a circle
+export async function joinCircle(id: string, userId: string): Promise<Circle> {
+  const response = await fetch(`${API_BASE_URL}/circles/${id}/join`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ userId })
   });
-  if (!response.ok) throw new Error('Failed to join certification group');
+  if (!response.ok) throw new Error('Failed to join circle');
   const data = await response.json();
   return data.group;
 }
 
-// Leave a certification group
-export async function leaveCertificationGroup(id: string, userId: string): Promise<CertificationGroup> {
-  const response = await fetch(`${API_BASE_URL}/certification-groups/${id}/leave`, {
+// Leave a circle
+export async function leaveCircle(id: string, userId: string): Promise<Circle> {
+  const response = await fetch(`${API_BASE_URL}/circles/${id}/leave`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ userId })
   });
-  if (!response.ok) throw new Error('Failed to leave certification group');
+  if (!response.ok) throw new Error('Failed to leave circle');
   const data = await response.json();
   return data.group;
 }
 
-// Post a message to a group
+// Post a message to a circle
 export async function postGroupMessage(groupId: string, message: {
   userId: string;
   userName: string;
   userAvatar: string;
   content: string;
   isPinned?: boolean;
-}): Promise<{ group: CertificationGroup; message: GroupMessage }> {
-  const response = await fetch(`${API_BASE_URL}/certification-groups/${groupId}/messages`, {
+}): Promise<{ group: Circle; message: GroupMessage }> {
+  const response = await fetch(`${API_BASE_URL}/circles/${groupId}/messages`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(message)
@@ -160,8 +160,8 @@ export async function postGroupMessage(groupId: string, message: {
 export async function updateGroupMessage(groupId: string, messageId: string, updates: {
   content?: string;
   isPinned?: boolean;
-}): Promise<CertificationGroup> {
-  const response = await fetch(`${API_BASE_URL}/certification-groups/${groupId}/messages/${messageId}`, {
+}): Promise<Circle> {
+  const response = await fetch(`${API_BASE_URL}/circles/${groupId}/messages/${messageId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(updates)
@@ -172,8 +172,8 @@ export async function updateGroupMessage(groupId: string, messageId: string, upd
 }
 
 // Delete a message
-export async function deleteGroupMessage(groupId: string, messageId: string): Promise<CertificationGroup> {
-  const response = await fetch(`${API_BASE_URL}/certification-groups/${groupId}/messages/${messageId}`, {
+export async function deleteGroupMessage(groupId: string, messageId: string): Promise<Circle> {
+  const response = await fetch(`${API_BASE_URL}/circles/${groupId}/messages/${messageId}`, {
     method: 'DELETE'
   });
   if (!response.ok) throw new Error('Failed to delete message');
@@ -182,8 +182,8 @@ export async function deleteGroupMessage(groupId: string, messageId: string): Pr
 }
 
 // Toggle like on a message
-export async function toggleMessageLike(groupId: string, messageId: string, userId: string): Promise<{ group: CertificationGroup; liked: boolean }> {
-  const response = await fetch(`${API_BASE_URL}/certification-groups/${groupId}/messages/${messageId}/like`, {
+export async function toggleMessageLike(groupId: string, messageId: string, userId: string): Promise<{ group: Circle; liked: boolean }> {
+  const response = await fetch(`${API_BASE_URL}/circles/${groupId}/messages/${messageId}/like`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ userId })
@@ -198,8 +198,8 @@ export async function addMessageReply(groupId: string, messageId: string, reply:
   userName: string;
   userAvatar: string;
   content: string;
-}): Promise<{ group: CertificationGroup; reply: GroupReply }> {
-  const response = await fetch(`${API_BASE_URL}/certification-groups/${groupId}/messages/${messageId}/replies`, {
+}): Promise<{ group: Circle; reply: GroupReply }> {
+  const response = await fetch(`${API_BASE_URL}/circles/${groupId}/messages/${messageId}/replies`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(reply)
@@ -209,8 +209,8 @@ export async function addMessageReply(groupId: string, messageId: string, reply:
 }
 
 // Update a reply
-export async function updateMessageReply(groupId: string, messageId: string, replyId: string, content: string): Promise<CertificationGroup> {
-  const response = await fetch(`${API_BASE_URL}/certification-groups/${groupId}/messages/${messageId}/replies/${replyId}`, {
+export async function updateMessageReply(groupId: string, messageId: string, replyId: string, content: string): Promise<Circle> {
+  const response = await fetch(`${API_BASE_URL}/circles/${groupId}/messages/${messageId}/replies/${replyId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ content })
@@ -221,8 +221,8 @@ export async function updateMessageReply(groupId: string, messageId: string, rep
 }
 
 // Delete a reply
-export async function deleteMessageReply(groupId: string, messageId: string, replyId: string): Promise<CertificationGroup> {
-  const response = await fetch(`${API_BASE_URL}/certification-groups/${groupId}/messages/${messageId}/replies/${replyId}`, {
+export async function deleteMessageReply(groupId: string, messageId: string, replyId: string): Promise<Circle> {
+  const response = await fetch(`${API_BASE_URL}/circles/${groupId}/messages/${messageId}/replies/${replyId}`, {
     method: 'DELETE'
   });
   if (!response.ok) throw new Error('Failed to delete reply');
@@ -231,8 +231,8 @@ export async function deleteMessageReply(groupId: string, messageId: string, rep
 }
 
 // Toggle like on a reply
-export async function toggleReplyLike(groupId: string, messageId: string, replyId: string, userId: string): Promise<{ group: CertificationGroup; liked: boolean }> {
-  const response = await fetch(`${API_BASE_URL}/certification-groups/${groupId}/messages/${messageId}/replies/${replyId}/like`, {
+export async function toggleReplyLike(groupId: string, messageId: string, replyId: string, userId: string): Promise<{ group: Circle; liked: boolean }> {
+  const response = await fetch(`${API_BASE_URL}/circles/${groupId}/messages/${messageId}/replies/${replyId}/like`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ userId, replyId })
@@ -250,8 +250,8 @@ export async function createGroupSession(groupId: string, session: {
   hostId: string;
   hostName: string;
   meetingLink?: string;
-}): Promise<{ group: CertificationGroup; session: GroupSession }> {
-  const response = await fetch(`${API_BASE_URL}/certification-groups/${groupId}/sessions`, {
+}): Promise<{ group: Circle; session: GroupSession }> {
+  const response = await fetch(`${API_BASE_URL}/circles/${groupId}/sessions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(session)
@@ -267,8 +267,8 @@ export async function updateGroupSession(groupId: string, sessionId: string, upd
   date?: string;
   time?: string;
   meetingLink?: string;
-}): Promise<CertificationGroup> {
-  const response = await fetch(`${API_BASE_URL}/certification-groups/${groupId}/sessions/${sessionId}`, {
+}): Promise<Circle> {
+  const response = await fetch(`${API_BASE_URL}/circles/${groupId}/sessions/${sessionId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(updates)
@@ -279,8 +279,8 @@ export async function updateGroupSession(groupId: string, sessionId: string, upd
 }
 
 // Delete a session
-export async function deleteGroupSession(groupId: string, sessionId: string): Promise<CertificationGroup> {
-  const response = await fetch(`${API_BASE_URL}/certification-groups/${groupId}/sessions/${sessionId}`, {
+export async function deleteGroupSession(groupId: string, sessionId: string): Promise<Circle> {
+  const response = await fetch(`${API_BASE_URL}/circles/${groupId}/sessions/${sessionId}`, {
     method: 'DELETE'
   });
   if (!response.ok) throw new Error('Failed to delete session');

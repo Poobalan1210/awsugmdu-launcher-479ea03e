@@ -2289,6 +2289,13 @@ resource "aws_api_gateway_deployment" "api" {
       aws_api_gateway_integration.stats_get_lambda.id,
       aws_api_gateway_integration.stats_options.id,
       aws_lambda_function.stats_crud.source_code_hash,
+      # Circles (renamed from certification-groups): force redeploy so the
+      # new /circles path + renamed Lambda go live on the stage.
+      aws_api_gateway_integration.certification_groups_get_lambda.id,
+      aws_api_gateway_integration.certification_groups_post_lambda.id,
+      aws_api_gateway_integration.certification_groups_id_get_lambda.id,
+      aws_api_gateway_integration.certification_groups_id_messages_post_lambda.id,
+      aws_lambda_function.certifications_crud.source_code_hash,
     ]))
   }
 

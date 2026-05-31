@@ -406,7 +406,7 @@ export interface ForumReply {
   likes: number;
 }
 
-export interface CertificationGroup {
+export interface Circle {
   id: string;
   name: string;
   level: 'Foundational' | 'Associate' | 'Professional' | 'Specialty';
@@ -1360,8 +1360,8 @@ export const mockForumPosts: ForumPost[] = [
   }
 ];
 
-// Mock Certification Groups
-export const mockCertificationGroups: CertificationGroup[] = [
+// Mock Circles
+export const mockCertificationGroups: Circle[] = [
   {
     id: 'cg1',
     name: 'Cloud Practitioner',

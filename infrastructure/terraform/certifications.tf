@@ -1,6 +1,6 @@
-# DynamoDB Table for Certification Groups
+# DynamoDB Table for Circles
 resource "aws_dynamodb_table" "certification_groups" {
-  name           = "${var.project_name}-certification-groups"
+  name           = "${var.project_name}-circles"
   billing_mode   = "PAY_PER_REQUEST"
   hash_key       = "id"
 
@@ -24,29 +24,27 @@ resource "aws_dynamodb_table" "certification_groups" {
     enabled = true
   }
 
-  deletion_protection_enabled = true
-
-  lifecycle {
-    prevent_destroy = true
-  }
+  # Protection intentionally disabled to allow the rename from
+  # awsug-certification-groups → awsug-circles (table is replaced).
+  deletion_protection_enabled = false
 
   tags = {
-    Name = "${var.project_name}-certification-groups-table"
+    Name = "${var.project_name}-circles-table"
   }
 }
 
 # Archive Lambda function
 data "archive_file" "certifications_crud" {
   type        = "zip"
-  source_dir  = "${path.module}/lambda/certifications-crud"
-  output_path = "${path.module}/lambda/certifications-crud.zip"
+  source_dir  = "${path.module}/lambda/circles-crud"
+  output_path = "${path.module}/lambda/circles-crud.zip"
   excludes    = ["node_modules", "*.zip"]
 }
 
-# Lambda: Certifications CRUD
+# Lambda: Circles CRUD
 resource "aws_lambda_function" "certifications_crud" {
   filename         = data.archive_file.certifications_crud.output_path
-  function_name    = "${var.project_name}-certifications-crud"
+  function_name    = "${var.project_name}-circles-crud"
   role            = aws_iam_role.lambda_execution.arn
   handler         = "index.handler"
   source_code_hash = data.archive_file.certifications_crud.output_base64sha256
@@ -60,7 +58,7 @@ resource "aws_lambda_function" "certifications_crud" {
   }
 
   tags = {
-    Name = "${var.project_name}-certifications-crud"
+    Name = "${var.project_name}-circles-crud"
   }
 }
 
@@ -91,11 +89,11 @@ resource "aws_iam_role_policy" "lambda_certifications_dynamodb" {
   })
 }
 
-# API Gateway Resources for Certification Groups
+# API Gateway Resources for Circles
 resource "aws_api_gateway_resource" "certification_groups" {
   rest_api_id = aws_api_gateway_rest_api.api.id
   parent_id   = aws_api_gateway_rest_api.api.root_resource_id
-  path_part   = "certification-groups"
+  path_part   = "circles"
 }
 
 resource "aws_api_gateway_resource" "certification_groups_id" {

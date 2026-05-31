@@ -4,7 +4,7 @@ const { DynamoDBDocumentClient, PutCommand, GetCommand, UpdateCommand, ScanComma
 const client = new DynamoDBClient({ region: process.env.AWS_REGION });
 const docClient = DynamoDBDocumentClient.from(client);
 
-const GROUPS_TABLE = process.env.CERTIFICATION_GROUPS_TABLE_NAME || 'awsug-certification-groups';
+const GROUPS_TABLE = process.env.CERTIFICATION_GROUPS_TABLE_NAME || 'awsug-circles';
 
 function getCorsHeaders() {
   return {
@@ -37,14 +37,14 @@ exports.handler = async (event) => {
     const startIndex = stageIndex >= 0 ? stageIndex + 1 : 0;
     const routeParts = pathParts.slice(startIndex);
     
-    const resource = routeParts[0]; // certification-groups
+    const resource = routeParts[0]; // circles
     const id = routeParts[1]; // group id
     const action = routeParts[2]; // join, leave, messages, sessions
     const subId = routeParts[3]; // messageId or sessionId
     const subAction = routeParts[4]; // like, replies
     const replyId = routeParts[5]; // reply id
 
-    if (resource === 'certification-groups') {
+    if (resource === 'circles') {
       if (method === 'GET' && !id) return await listGroups(event);
       if (method === 'GET' && id && !action) return await getGroup(id);
       if (method === 'POST' && !id) return await createGroup(event);

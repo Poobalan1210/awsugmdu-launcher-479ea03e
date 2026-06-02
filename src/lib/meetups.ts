@@ -19,10 +19,10 @@ export interface CreateMeetupData {
   speakers?: any[];
   hosts?: any[];
   volunteers?: any[];
-  sprintId?: string;
-  certificationGroupId?: string;
-  collegeId?: string;
-  cloudClubId?: string;
+  sprintId?: string | null;
+  certificationGroupId?: string | null;
+  collegeId?: string | null;
+  cloudClubId?: string | null;
   endDate?: string;
   sessionPoints?: number;
   speakerPoints?: number;

@@ -18,6 +18,7 @@ import {
 import { PersonCard } from '@/components/common/PersonCard';
 import { ShareButton } from '@/components/common/ShareButton';
 import { generateMeetupShare } from '@/lib/sharing';
+import { normalizeUrl } from '@/lib/utils';
 import { PostEventUploads } from '@/components/meetups/PostEventUploads';
 import { EventPhotoGallery } from '@/components/meetups/EventPhotoGallery';
 import { MeetupFeedbackForm } from '@/components/meetups/MeetupFeedbackForm';
@@ -431,7 +432,7 @@ function MeetupDetail({ meetup: initialMeetup, onBack }: { meetup: Meetup; onBac
                         )}
                         {meetup.meetingLink && (
                           <Button variant="outline" size="lg" asChild className="gap-2">
-                            <a href={meetup.meetingLink} target="_blank" rel="noopener noreferrer">
+                            <a href={normalizeUrl(meetup.meetingLink)} target="_blank" rel="noopener noreferrer">
                               <Video className="h-4 w-4" />
                               Join Event
                             </a>
@@ -450,7 +451,7 @@ function MeetupDetail({ meetup: initialMeetup, onBack }: { meetup: Meetup; onBac
                         )}
                         {meetup.meetingLink && (
                           <Button variant="outline" size="lg" asChild className="gap-2">
-                            <a href={meetup.meetingLink} target="_blank" rel="noopener noreferrer">
+                            <a href={normalizeUrl(meetup.meetingLink)} target="_blank" rel="noopener noreferrer">
                               <PlayCircle className="h-4 w-4" />
                               Watch Recording
                             </a>

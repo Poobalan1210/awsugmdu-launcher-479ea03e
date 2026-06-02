@@ -307,6 +307,7 @@ async function createMeetup(event) {
     sprintId,
     certificationGroupId,
     collegeId,
+    cloudClubId,
     sessionPoints,
     speakerPoints,
     volunteerPoints,
@@ -338,6 +339,13 @@ async function createMeetup(event) {
   if (type === 'college-champ' && !collegeId) {
     return createResponse(400, {
       error: 'College ID is required when type is college-champ'
+    });
+  }
+
+  // Validate cloud club selection if type is cloud-club
+  if (type === 'cloud-club' && !cloudClubId) {
+    return createResponse(400, {
+      error: 'Cloud Club ID is required when type is cloud-club'
     });
   }
 
@@ -404,7 +412,8 @@ async function createMeetup(event) {
     ...(type === 'skill-sprint' && sprintId ? { sprintId } : {}),
     ...(type === 'circles' && certificationGroupId ? { certificationGroupId } : {}),
     ...(type === 'college-champ' && collegeId ? { collegeId } : {}),
-    ...(type === 'college-champ' && sessionPoints ? { sessionPoints: parseInt(sessionPoints) || 0 } : {}),
+    ...(type === 'cloud-club' && cloudClubId ? { cloudClubId } : {}),
+    ...((type === 'college-champ' || type === 'cloud-club') && sessionPoints ? { sessionPoints: parseInt(sessionPoints) || 0 } : {}),
     speakerPoints: speakerPoints ? parseInt(speakerPoints) : 0,
     volunteerPoints: volunteerPoints ? parseInt(volunteerPoints) : 0,
     hostPoints: hostPoints ? parseInt(hostPoints) : 0,
@@ -479,13 +488,14 @@ async function updateMeetup(id, event) {
 
   // Build update expression
   const updateExpressions = [];
+  const removeExpressions = [];
   const expressionAttributeNames = {};
   const expressionAttributeValues = {};
 
   const allowedFields = [
     'title', 'description', 'richDescription', 'date', 'time', 'duration', 'type',
     'location', 'meetingLink', 'meetupUrl', 'image', 'maxAttendees',
-    'speakers', 'hosts', 'volunteers', 'sprintId', 'certificationGroupId', 'endDate', 'sessionPoints',
+    'speakers', 'hosts', 'volunteers', 'endDate', 'sessionPoints',
     'speakerPoints', 'volunteerPoints', 'hostPoints',
     'feedbackEnabled', 'attendeePoints'
   ];
@@ -558,41 +568,54 @@ async function updateMeetup(id, event) {
     expressionAttributeValues[':attendees'] = registeredUsers.length;
   }
 
-  // Handle sprintId - add it if provided, remove it if explicitly set to null
-  if (body.sprintId === null) {
-    // Remove the sprintId attribute
-    updateExpressions.push('REMOVE sprintId');
-  } else if (body.sprintId !== undefined) {
-    // Add or update sprintId
-    updateExpressions.push('sprintId = :sprintId');
-    expressionAttributeValues[':sprintId'] = body.sprintId;
-  }
-
-  // Handle certificationGroupId - add it if provided, remove it if explicitly set to null
-  if (body.certificationGroupId === null) {
-    // Remove the certificationGroupId attribute
-    updateExpressions.push('REMOVE certificationGroupId');
-  } else if (body.certificationGroupId !== undefined) {
-    // Add or update certificationGroupId
-    updateExpressions.push('certificationGroupId = :certificationGroupId');
-    expressionAttributeValues[':certificationGroupId'] = body.certificationGroupId;
-  }
+  // Handle linkage fields (sprintId, certificationGroupId, collegeId, cloudClubId):
+  // - value provided  -> set it
+  // - explicit null    -> remove the attribute
+  // - undefined        -> leave unchanged
+  const linkageFields = ['sprintId', 'certificationGroupId', 'collegeId', 'cloudClubId'];
+  linkageFields.forEach(field => {
+    if (body[field] === null) {
+      expressionAttributeNames[`#${field}`] = field;
+      removeExpressions.push(`#${field}`);
+    } else if (body[field] !== undefined) {
+      expressionAttributeNames[`#${field}`] = field;
+      expressionAttributeValues[`:${field}`] = body[field];
+      updateExpressions.push(`#${field} = :${field}`);
+    }
+  });
 
   // Always update updatedAt
-  updateExpressions.push('updatedAt = :updatedAt');
+  expressionAttributeNames['#updatedAt'] = 'updatedAt';
+  updateExpressions.push('#updatedAt = :updatedAt');
   expressionAttributeValues[':updatedAt'] = new Date().toISOString();
 
-  if (updateExpressions.length === 0) {
+  if (updateExpressions.length === 0 && removeExpressions.length === 0) {
     return createResponse(400, { error: 'No fields to update' });
   }
 
-  await docClient.send(new UpdateCommand({
+  // Combine SET and REMOVE into separate clauses (DynamoDB requires this)
+  const clauses = [];
+  if (updateExpressions.length > 0) {
+    clauses.push(`SET ${updateExpressions.join(', ')}`);
+  }
+  if (removeExpressions.length > 0) {
+    clauses.push(`REMOVE ${removeExpressions.join(', ')}`);
+  }
+
+  const updateParams = {
     TableName: MEETUPS_TABLE,
     Key: { id },
-    UpdateExpression: `SET ${updateExpressions.join(', ')}`,
-    ExpressionAttributeNames: expressionAttributeNames,
-    ExpressionAttributeValues: expressionAttributeValues
-  }));
+    UpdateExpression: clauses.join(' ')
+  };
+  // Only include these maps when non-empty (DynamoDB rejects empty objects)
+  if (Object.keys(expressionAttributeNames).length > 0) {
+    updateParams.ExpressionAttributeNames = expressionAttributeNames;
+  }
+  if (Object.keys(expressionAttributeValues).length > 0) {
+    updateParams.ExpressionAttributeValues = expressionAttributeValues;
+  }
+
+  await docClient.send(new UpdateCommand(updateParams));
 
   // Fetch updated meetup
   const updated = await docClient.send(new GetCommand({

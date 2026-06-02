@@ -18,6 +18,7 @@ import {
 import { toast } from 'sonner';
 import { Circle } from '@/data/mockData';
 import { format, parseISO } from 'date-fns';
+import { normalizeUrl } from '@/lib/utils';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useAuth } from '@/contexts/AuthContext';
 import { getMeetupsByCertificationGroup } from '@/lib/meetups';
@@ -486,7 +487,7 @@ function GroupDetail({ group: initialGroup, onBack }: { group: Circle; onBack: (
                           </Button>
                           {meetup.meetingLink && (
                             <Button size="sm" asChild>
-                              <a href={meetup.meetingLink} target="_blank" rel="noopener noreferrer">
+                              <a href={normalizeUrl(meetup.meetingLink)} target="_blank" rel="noopener noreferrer">
                                 <Video className="h-4 w-4 mr-2" />
                                 Join
                               </a>
@@ -525,7 +526,7 @@ function GroupDetail({ group: initialGroup, onBack }: { group: Circle; onBack: (
                       {session.meetingLink && (
                         <div className="mt-4 pt-4 border-t">
                           <Button size="sm" asChild>
-                            <a href={session.meetingLink} target="_blank" rel="noopener noreferrer">
+                            <a href={normalizeUrl(session.meetingLink)} target="_blank" rel="noopener noreferrer">
                               <Video className="h-4 w-4 mr-2" />
                               Join
                             </a>

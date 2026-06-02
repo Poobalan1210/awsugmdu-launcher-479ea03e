@@ -33,6 +33,7 @@ import { marked } from 'marked';
 import { generateSprintSubmissionShare, generateSprintShare } from '@/lib/sharing';
 import { useAuth } from '@/contexts/AuthContext';
 import { DiscussionForum } from '@/components/discussions/DiscussionForum';
+import { normalizeUrl } from '@/lib/utils';
 import { ShareButton } from '@/components/common/ShareButton';
 import { matchesSprintSlug } from '@/lib/sprintSlug';
 
@@ -289,7 +290,7 @@ function SessionCard({ session: initialSession, sprint, isExpanded, onToggle, on
                       )}
                       {session.meetingLink && (
                         <Button variant="outline" size="lg" asChild className="gap-2">
-                          <a href={session.meetingLink} target="_blank" rel="noopener noreferrer">
+                          <a href={normalizeUrl(session.meetingLink)} target="_blank" rel="noopener noreferrer">
                             <Video className="h-4 w-4" />
                             Join Session
                           </a>
@@ -308,7 +309,7 @@ function SessionCard({ session: initialSession, sprint, isExpanded, onToggle, on
                       )}
                       {session.meetingLink && (
                         <Button size="lg" asChild className="gap-2">
-                          <a href={session.meetingLink} target="_blank" rel="noopener noreferrer">
+                          <a href={normalizeUrl(session.meetingLink)} target="_blank" rel="noopener noreferrer">
                             <Video className="h-4 w-4" />
                             Join Session
                           </a>
@@ -642,7 +643,7 @@ function MeetupSessionCard({ meetup, isExpanded, onToggle }: {
                       )}
                       {meetup.meetingLink && (
                         <Button variant="outline" size="lg" asChild className="gap-2">
-                          <a href={meetup.meetingLink} target="_blank" rel="noopener noreferrer">
+                          <a href={normalizeUrl(meetup.meetingLink)} target="_blank" rel="noopener noreferrer">
                             <Video className="h-4 w-4" />
                             Join Session
                           </a>
@@ -661,7 +662,7 @@ function MeetupSessionCard({ meetup, isExpanded, onToggle }: {
                       )}
                       {meetup.meetingLink && (
                         <Button variant="outline" size="lg" asChild className="gap-2">
-                          <a href={meetup.meetingLink} target="_blank" rel="noopener noreferrer">
+                          <a href={normalizeUrl(meetup.meetingLink)} target="_blank" rel="noopener noreferrer">
                             <PlayCircle className="h-4 w-4" />
                             Watch Recording
                           </a>

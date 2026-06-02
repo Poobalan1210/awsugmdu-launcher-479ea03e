@@ -33,7 +33,7 @@ import {
   Star, Quote, Heart, Zap, CheckSquare, Square, List, Hash, Type, Code2, Sparkles, Image as ImageIcon,
   MoreHorizontal
 } from 'lucide-react';
-import { mockSprints, mockMeetups, Submission, Sprint, Session, User as UserType, predefinedTasks, mockColleges, getTaskById, communityRoles, mockUserRoles, CommunityRole, UserRoleAssignment, PointActivity, mockPointActivities, Meetup, mockBadges, Badge as BadgeType, BadgeAward, mockBadgeAwards, BadgeCriteriaType, criteriaTypeLabels, BadgeCriteria, mockUsers, SubmissionField } from '@/data/mockData';
+import { mockSprints, mockMeetups, Submission, Sprint, Session, User as UserType, predefinedTasks, mockColleges, getTaskById, communityRoles, mockUserRoles, CommunityRole, UserRoleAssignment, PointActivity, mockPointActivities, Meetup, MeetupType, mockBadges, Badge as BadgeType, BadgeAward, mockBadgeAwards, BadgeCriteriaType, criteriaTypeLabels, BadgeCriteria, mockUsers, SubmissionField } from '@/data/mockData';
 import { createMeetup, updateMeetup, publishMeetup, getMeetups, CreateMeetupData, UpdateMeetupData, deleteMeetup, endMeetup } from '@/lib/meetups';
 import { getSpotlightSubmissions, reviewSpotlight, deleteSpotlight } from '@/lib/spotlight';
 import { SpotlightSubmission, SpotlightType } from '@/data/mockData';
@@ -58,6 +58,7 @@ import { TaskSubmissionsPanel } from '@/components/college-champs/TaskSubmission
 import { CloudClubTaskSubmissionsPanel } from '@/components/cloud-clubs/TaskSubmissionsPanel';
 import { listMeetupFeedback, updateMeetupFeedbackSettings } from '@/lib/meetupFeedback';
 import type { MeetupFeedback } from '@/data/mockData';
+import { normalizeUrl } from '@/lib/utils';
 
 // Minimal CSV parser supporting quoted fields, escaped quotes ("") and
 // commas/newlines inside quotes. Returns an array of rows (arrays of cells).
@@ -613,7 +614,7 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
         duration: formData.duration || undefined,
         type: formData.type,
         location: formData.location || undefined,
-        meetingLink: formData.meetingLink || undefined,
+        meetingLink: normalizeUrl(formData.meetingLink),
         meetupUrl: formData.meetupUrl || undefined,
         image: formData.image || undefined,
         maxAttendees: formData.maxAttendees ? parseInt(formData.maxAttendees) : undefined,
@@ -1156,12 +1157,17 @@ function EditMeetupDialog({
   const [loading, setLoading] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const [sprints, setSprints] = useState<Sprint[]>([]);
+  const [certificationGroups, setCertificationGroups] = useState<Circle[]>([]);
+  const [colleges, setColleges] = useState<College[]>([]);
+  const [cloudClubs, setCloudClubs] = useState<any[]>([]);
   const [formData, setFormData] = useState({
     title: meetup.title,
     description: meetup.description,
     richDescription: meetup.richDescription || '',
     date: meetup.date,
     time: meetup.time,
+    duration: meetup.duration || '',
     type: meetup.type,
     location: meetup.location || '',
     meetingLink: meetup.meetingLink || '',
@@ -1169,14 +1175,78 @@ function EditMeetupDialog({
     image: meetup.image || '',
     maxAttendees: meetup.maxAttendees?.toString() || '',
     sprintId: meetup.sprintId || '',
+    certificationGroupId: (meetup as any).certificationGroupId || '',
+    collegeId: meetup.collegeId || '',
+    cloudClubId: meetup.cloudClubId || '',
+    sessionPoints: meetup.sessionPoints?.toString() || '',
     speakerPoints: meetup.speakerPoints?.toString() || '100',
     volunteerPoints: meetup.volunteerPoints?.toString() || '75',
     hostPoints: meetup.hostPoints?.toString() || '50',
     endDate: meetup.endDate || ''
   });
 
+  const [peopleData, setPeopleData] = useState<{
+    speakers?: any[];
+    hosts?: any[];
+    volunteers?: any[];
+  }>({
+    speakers: meetup.speakers || [],
+    hosts: meetup.hosts || [],
+    volunteers: meetup.volunteers || []
+  });
+
+  // Load reference data (sprints, circles, colleges, cloud clubs) when dialog opens
+  useEffect(() => {
+    if (!open) return;
+    (async () => {
+      try {
+        const allSprints = await getSprints();
+        setSprints(allSprints);
+      } catch (error) {
+        console.error('Error loading sprints:', error);
+      }
+      try {
+        const groups = await listCircles();
+        setCertificationGroups(groups);
+      } catch (error) {
+        console.error('Error loading circles:', error);
+      }
+      try {
+        const { getAllColleges } = await import('@/lib/colleges');
+        setColleges(await getAllColleges());
+      } catch (error) {
+        console.error('Error loading colleges:', error);
+      }
+      try {
+        const { getAllCloudClubs } = await import('@/lib/cloudClubs');
+        setCloudClubs(await getAllCloudClubs());
+      } catch (error) {
+        console.error('Error loading cloud clubs:', error);
+      }
+    })();
+  }, [open]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Validate type-specific linkage selections
+    if (formData.type === 'skill-sprint' && !formData.sprintId) {
+      toast.error('Please select a sprint for this session');
+      return;
+    }
+    if (formData.type === 'circles' && !formData.certificationGroupId) {
+      toast.error('Please select a circle group for this session');
+      return;
+    }
+    if (formData.type === 'college-champ' && !formData.collegeId) {
+      toast.error('Please select a college for this session');
+      return;
+    }
+    if (formData.type === 'cloud-club' && !formData.cloudClubId) {
+      toast.error('Please select a cloud club for this session');
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -1186,16 +1256,28 @@ function EditMeetupDialog({
         richDescription: formData.richDescription || undefined,
         date: formData.date,
         time: formData.time,
+        duration: formData.duration || undefined,
         type: formData.type,
         location: formData.location || undefined,
-        meetingLink: formData.meetingLink || undefined,
+        meetingLink: normalizeUrl(formData.meetingLink),
         meetupUrl: formData.meetupUrl || undefined,
         image: formData.image || undefined,
         maxAttendees: formData.maxAttendees ? parseInt(formData.maxAttendees) : undefined,
         speakerPoints: parseInt(formData.speakerPoints) || 0,
         volunteerPoints: parseInt(formData.volunteerPoints) || 0,
         hostPoints: parseInt(formData.hostPoints) || 0,
-        sprintId: (formData.type === 'skill-sprint' && formData.sprintId) ? formData.sprintId : null,
+        speakers: peopleData.speakers,
+        hosts: peopleData.hosts,
+        volunteers: peopleData.volunteers,
+        // Linkage fields: send the value for the matching type, null otherwise
+        // so the backend removes any stale linkage when the type changes.
+        sprintId: formData.type === 'skill-sprint' ? (formData.sprintId || null) : null,
+        certificationGroupId: formData.type === 'circles' ? (formData.certificationGroupId || null) : null,
+        collegeId: formData.type === 'college-champ' ? (formData.collegeId || null) : null,
+        cloudClubId: formData.type === 'cloud-club' ? (formData.cloudClubId || null) : null,
+        sessionPoints: ((formData.type === 'college-champ' || formData.type === 'cloud-club') && formData.sessionPoints)
+          ? parseInt(formData.sessionPoints)
+          : undefined,
         endDate: formData.endDate || undefined
       };
 
@@ -1277,17 +1359,36 @@ function EditMeetupDialog({
               <Label>Event Type *</Label>
               <Select
                 value={formData.type}
-                onValueChange={(value: 'virtual' | 'in-person' | 'hybrid') =>
-                  setFormData({ ...formData, type: value })
+                onValueChange={(value: MeetupType) =>
+                  setFormData({
+                    ...formData,
+                    type: value,
+                    sprintId: value !== 'skill-sprint' ? '' : formData.sprintId,
+                    certificationGroupId: value !== 'circles' ? '' : formData.certificationGroupId,
+                    collegeId: value !== 'college-champ' ? '' : formData.collegeId,
+                    cloudClubId: value !== 'cloud-club' ? '' : formData.cloudClubId
+                  })
                 }
               >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="virtual">Virtual</SelectItem>
-                  <SelectItem value="in-person">In-Person</SelectItem>
+                  <SelectItem value="virtual">Virtual Meetup</SelectItem>
+                  <SelectItem value="in-person">In-Person Meetup</SelectItem>
                   <SelectItem value="hybrid">Hybrid</SelectItem>
+                  <SelectItem value="skill-sprint">Skill Sprint Session</SelectItem>
+                  <SelectItem value="circles">Circles Session</SelectItem>
+                  <SelectItem value="college-champ">College Champ Session</SelectItem>
+                  <SelectItem value="cloud-club">Cloud Club Session</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Duration</Label>
+              <Input
+                placeholder="e.g., 2 hours"
+                value={formData.duration}
+                onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
+              />
             </div>
             <div className="col-span-2 grid grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="space-y-2">
@@ -1329,6 +1430,140 @@ function EditMeetupDialog({
               </div>
             </div>
           </div>
+
+          {/* Sprint Selection - Only show if type is skill-sprint */}
+          {formData.type === 'skill-sprint' && (
+            <div className="space-y-2">
+              <Label>Select Sprint *</Label>
+              <Select
+                value={formData.sprintId}
+                onValueChange={(value) => setFormData({ ...formData, sprintId: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose a sprint..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {sprints.length === 0 ? (
+                    <SelectItem value="none" disabled>No sprints available</SelectItem>
+                  ) : (
+                    sprints.map((sprint) => (
+                      <SelectItem key={sprint.id} value={sprint.id}>
+                        {sprint.title} ({format(parseISO(sprint.startDate), 'MMM yyyy')})
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* Circle Group Selection - Only show if type is circles */}
+          {formData.type === 'circles' && (
+            <div className="space-y-2">
+              <Label>Select Circle Group *</Label>
+              <Select
+                value={formData.certificationGroupId}
+                onValueChange={(value) => setFormData({ ...formData, certificationGroupId: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose a circle group..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {certificationGroups.length === 0 ? (
+                    <SelectItem value="none" disabled>No circle groups available</SelectItem>
+                  ) : (
+                    certificationGroups.map((group) => (
+                      <SelectItem key={group.id} value={group.id}>
+                        {group.name} ({group.level})
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* College Selection - Only show if type is college-champ */}
+          {formData.type === 'college-champ' && (
+            <>
+              <div className="space-y-2">
+                <Label>Select College *</Label>
+                <Select
+                  value={formData.collegeId}
+                  onValueChange={(value) => setFormData({ ...formData, collegeId: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose a college..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {colleges.length === 0 ? (
+                      <SelectItem value="none" disabled>No colleges available</SelectItem>
+                    ) : (
+                      colleges.map((college) => (
+                        <SelectItem key={college.id} value={college.id}>
+                          {college.name} ({college.shortName})
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Session Points *</Label>
+                <Input
+                  type="number"
+                  placeholder="e.g., 100"
+                  value={formData.sessionPoints}
+                  onChange={(e) => setFormData({ ...formData, sessionPoints: e.target.value })}
+                  min="0"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Points awarded to the college's total score when this session is completed.
+                </p>
+              </div>
+            </>
+          )}
+
+          {/* Cloud Club Selection - Only show if type is cloud-club */}
+          {formData.type === 'cloud-club' && (
+            <>
+              <div className="space-y-2">
+                <Label>Select Cloud Club *</Label>
+                <Select
+                  value={formData.cloudClubId}
+                  onValueChange={(value) => setFormData({ ...formData, cloudClubId: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose a cloud club..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {cloudClubs.length === 0 ? (
+                      <SelectItem value="none" disabled>No cloud clubs available</SelectItem>
+                    ) : (
+                      cloudClubs.map((club) => (
+                        <SelectItem key={club.id} value={club.id}>
+                          {club.name} ({club.shortName})
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Session Points *</Label>
+                <Input
+                  type="number"
+                  placeholder="e.g., 100"
+                  value={formData.sessionPoints}
+                  onChange={(e) => setFormData({ ...formData, sessionPoints: e.target.value })}
+                  min="0"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Points awarded to the cloud club's total score when this session is completed.
+                </p>
+              </div>
+            </>
+          )}
 
           <div className="space-y-2">
             <Label>Event Poster Image</Label>
@@ -1422,7 +1657,7 @@ function EditMeetupDialog({
             </div>
           )}
 
-          {(formData.type === 'virtual' || formData.type === 'hybrid') && (
+          {(formData.type === 'virtual' || formData.type === 'hybrid' || formData.type === 'skill-sprint' || formData.type === 'circles' || formData.type === 'college-champ' || formData.type === 'cloud-club') && (
             <div className="space-y-2">
               <Label>Meeting Link</Label>
               <Input
@@ -1430,8 +1665,21 @@ function EditMeetupDialog({
                 value={formData.meetingLink}
                 onChange={(e) => setFormData({ ...formData, meetingLink: e.target.value })}
               />
+              <p className="text-xs text-muted-foreground">
+                Use meeting link for live events. After the event, replace with YouTube recording link.
+              </p>
             </div>
           )}
+
+          {/* People Management */}
+          <div className="space-y-4 border-t pt-6">
+            <h3 className="font-semibold text-lg">Event Team</h3>
+            <MeetupPeopleManager
+              meetupData={peopleData}
+              onUpdate={setPeopleData}
+              allUsers={allUsers}
+            />
+          </div>
 
           <div className="space-y-2">
             <Label>Short Description *</Label>

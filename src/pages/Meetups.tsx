@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion, Variants } from 'framer-motion';
 import { marked } from 'marked';
@@ -16,6 +16,8 @@ import {
   Linkedin, Github, CheckCircle, Search, Rocket, Award, GraduationCap, Cloud, Loader2
 } from 'lucide-react';
 import { PersonCard } from '@/components/common/PersonCard';
+import { ShareButton } from '@/components/common/ShareButton';
+import { generateMeetupShare } from '@/lib/sharing';
 import { PostEventUploads } from '@/components/meetups/PostEventUploads';
 import { EventPhotoGallery } from '@/components/meetups/EventPhotoGallery';
 import { MeetupFeedbackForm } from '@/components/meetups/MeetupFeedbackForm';
@@ -458,6 +460,19 @@ function MeetupDetail({ meetup: initialMeetup, onBack }: { meetup: Meetup; onBac
                     )}
                   </>
                 )}
+
+                {/* Shareable link to this event - always available */}
+                <ShareButton
+                  data={generateMeetupShare(meetup.title, meetup.id, {
+                    isUpcoming,
+                    date: format(eventDate, 'EEEE, MMMM d, yyyy'),
+                    location: meetup.location,
+                  })}
+                  variant="outline"
+                  size="lg"
+                  useDialog
+                  dialogTitle="Share Meetup"
+                />
               </div>
             </CardContent>
           </Card>
@@ -573,7 +588,7 @@ function MeetupDetail({ meetup: initialMeetup, onBack }: { meetup: Meetup; onBac
 }
 
 export default function Meetups() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const meetupId = searchParams.get('id');
 
   // Fetch meetups from backend
@@ -595,9 +610,29 @@ export default function Meetups() {
     meetupId ? allMeetups.find(m => m.id === meetupId) || null : null
   );
 
+  // When arriving via a shared link (?id=...), select the matching meetup once
+  // the list has loaded. The useState initializer runs before the async query
+  // resolves, so allMeetups is empty on first render.
+  useEffect(() => {
+    if (meetupId && !selectedMeetup) {
+      const match = allMeetups.find(m => m.id === meetupId);
+      if (match) setSelectedMeetup(match);
+    }
+  }, [meetupId, allMeetups, selectedMeetup]);
+
   // Filter meetups - only show published (upcoming/completed), not drafts
   const upcomingMeetups = allMeetups.filter(m => m.status === 'upcoming');
   const pastMeetups = allMeetups.filter(m => m.status === 'completed');
+
+  const handleSelectMeetup = (meetup: Meetup) => {
+    setSelectedMeetup(meetup);
+    setSearchParams({ id: meetup.id });
+  };
+
+  const handleBack = () => {
+    setSelectedMeetup(null);
+    setSearchParams({});
+  };
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -605,7 +640,7 @@ export default function Meetups() {
 
       <main className="flex-1 container mx-auto px-4 py-8">
         {selectedMeetup ? (
-          <MeetupDetail meetup={selectedMeetup} onBack={() => setSelectedMeetup(null)} />
+          <MeetupDetail meetup={selectedMeetup} onBack={handleBack} />
         ) : (
           <>
             {/* Hero */}
@@ -657,7 +692,7 @@ export default function Meetups() {
                         <MeetupCard
                           key={meetup.id}
                           meetup={meetup}
-                          onSelect={() => setSelectedMeetup(meetup)}
+                          onSelect={() => handleSelectMeetup(meetup)}
                         />
                       ))}
                     </motion.div>
@@ -693,7 +728,7 @@ export default function Meetups() {
                       <MeetupCard
                         key={meetup.id}
                         meetup={meetup}
-                        onSelect={() => setSelectedMeetup(meetup)}
+                        onSelect={() => handleSelectMeetup(meetup)}
                       />
                     ))}
                   </motion.div>

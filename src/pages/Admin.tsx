@@ -1909,6 +1909,26 @@ function MeetupRowActions({
         View
       </Button>
 
+      {/* Copy shareable link to the public event page */}
+      <Button
+        variant="outline"
+        size="sm"
+        className="gap-1"
+        onClick={async () => {
+          const shareUrl = `${window.location.origin}/meetups?id=${meetup.id}`;
+          try {
+            await navigator.clipboard.writeText(shareUrl);
+            toast.success('Event link copied to clipboard!');
+          } catch {
+            toast.error('Failed to copy link');
+          }
+        }}
+        title="Copy shareable event link"
+      >
+        <Link2 className="h-4 w-4" />
+        Share link
+      </Button>
+
       {/* Quick feedback toggle for completed/upcoming meetups */}
       {showFeedback && (
         <Button

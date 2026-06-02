@@ -139,6 +139,28 @@ export function generateCertificationShare(
   };
 }
 
+// Generate share data for a meetup event (shareable link to the event page)
+export function generateMeetupShare(
+  meetupTitle: string,
+  meetupId: string,
+  options?: { isUpcoming?: boolean; date?: string; location?: string }
+): AchievementShareData {
+  const verb = options?.isUpcoming ? 'Join us for' : 'Check out';
+  const whenWhere = [
+    options?.date ? `🗓️ ${options.date}` : null,
+    options?.location ? `📍 ${options.location}` : null,
+  ].filter(Boolean).join('  ');
+
+  const text = `${verb} "${meetupTitle}" with AWS User Group Madurai! 🚀${whenWhere ? `\n${whenWhere}` : ''}`;
+
+  return {
+    title: `${meetupTitle} - AWS User Group Madurai`,
+    text,
+    url: `${BASE_URL}/meetups?id=${meetupId}`,
+    hashtags: ['AWSUG', 'Meetup', 'AWS', 'CloudComputing', 'Community'],
+  };
+}
+
 // Generate share data for meetup attendance
 export function generateMeetupAttendanceShare(
   userName: string,

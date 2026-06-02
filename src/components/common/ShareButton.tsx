@@ -27,6 +27,8 @@ interface ShareButtonProps {
   className?: string;
   /** Show a full share dialog instead of a dropdown */
   useDialog?: boolean;
+  /** Heading shown at the top of the share dialog */
+  dialogTitle?: string;
 }
 
 export function ShareButton({
@@ -35,6 +37,7 @@ export function ShareButton({
   size = 'sm',
   className,
   useDialog = false,
+  dialogTitle = 'Share Achievement',
 }: ShareButtonProps) {
   const [copied, setCopied] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -110,7 +113,7 @@ export function ShareButton({
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Share2 className="h-5 w-5 text-primary" />
-                Share Achievement
+                {dialogTitle}
               </DialogTitle>
             </DialogHeader>
 

@@ -2119,12 +2119,20 @@ function InviteSpeakerDialog({
   const [loading, setLoading] = useState(false);
   const [lastInviteUrl, setLastInviteUrl] = useState<string | null>(null);
 
-  const pendingInvites = (meetup.speakers || []).filter(
-    (s: any) => s.inviteStatus === 'pending'
-  );
-  const acceptedInvites = (meetup.speakers || []).filter(
-    (s: any) => s.inviteStatus === 'accepted'
-  );
+  // Speakers that came through the invitation flow (have an inviteStatus).
+  const invitedSpeakers = (meetup.speakers || []).filter((s: any) => !!s.inviteStatus);
+  const pendingInvites = invitedSpeakers.filter((s: any) => s.inviteStatus === 'pending');
+  const acceptedInvites = invitedSpeakers.filter((s: any) => s.inviteStatus === 'accepted');
+  const declinedInvites = invitedSpeakers.filter((s: any) => s.inviteStatus === 'declined');
+
+  const fmtDateTime = (iso?: string) => {
+    if (!iso) return '';
+    try {
+      return format(parseISO(iso), 'MMM d, yyyy h:mm a');
+    } catch {
+      return iso;
+    }
+  };
 
   const reset = () => {
     setEmail('');
@@ -2161,7 +2169,7 @@ function InviteSpeakerDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Mail className="h-5 w-5" /> Invite Speaker
@@ -2227,25 +2235,98 @@ function InviteSpeakerDialog({
             </div>
           )}
 
-          {(pendingInvites.length > 0 || acceptedInvites.length > 0) && (
-            <div className="space-y-2 border-t pt-3">
-              <Label className="text-sm font-semibold">Invitations</Label>
-              {acceptedInvites.map((s: any, i: number) => (
-                <div key={`acc-${i}`} className="flex items-center justify-between text-sm">
-                  <span>{s.name || s.invitedEmail}</span>
-                  <Badge variant="default" className="gap-1">
-                    <Check className="h-3 w-3" /> Accepted
-                  </Badge>
-                </div>
-              ))}
-              {pendingInvites.map((s: any, i: number) => (
-                <div key={`pen-${i}`} className="flex items-center justify-between text-sm">
-                  <span>{s.name || s.invitedEmail}</span>
-                  <Badge variant="secondary" className="gap-1">
-                    <Clock className="h-3 w-3" /> Pending
-                  </Badge>
-                </div>
-              ))}
+          {invitedSpeakers.length > 0 && (
+            <div className="space-y-3 border-t pt-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-semibold">Invitation tracking</Label>
+                <span className="text-xs text-muted-foreground">
+                  {acceptedInvites.length} accepted · {pendingInvites.length} pending
+                  {declinedInvites.length > 0 ? ` · ${declinedInvites.length} declined` : ''}
+                </span>
+              </div>
+
+              <div className="space-y-2">
+                {/* Accepted — show code-of-conduct agreement details */}
+                {acceptedInvites.map((s: any, i: number) => (
+                  <div key={`acc-${i}`} className="rounded-md border p-3 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{s.name || s.invitedEmail}</p>
+                        <p className="text-xs text-muted-foreground truncate">{s.invitedEmail}</p>
+                      </div>
+                      <Badge variant="default" className="gap-1 shrink-0">
+                        <Check className="h-3 w-3" /> Accepted
+                      </Badge>
+                    </div>
+                    <div className="flex items-start gap-1.5 text-xs text-green-700 dark:text-green-400">
+                      <Shield className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                      <span>
+                        Agreed to Code of Conduct
+                        {s.codeOfConductAgreedAt ? ` on ${fmtDateTime(s.codeOfConductAgreedAt)}` : ''}
+                        {s.codeOfConductVersion ? ` (v${s.codeOfConductVersion})` : ''}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+
+                {/* Pending */}
+                {pendingInvites.map((s: any, i: number) => (
+                  <div key={`pen-${i}`} className="rounded-md border p-3 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{s.name || s.invitedEmail}</p>
+                        <p className="text-xs text-muted-foreground truncate">{s.invitedEmail}</p>
+                      </div>
+                      <Badge variant="secondary" className="gap-1 shrink-0">
+                        <Clock className="h-3 w-3" /> Pending
+                      </Badge>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                      <span>
+                        {s.invitedAt ? `Invited ${fmtDateTime(s.invitedAt)}` : 'Awaiting response'}
+                      </span>
+                      {s.inviteToken && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 gap-1 px-2 text-xs"
+                          onClick={async () => {
+                            const url = `${window.location.origin}/speaker-invite/${meetup.id}/${s.inviteToken}`;
+                            try {
+                              await navigator.clipboard.writeText(url);
+                              toast.success('Invite link copied');
+                            } catch {
+                              toast.error('Failed to copy');
+                            }
+                          }}
+                        >
+                          <Copy className="h-3 w-3" /> Copy link
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+
+                {/* Declined */}
+                {declinedInvites.map((s: any, i: number) => (
+                  <div key={`dec-${i}`} className="rounded-md border p-3 space-y-1.5 opacity-80">
+                    <div className="flex items-center justify-between">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{s.name || s.invitedEmail}</p>
+                        <p className="text-xs text-muted-foreground truncate">{s.invitedEmail}</p>
+                      </div>
+                      <Badge variant="outline" className="gap-1 shrink-0 text-destructive border-destructive/40">
+                        <XCircle className="h-3 w-3" /> Declined
+                      </Badge>
+                    </div>
+                    {s.respondedAt && (
+                      <p className="text-xs text-muted-foreground">
+                        Declined {fmtDateTime(s.respondedAt)}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>

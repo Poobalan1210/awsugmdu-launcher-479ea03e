@@ -357,6 +357,7 @@ export interface MeetupSpeaker {
   invitedAt?: string;
   respondedAt?: string;
   codeOfConductAgreedAt?: string;
+  codeOfConductVersion?: string;
 }
 
 export interface MeetupFeedback {

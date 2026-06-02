@@ -1,7 +1,7 @@
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, PutCommand, GetCommand, UpdateCommand, ScanCommand, QueryCommand, DeleteCommand, BatchGetCommand } = require('@aws-sdk/lib-dynamodb');
 const crypto = require('crypto');
-const { authorize, createUnauthorizedResponse } = require('./shared/auth');
+const { authorize, createUnauthorizedResponse, extractUserId, getUserRoles } = require('./shared/auth');
 const { sendEmail, renderEmail, APP_URL } = require('./shared/email');
 
 const client = new DynamoDBClient({ region: process.env.AWS_REGION });
@@ -113,7 +113,7 @@ exports.handler = async (event) => {
         return await listMeetups(event);
       } else if (method === 'GET' && id && !action) {
         // GET /meetups/{id} - Get single meetup
-        return await getMeetup(id);
+        return await getMeetup(id, event);
       } else if (method === 'GET' && id && action === 'participants') {
         // GET /meetups/{id}/participants - Get meetup participants
         return await getMeetupParticipants(id);
@@ -190,6 +190,10 @@ async function listMeetups(event) {
   const status = queryParams.status; // 'draft', 'upcoming', 'completed'
   const sprintId = queryParams.sprintId; // Filter by sprint
   const certificationGroupId = queryParams.certificationGroupId; // Filter by certification group
+
+  // Organisers receive full speaker-invitation details (tokens, invited emails,
+  // pending/declined entries). Public callers get a sanitized view.
+  const organiser = await callerIsOrganiser(event);
 
   let meetups;
 
@@ -283,11 +287,11 @@ async function listMeetups(event) {
     }
   }
 
-  return createResponse(200, { meetups });
+  return createResponse(200, { meetups: organiser ? meetups : meetups.map(sanitizeMeetupForPublic) });
 }
 
 // Get single meetup
-async function getMeetup(id) {
+async function getMeetup(id, event) {
   const result = await docClient.send(new GetCommand({
     TableName: MEETUPS_TABLE,
     Key: { id }
@@ -297,7 +301,10 @@ async function getMeetup(id) {
     return createResponse(404, { error: 'Meetup not found' });
   }
 
-  return createResponse(200, { meetup: result.Item });
+  const organiser = await callerIsOrganiser(event);
+  return createResponse(200, {
+    meetup: organiser ? result.Item : sanitizeMeetupForPublic(result.Item),
+  });
 }
 
 // Create meetup
@@ -1072,6 +1079,36 @@ function escapeForEmail(s) {
 function isActiveSpeakerEntry(speaker) {
   if (!speaker) return false;
   return !speaker.inviteStatus || speaker.inviteStatus === 'accepted';
+}
+
+// Roles allowed to see speaker invitation internals (tokens, invited emails,
+// pending/declined entries, code-of-conduct timestamps).
+const ORGANISER_ROLES = ['admin', 'organiser', 'volunteer'];
+
+// Determine whether the caller is an organiser, based on the Authorization
+// header. Returns false for anonymous/public callers. Never throws.
+async function callerIsOrganiser(event) {
+  try {
+    const authHeader = event.headers?.Authorization || event.headers?.authorization;
+    const userId = extractUserId(authHeader);
+    if (!userId) return false;
+    const roles = await getUserRoles(userId, USERS_TABLE);
+    return Array.isArray(roles) && roles.some(r => ORGANISER_ROLES.includes(r));
+  } catch (err) {
+    console.error('callerIsOrganiser check failed:', err);
+    return false;
+  }
+}
+
+// Strip sensitive speaker-invitation fields and drop not-yet-accepted invitees
+// from a meetup before returning it to a non-organiser (public) viewer.
+function sanitizeMeetupForPublic(meetup) {
+  if (!meetup || !Array.isArray(meetup.speakers)) return meetup;
+  const speakers = meetup.speakers
+    .filter(isActiveSpeakerEntry)
+    .map(({ inviteToken, invitedEmail, inviteStatus, invitedAt, respondedAt,
+            codeOfConductAgreedAt, codeOfConductVersion, ...rest }) => rest);
+  return { ...meetup, speakers };
 }
 
 // Get meetup participants

@@ -34,7 +34,7 @@ import {
   MoreHorizontal
 } from 'lucide-react';
 import { mockSprints, mockMeetups, Submission, Sprint, Session, User as UserType, predefinedTasks, mockColleges, getTaskById, communityRoles, mockUserRoles, CommunityRole, UserRoleAssignment, PointActivity, mockPointActivities, Meetup, MeetupType, mockBadges, Badge as BadgeType, BadgeAward, mockBadgeAwards, BadgeCriteriaType, criteriaTypeLabels, BadgeCriteria, mockUsers, SubmissionField } from '@/data/mockData';
-import { createMeetup, updateMeetup, publishMeetup, getMeetups, CreateMeetupData, UpdateMeetupData, deleteMeetup, endMeetup } from '@/lib/meetups';
+import { createMeetup, updateMeetup, publishMeetup, getMeetups, CreateMeetupData, UpdateMeetupData, deleteMeetup, endMeetup, inviteSpeaker, getActiveSpeakers } from '@/lib/meetups';
 import { getSpotlightSubmissions, reviewSpotlight, deleteSpotlight } from '@/lib/spotlight';
 import { SpotlightSubmission, SpotlightType } from '@/data/mockData';
 import { getSprints, deleteSprint, deleteSession } from '@/lib/sprints';
@@ -2100,6 +2100,161 @@ function ViewFeedbackDialog({
 }
 
 // =====================================================
+// Invite Speaker dialog (sends a code-of-conduct invitation by email)
+// =====================================================
+function InviteSpeakerDialog({
+  meetup,
+  open,
+  onOpenChange,
+  onSuccess,
+}: {
+  meetup: Meetup;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSuccess?: () => void;
+}) {
+  const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
+  const [topic, setTopic] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [lastInviteUrl, setLastInviteUrl] = useState<string | null>(null);
+
+  const pendingInvites = (meetup.speakers || []).filter(
+    (s: any) => s.inviteStatus === 'pending'
+  );
+  const acceptedInvites = (meetup.speakers || []).filter(
+    (s: any) => s.inviteStatus === 'accepted'
+  );
+
+  const reset = () => {
+    setEmail('');
+    setName('');
+    setTopic('');
+  };
+
+  const handleInvite = async () => {
+    if (!email.trim() || !email.includes('@')) {
+      toast.error('Please enter a valid speaker email address');
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await inviteSpeaker(meetup.id, {
+        email: email.trim(),
+        name: name.trim() || undefined,
+        topic: topic.trim() || undefined,
+      });
+      setLastInviteUrl(res.inviteUrl);
+      toast.success(
+        res.emailSent
+          ? 'Invitation email sent to the speaker'
+          : 'Invitation created. Email could not be sent — share the link manually.'
+      );
+      reset();
+      onSuccess?.();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to send invitation');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Mail className="h-5 w-5" /> Invite Speaker
+          </DialogTitle>
+          <DialogDescription>
+            Send an email invitation for &ldquo;{meetup.title}&rdquo;. The speaker must agree to the
+            Speaker Code of Conduct before they are added to the session.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label>Speaker email *</Label>
+            <Input
+              type="email"
+              placeholder="speaker@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Speaker name</Label>
+            <Input
+              placeholder="Optional — used in the email greeting"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Proposed topic</Label>
+            <Input
+              placeholder="Optional"
+              value={topic}
+              onChange={(e) => setTopic(e.target.value)}
+            />
+          </div>
+
+          <Button onClick={handleInvite} disabled={loading} className="w-full gap-2">
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+            Send invitation
+          </Button>
+
+          {lastInviteUrl && (
+            <div className="rounded-md border bg-muted/50 p-3 text-xs space-y-2">
+              <p className="font-medium">Invitation link (share manually if needed):</p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 truncate">{lastInviteUrl}</code>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(lastInviteUrl);
+                      toast.success('Link copied');
+                    } catch {
+                      toast.error('Failed to copy');
+                    }
+                  }}
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {(pendingInvites.length > 0 || acceptedInvites.length > 0) && (
+            <div className="space-y-2 border-t pt-3">
+              <Label className="text-sm font-semibold">Invitations</Label>
+              {acceptedInvites.map((s: any, i: number) => (
+                <div key={`acc-${i}`} className="flex items-center justify-between text-sm">
+                  <span>{s.name || s.invitedEmail}</span>
+                  <Badge variant="default" className="gap-1">
+                    <Check className="h-3 w-3" /> Accepted
+                  </Badge>
+                </div>
+              ))}
+              {pendingInvites.map((s: any, i: number) => (
+                <div key={`pen-${i}`} className="flex items-center justify-between text-sm">
+                  <span>{s.name || s.invitedEmail}</span>
+                  <Badge variant="secondary" className="gap-1">
+                    <Clock className="h-3 w-3" /> Pending
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// =====================================================
 // Meetup row actions (compact, organised)
 // =====================================================
 function MeetupRowActions({
@@ -2120,6 +2275,7 @@ function MeetupRowActions({
   const [attendanceOpen, setAttendanceOpen] = useState(false);
   const [feedbackSettingsOpen, setFeedbackSettingsOpen] = useState(false);
   const [feedbackListOpen, setFeedbackListOpen] = useState(false);
+  const [inviteSpeakerOpen, setInviteSpeakerOpen] = useState(false);
 
   const isDraft = meetup.status === 'draft';
   const isUpcoming = meetup.status === 'upcoming';
@@ -2209,6 +2365,11 @@ function MeetupRowActions({
             Edit details
           </DropdownMenuItem>
 
+          <DropdownMenuItem onSelect={() => setInviteSpeakerOpen(true)}>
+            <Mail className="h-4 w-4 mr-2" />
+            Invite speaker
+          </DropdownMenuItem>
+
           {isUpcoming && (
             <DropdownMenuItem onSelect={() => onPublish(meetup, false)}>
               <XCircle className="h-4 w-4 mr-2" />
@@ -2254,6 +2415,12 @@ function MeetupRowActions({
         open={editOpen}
         onOpenChange={setEditOpen}
         hideTrigger
+      />
+      <InviteSpeakerDialog
+        meetup={meetup}
+        open={inviteSpeakerOpen}
+        onOpenChange={setInviteSpeakerOpen}
+        onSuccess={onSuccess}
       />
       {showAttendance && (
         <MarkAttendanceDialog
@@ -2467,10 +2634,10 @@ function MeetupsManagementTab({ allUsers = [] }: { allUsers?: UserType[] }) {
                         <Users className="h-4 w-4" />
                         {meetup.attendees}/{meetup.maxAttendees || '∞'} attendees
                       </span>
-                      {meetup.speakers.length > 0 && (
+                      {getActiveSpeakers(meetup.speakers).length > 0 && (
                         <span className="flex items-center gap-1">
                           <User className="h-4 w-4" />
-                          {meetup.speakers.length} speakers
+                          {getActiveSpeakers(meetup.speakers).length} speakers
                         </span>
                       )}
                       {meetup.endDate && (

@@ -1,6 +1,6 @@
 terraform {
   required_version = ">= 1.0"
-  
+
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -11,7 +11,7 @@ terraform {
       version = "~> 2.0"
     }
   }
-  
+
   # Remote state management with S3 + DynamoDB locking
   # Uncomment after creating the state bucket and lock table:
   #   aws s3api create-bucket --bucket awsug-terraform-state --region us-east-1
@@ -32,7 +32,7 @@ terraform {
 
 provider "aws" {
   region = var.aws_region
-  
+
   default_tags {
     tags = {
       Project     = "AWS-UG-Madurai"
@@ -64,7 +64,7 @@ variable "project_name" {
 variable "allowed_cors_origins" {
   description = "Allowed CORS origins for API and S3"
   type        = list(string)
-  default     = [
+  default = [
     "http://localhost:5173",
     "http://localhost:8080",
     "http://localhost:3000",
@@ -88,9 +88,9 @@ data "aws_region" "current" {}
 
 # DynamoDB Table for User Profiles
 resource "aws_dynamodb_table" "users" {
-  name           = "${var.project_name}-users"
-  billing_mode   = "PAY_PER_REQUEST"
-  hash_key       = "userId"
+  name         = "${var.project_name}-users"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "userId"
 
   attribute {
     name = "userId"
@@ -103,8 +103,8 @@ resource "aws_dynamodb_table" "users" {
   }
 
   global_secondary_index {
-    name     = "email-index"
-    hash_key = "email"
+    name            = "email-index"
+    hash_key        = "email"
     projection_type = "ALL"
   }
 
@@ -125,9 +125,9 @@ resource "aws_dynamodb_table" "users" {
 
 # DynamoDB Table for Meetups
 resource "aws_dynamodb_table" "meetups" {
-  name           = "${var.project_name}-meetups"
-  billing_mode   = "PAY_PER_REQUEST"
-  hash_key       = "id"
+  name         = "${var.project_name}-meetups"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "id"
 
   attribute {
     name = "id"
@@ -155,26 +155,26 @@ resource "aws_dynamodb_table" "meetups" {
   }
 
   global_secondary_index {
-    name     = "status-index"
-    hash_key = "status"
+    name            = "status-index"
+    hash_key        = "status"
     projection_type = "ALL"
   }
 
   global_secondary_index {
-    name     = "date-index"
-    hash_key = "date"
+    name            = "date-index"
+    hash_key        = "date"
     projection_type = "ALL"
   }
 
   global_secondary_index {
-    name     = "sprintId-index"
-    hash_key = "sprintId"
+    name            = "sprintId-index"
+    hash_key        = "sprintId"
     projection_type = "ALL"
   }
 
   global_secondary_index {
-    name     = "certificationGroupId-index"
-    hash_key = "certificationGroupId"
+    name            = "certificationGroupId-index"
+    hash_key        = "certificationGroupId"
     projection_type = "ALL"
   }
 
@@ -195,9 +195,9 @@ resource "aws_dynamodb_table" "meetups" {
 
 # DynamoDB Table for Sprints
 resource "aws_dynamodb_table" "sprints" {
-  name           = "${var.project_name}-sprints"
-  billing_mode   = "PAY_PER_REQUEST"
-  hash_key       = "id"
+  name         = "${var.project_name}-sprints"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "id"
 
   attribute {
     name = "id"
@@ -215,14 +215,14 @@ resource "aws_dynamodb_table" "sprints" {
   }
 
   global_secondary_index {
-    name     = "status-index"
-    hash_key = "status"
+    name            = "status-index"
+    hash_key        = "status"
     projection_type = "ALL"
   }
 
   global_secondary_index {
-    name     = "startDate-index"
-    hash_key = "startDate"
+    name            = "startDate-index"
+    hash_key        = "startDate"
     projection_type = "ALL"
   }
 
@@ -292,8 +292,8 @@ resource "aws_s3_bucket_public_access_block" "meetup_posters" {
 
   block_public_acls       = false
   block_public_policy     = false
-  ignore_public_acls       = false
-  restrict_public_buckets  = false
+  ignore_public_acls      = false
+  restrict_public_buckets = false
 }
 
 resource "aws_s3_bucket_cors_configuration" "meetup_posters" {
@@ -313,8 +313,8 @@ resource "aws_s3_bucket_public_access_block" "profile_photos" {
 
   block_public_acls       = false
   block_public_policy     = false
-  ignore_public_acls       = false
-  restrict_public_buckets  = false
+  ignore_public_acls      = false
+  restrict_public_buckets = false
 }
 
 resource "aws_s3_bucket_cors_configuration" "profile_photos" {
@@ -497,11 +497,11 @@ data "archive_file" "users_crud" {
 resource "aws_lambda_function" "user_profile_creation" {
   filename         = data.archive_file.user_profile_creation.output_path
   function_name    = "${var.project_name}-user-profile-creation"
-  role            = aws_iam_role.lambda_execution.arn
-  handler         = "index.handler"
+  role             = aws_iam_role.lambda_execution.arn
+  handler          = "index.handler"
   source_code_hash = data.archive_file.user_profile_creation.output_base64sha256
-  runtime         = "nodejs20.x"
-  timeout         = 30
+  runtime          = "nodejs20.x"
+  timeout          = 30
 
   environment {
     variables = {
@@ -519,11 +519,11 @@ resource "aws_lambda_function" "user_profile_creation" {
 resource "aws_lambda_function" "meetup_verification" {
   filename         = data.archive_file.meetup_verification.output_path
   function_name    = "${var.project_name}-meetup-verification"
-  role            = aws_iam_role.lambda_execution.arn
-  handler         = "index.handler"
+  role             = aws_iam_role.lambda_execution.arn
+  handler          = "index.handler"
   source_code_hash = data.archive_file.meetup_verification.output_base64sha256
-  runtime         = "nodejs20.x"
-  timeout         = 30
+  runtime          = "nodejs20.x"
+  timeout          = 30
 
   tags = {
     Name = "${var.project_name}-meetup-verification"
@@ -534,11 +534,11 @@ resource "aws_lambda_function" "meetup_verification" {
 resource "aws_lambda_function" "meetups_crud" {
   filename         = data.archive_file.meetups_crud.output_path
   function_name    = "${var.project_name}-meetups-crud"
-  role            = aws_iam_role.lambda_execution.arn
-  handler         = "index.handler"
+  role             = aws_iam_role.lambda_execution.arn
+  handler          = "index.handler"
   source_code_hash = data.archive_file.meetups_crud.output_base64sha256
-  runtime         = "nodejs20.x"
-  timeout         = 30
+  runtime          = "nodejs20.x"
+  timeout          = 30
 
   environment {
     variables = {
@@ -560,19 +560,19 @@ resource "aws_lambda_function" "meetups_crud" {
 resource "aws_lambda_function" "s3_upload" {
   filename         = data.archive_file.s3_upload.output_path
   function_name    = "${var.project_name}-s3-upload"
-  role            = aws_iam_role.lambda_execution.arn
-  handler         = "index.handler"
+  role             = aws_iam_role.lambda_execution.arn
+  handler          = "index.handler"
   source_code_hash = data.archive_file.s3_upload.output_base64sha256
-  runtime         = "nodejs20.x"
-  timeout         = 30
+  runtime          = "nodejs20.x"
+  timeout          = 30
 
   environment {
     variables = {
-      MEETUP_POSTERS_BUCKET = aws_s3_bucket.meetup_posters.id
-      PROFILE_PHOTOS_BUCKET = aws_s3_bucket.profile_photos.id
+      MEETUP_POSTERS_BUCKET            = aws_s3_bucket.meetup_posters.id
+      PROFILE_PHOTOS_BUCKET            = aws_s3_bucket.profile_photos.id
       CLOUDFRONT_PROFILE_PHOTOS_DOMAIN = aws_cloudfront_distribution.profile_photos.domain_name
       CLOUDFRONT_MEETUP_POSTERS_DOMAIN = aws_cloudfront_distribution.meetup_posters.domain_name
-      BADGE_IMAGES_BUCKET  = aws_s3_bucket.badge_images.id
+      BADGE_IMAGES_BUCKET              = aws_s3_bucket.badge_images.id
     }
   }
 
@@ -585,11 +585,11 @@ resource "aws_lambda_function" "s3_upload" {
 resource "aws_lambda_function" "sprints_crud" {
   filename         = data.archive_file.sprints_crud.output_path
   function_name    = "${var.project_name}-sprints-crud"
-  role            = aws_iam_role.lambda_execution.arn
-  handler         = "index.handler"
+  role             = aws_iam_role.lambda_execution.arn
+  handler          = "index.handler"
   source_code_hash = data.archive_file.sprints_crud.output_base64sha256
-  runtime         = "nodejs20.x"
-  timeout         = 30
+  runtime          = "nodejs20.x"
+  timeout          = 30
 
   environment {
     variables = {
@@ -607,11 +607,11 @@ resource "aws_lambda_function" "sprints_crud" {
 resource "aws_lambda_function" "users_crud" {
   filename         = data.archive_file.users_crud.output_path
   function_name    = "${var.project_name}-users-crud"
-  role            = aws_iam_role.lambda_execution.arn
-  handler         = "index.handler"
+  role             = aws_iam_role.lambda_execution.arn
+  handler          = "index.handler"
   source_code_hash = data.archive_file.users_crud.output_base64sha256
-  runtime         = "nodejs20.x"
-  timeout         = 30
+  runtime          = "nodejs20.x"
+  timeout          = 30
 
   environment {
     variables = {
@@ -1231,7 +1231,7 @@ resource "aws_api_gateway_integration" "users_options_lambda" {
   http_method = aws_api_gateway_method.users_options.http_method
 
   type = "MOCK"
-  
+
   request_templates = {
     "application/json" = "{\"statusCode\": 200}"
   }
@@ -1246,7 +1246,7 @@ resource "aws_api_gateway_method_response" "users_options_200" {
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = true
     "method.response.header.Access-Control-Allow-Methods" = true
-    "method.response.header.Access-Control-Allow-Origin" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
   }
 }
 
@@ -1259,7 +1259,7 @@ resource "aws_api_gateway_integration_response" "users_options" {
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
     "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
-    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
   }
 }
 
@@ -1289,7 +1289,7 @@ resource "aws_api_gateway_integration" "users_id_options_lambda" {
   http_method = aws_api_gateway_method.users_id_options.http_method
 
   type = "MOCK"
-  
+
   request_templates = {
     "application/json" = "{\"statusCode\": 200}"
   }
@@ -1304,7 +1304,7 @@ resource "aws_api_gateway_method_response" "users_id_options_200" {
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = true
     "method.response.header.Access-Control-Allow-Methods" = true
-    "method.response.header.Access-Control-Allow-Origin" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
   }
 }
 
@@ -1317,7 +1317,7 @@ resource "aws_api_gateway_integration_response" "users_id_options" {
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
     "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
-    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
   }
 }
 
@@ -1368,7 +1368,7 @@ resource "aws_api_gateway_integration" "meetups_options_lambda" {
   http_method = aws_api_gateway_method.meetups_options.http_method
 
   type = "MOCK"
-  
+
   request_templates = {
     "application/json" = "{\"statusCode\": 200}"
   }
@@ -1383,7 +1383,7 @@ resource "aws_api_gateway_method_response" "meetups_options_200" {
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = true
     "method.response.header.Access-Control-Allow-Methods" = true
-    "method.response.header.Access-Control-Allow-Origin" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
   }
 }
 
@@ -1396,7 +1396,7 @@ resource "aws_api_gateway_integration_response" "meetups_options" {
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
     "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
-    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
   }
 }
 
@@ -1436,7 +1436,7 @@ resource "aws_api_gateway_integration" "meetups_id_options_lambda" {
   http_method = aws_api_gateway_method.meetups_id_options.http_method
 
   type = "MOCK"
-  
+
   request_templates = {
     "application/json" = "{\"statusCode\": 200}"
   }
@@ -1451,7 +1451,7 @@ resource "aws_api_gateway_method_response" "meetups_id_options_200" {
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = true
     "method.response.header.Access-Control-Allow-Methods" = true
-    "method.response.header.Access-Control-Allow-Origin" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
   }
 }
 
@@ -1464,7 +1464,7 @@ resource "aws_api_gateway_integration_response" "meetups_id_options" {
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
     "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
-    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
   }
 }
 
@@ -1484,7 +1484,7 @@ resource "aws_api_gateway_integration" "meetups_id_publish_options_lambda" {
   http_method = aws_api_gateway_method.meetups_id_publish_options.http_method
 
   type = "MOCK"
-  
+
   request_templates = {
     "application/json" = "{\"statusCode\": 200}"
   }
@@ -1499,7 +1499,7 @@ resource "aws_api_gateway_method_response" "meetups_id_publish_options_200" {
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = true
     "method.response.header.Access-Control-Allow-Methods" = true
-    "method.response.header.Access-Control-Allow-Origin" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
   }
 }
 
@@ -1512,7 +1512,7 @@ resource "aws_api_gateway_integration_response" "meetups_id_publish_options" {
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
     "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
-    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
   }
 }
 
@@ -1532,7 +1532,7 @@ resource "aws_api_gateway_integration" "meetups_id_end_options_lambda" {
   http_method = aws_api_gateway_method.meetups_id_end_options.http_method
 
   type = "MOCK"
-  
+
   request_templates = {
     "application/json" = "{\"statusCode\": 200}"
   }
@@ -1547,7 +1547,7 @@ resource "aws_api_gateway_method_response" "meetups_id_end_options_200" {
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = true
     "method.response.header.Access-Control-Allow-Methods" = true
-    "method.response.header.Access-Control-Allow-Origin" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
   }
 }
 
@@ -1560,7 +1560,7 @@ resource "aws_api_gateway_integration_response" "meetups_id_end_options" {
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
     "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
-    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
   }
 }
 
@@ -1606,7 +1606,7 @@ resource "aws_api_gateway_method_response" "meetups_id_photos_options_200" {
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = true
     "method.response.header.Access-Control-Allow-Methods" = true
-    "method.response.header.Access-Control-Allow-Origin" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
   }
 }
 
@@ -1621,7 +1621,7 @@ resource "aws_api_gateway_integration_response" "meetups_id_photos_options" {
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
     "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
-    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
   }
 }
 
@@ -1657,7 +1657,7 @@ resource "aws_api_gateway_method_response" "meetups_id_report_options_200" {
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = true
     "method.response.header.Access-Control-Allow-Methods" = true
-    "method.response.header.Access-Control-Allow-Origin" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
   }
 }
 
@@ -1668,7 +1668,7 @@ resource "aws_api_gateway_method_response" "meetups_id_report_post_200" {
   status_code = "200"
 
   response_parameters = {
-    "method.response.header.Access-Control-Allow-Origin" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
     "method.response.header.Access-Control-Allow-Headers" = true
     "method.response.header.Access-Control-Allow-Methods" = true
   }
@@ -1683,7 +1683,7 @@ resource "aws_api_gateway_integration_response" "meetups_id_report_post" {
   depends_on = [aws_api_gateway_integration.meetups_id_report_post_lambda]
 
   response_parameters = {
-    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
     "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
   }
@@ -1700,7 +1700,7 @@ resource "aws_api_gateway_integration_response" "meetups_id_report_options" {
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
     "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
-    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
   }
 }
 
@@ -1720,7 +1720,7 @@ resource "aws_api_gateway_integration" "meetups_id_register_options_lambda" {
   http_method = aws_api_gateway_method.meetups_id_register_options.http_method
 
   type = "MOCK"
-  
+
   request_templates = {
     "application/json" = "{\"statusCode\": 200}"
   }
@@ -1735,7 +1735,7 @@ resource "aws_api_gateway_method_response" "meetups_id_register_options_200" {
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = true
     "method.response.header.Access-Control-Allow-Methods" = true
-    "method.response.header.Access-Control-Allow-Origin" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
   }
 }
 
@@ -1748,7 +1748,7 @@ resource "aws_api_gateway_integration_response" "meetups_id_register_options" {
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
     "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
-    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
   }
 }
 
@@ -1769,7 +1769,7 @@ resource "aws_api_gateway_integration" "meetups_id_participants_options_lambda" 
   http_method = aws_api_gateway_method.meetups_id_participants_options.http_method
 
   type = "MOCK"
-  
+
   request_templates = {
     "application/json" = "{\"statusCode\": 200}"
   }
@@ -1784,7 +1784,7 @@ resource "aws_api_gateway_method_response" "meetups_id_participants_options_200"
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = true
     "method.response.header.Access-Control-Allow-Methods" = true
-    "method.response.header.Access-Control-Allow-Origin" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
   }
 }
 
@@ -1797,7 +1797,7 @@ resource "aws_api_gateway_integration_response" "meetups_id_participants_options
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
     "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
-    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
   }
 }
 
@@ -1818,7 +1818,7 @@ resource "aws_api_gateway_integration" "meetups_id_mark_attendance_options_lambd
   http_method = aws_api_gateway_method.meetups_id_mark_attendance_options.http_method
 
   type = "MOCK"
-  
+
   request_templates = {
     "application/json" = "{\"statusCode\": 200}"
   }
@@ -1833,7 +1833,7 @@ resource "aws_api_gateway_method_response" "meetups_id_mark_attendance_options_2
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = true
     "method.response.header.Access-Control-Allow-Methods" = true
-    "method.response.header.Access-Control-Allow-Origin" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
   }
 }
 
@@ -1846,7 +1846,7 @@ resource "aws_api_gateway_integration_response" "meetups_id_mark_attendance_opti
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
     "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
-    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
   }
 }
 
@@ -1866,7 +1866,7 @@ resource "aws_api_gateway_integration" "upload_options_lambda" {
   http_method = aws_api_gateway_method.upload_options.http_method
 
   type = "MOCK"
-  
+
   request_templates = {
     "application/json" = "{\"statusCode\": 200}"
   }
@@ -1881,7 +1881,7 @@ resource "aws_api_gateway_method_response" "upload_options_200" {
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = true
     "method.response.header.Access-Control-Allow-Methods" = true
-    "method.response.header.Access-Control-Allow-Origin" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
   }
 }
 
@@ -1894,7 +1894,7 @@ resource "aws_api_gateway_integration_response" "upload_options" {
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
     "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
-    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
   }
 }
 
@@ -2095,7 +2095,7 @@ resource "aws_api_gateway_integration" "sprints_id_submissions_submissionid_revi
   http_method = aws_api_gateway_method.sprints_id_submissions_submissionid_review_options.http_method
 
   type = "MOCK"
-  
+
   request_templates = {
     "application/json" = "{\"statusCode\": 200}"
   }
@@ -2110,7 +2110,7 @@ resource "aws_api_gateway_method_response" "sprints_id_submissions_submissionid_
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = true
     "method.response.header.Access-Control-Allow-Methods" = true
-    "method.response.header.Access-Control-Allow-Origin" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
   }
 
   depends_on = [aws_api_gateway_method.sprints_id_submissions_submissionid_review_options]
@@ -2125,7 +2125,7 @@ resource "aws_api_gateway_integration_response" "sprints_id_submissions_submissi
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
     "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
-    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
   }
 
   depends_on = [aws_api_gateway_integration.sprints_id_submissions_submissionid_review_options_lambda]
@@ -2237,6 +2237,12 @@ resource "aws_api_gateway_deployment" "api" {
       aws_api_gateway_integration.meetups_id_report_options_lambda.id,
       aws_api_gateway_integration.meetups_id_mark_attendance_lambda.id,
       aws_api_gateway_integration.meetups_id_mark_attendance_options_lambda.id,
+      # Speaker invitations + code of conduct
+      aws_api_gateway_integration.meetups_id_invite_speaker_post_lambda.id,
+      aws_api_gateway_integration.meetups_id_invite_speaker_options_lambda.id,
+      aws_api_gateway_integration.meetups_id_speaker_invite_token_get_lambda.id,
+      aws_api_gateway_integration.meetups_id_speaker_invite_token_post_lambda.id,
+      aws_api_gateway_integration.meetups_id_speaker_invite_token_options_lambda.id,
       # Meetup feedback (post-event self-service attendance)
       aws_api_gateway_integration.meetups_id_feedback_post_lambda.id,
       aws_api_gateway_integration.meetups_id_feedback_get_lambda.id,
@@ -2587,10 +2593,10 @@ resource "aws_cloudfront_origin_access_identity" "profile_photos" {
 }
 
 resource "aws_cloudfront_distribution" "profile_photos" {
-  enabled             = true
-  is_ipv6_enabled     = true
-  comment             = "${var.project_name} Profile Photos CDN"
-  price_class         = "PriceClass_100"
+  enabled         = true
+  is_ipv6_enabled = true
+  comment         = "${var.project_name} Profile Photos CDN"
+  price_class     = "PriceClass_100"
 
   origin {
     domain_name = aws_s3_bucket.profile_photos.bucket_regional_domain_name
@@ -2645,13 +2651,13 @@ resource "aws_s3_bucket_policy" "profile_photos_cloudfront" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid       = "CloudFrontReadGetObject"
-        Effect    = "Allow"
+        Sid    = "CloudFrontReadGetObject"
+        Effect = "Allow"
         Principal = {
           AWS = aws_cloudfront_origin_access_identity.profile_photos.iam_arn
         }
-        Action    = "s3:GetObject"
-        Resource  = "${aws_s3_bucket.profile_photos.arn}/*"
+        Action   = "s3:GetObject"
+        Resource = "${aws_s3_bucket.profile_photos.arn}/*"
       },
       {
         Sid       = "PublicReadGetObject"
@@ -2670,10 +2676,10 @@ resource "aws_cloudfront_origin_access_identity" "meetup_posters" {
 }
 
 resource "aws_cloudfront_distribution" "meetup_posters" {
-  enabled             = true
-  is_ipv6_enabled     = true
-  comment             = "${var.project_name} Meetup Posters CDN"
-  price_class         = "PriceClass_100"
+  enabled         = true
+  is_ipv6_enabled = true
+  comment         = "${var.project_name} Meetup Posters CDN"
+  price_class     = "PriceClass_100"
 
   origin {
     domain_name = aws_s3_bucket.meetup_posters.bucket_regional_domain_name
@@ -2728,13 +2734,13 @@ resource "aws_s3_bucket_policy" "meetup_posters_cloudfront" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid       = "CloudFrontReadGetObject"
-        Effect    = "Allow"
+        Sid    = "CloudFrontReadGetObject"
+        Effect = "Allow"
         Principal = {
           AWS = aws_cloudfront_origin_access_identity.meetup_posters.iam_arn
         }
-        Action    = "s3:GetObject"
-        Resource  = "${aws_s3_bucket.meetup_posters.arn}/*"
+        Action   = "s3:GetObject"
+        Resource = "${aws_s3_bucket.meetup_posters.arn}/*"
       },
       {
         Sid       = "PublicReadGetObject"

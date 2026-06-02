@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Eye, EyeOff, Mail, Lock, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,6 +16,8 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const redirectTo = searchParams.get('redirect');
   const { signIn } = useAuth();
   const { toast } = useToast();
 
@@ -30,7 +32,12 @@ export default function Login() {
         title: "Welcome back!",
         description: "You've been successfully signed in.",
       });
-      navigate('/');
+      // Only allow same-origin relative redirects to avoid open-redirect issues.
+      if (redirectTo && redirectTo.startsWith('/')) {
+        navigate(redirectTo);
+      } else {
+        navigate('/');
+      }
     } catch (err: any) {
       const errorMessage = err.message || 'Failed to sign in. Please check your credentials.';
       setError(errorMessage);
@@ -125,7 +132,10 @@ export default function Login() {
 
           <div className="mt-6 text-center text-sm">
             <span className="text-muted-foreground">Don't have an account? </span>
-            <Link to="/signup" className="text-primary hover:underline font-medium">
+            <Link
+              to={redirectTo ? `/signup?redirect=${encodeURIComponent(redirectTo)}` : '/signup'}
+              className="text-primary hover:underline font-medium"
+            >
               Sign up
             </Link>
           </div>

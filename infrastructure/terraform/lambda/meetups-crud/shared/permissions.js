@@ -102,6 +102,7 @@ const RESOURCE_PERMISSIONS = {
   'PUT /meetups/{id}': { resource: 'meetups', action: 'update' },
   'DELETE /meetups/{id}': { resource: 'meetups', action: 'delete' },
   'POST /meetups/{id}/mark-attendance': { resource: 'meetups', action: 'update' },
+  'POST /meetups/{id}/invite-speaker': { resource: 'meetups', action: 'update' },
   
   // Users endpoints
   'GET /users': { resource: 'users', action: 'read' },

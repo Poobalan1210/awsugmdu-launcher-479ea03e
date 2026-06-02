@@ -350,6 +350,13 @@ export interface MeetupSpeaker {
   bio?: string;
   linkedIn?: string;
   sessionDetails?: string;
+  // Speaker invitation + code-of-conduct flow
+  inviteStatus?: 'pending' | 'accepted' | 'declined';
+  inviteToken?: string;
+  invitedEmail?: string;
+  invitedAt?: string;
+  respondedAt?: string;
+  codeOfConductAgreedAt?: string;
 }
 
 export interface MeetupFeedback {

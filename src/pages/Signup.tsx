@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Eye, EyeOff, Mail, Lock, User, Building2, GraduationCap, 
@@ -67,6 +67,9 @@ export default function Signup() {
   const [otpVerified, setOtpVerified] = useState(false);
 
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const redirectTo = searchParams.get('redirect');
+  const prefillEmail = searchParams.get('email') || '';
   const { toast } = useToast();
   const { signUp, confirmSignUp, resendConfirmationCode, signIn, signOut, refreshUser } = useAuth();
   const [userId, setUserId] = useState<string | null>(null);
@@ -93,7 +96,7 @@ export default function Signup() {
 
   const [formData, setFormData] = useState<OnboardingData>({
     name: '',
-    email: '',
+    email: prefillEmail,
     password: '',
     profilePhoto: '',
     userType: '',
@@ -317,8 +320,13 @@ export default function Signup() {
         description: "Your account has been created successfully.",
       });
 
-      // Navigate to home
-      navigate('/');
+      // Navigate to home (or back to the page that sent the user here, e.g. a
+      // speaker invitation acceptance page). Only allow same-origin paths.
+      if (redirectTo && redirectTo.startsWith('/')) {
+        navigate(redirectTo);
+      } else {
+        navigate('/');
+      }
     } catch (error: any) {
       console.error('Signup error:', error);
       const errorMessage = error.message || "Failed to create your account. Please try again.";

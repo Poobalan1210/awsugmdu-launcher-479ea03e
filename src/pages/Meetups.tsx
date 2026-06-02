@@ -24,7 +24,7 @@ import { EventPhotoGallery } from '@/components/meetups/EventPhotoGallery';
 import { MeetupFeedbackForm } from '@/components/meetups/MeetupFeedbackForm';
 import { Meetup } from '@/data/mockData';
 import { format, parseISO, isPast } from 'date-fns';
-import { getMeetups, registerForMeetup, getMeetupParticipants, getMeetup } from '@/lib/meetups';
+import { getMeetups, registerForMeetup, getMeetupParticipants, getMeetup, getActiveSpeakers } from '@/lib/meetups';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
@@ -133,21 +133,24 @@ function MeetupCard({ meetup, onSelect }: { meetup: Meetup; onSelect: () => void
             </div>
           </div>
 
-          {meetup.speakers.length > 0 && (
+          {(() => {
+            const activeSpeakers = getActiveSpeakers(meetup.speakers);
+            return activeSpeakers.length > 0 && (
             <div className="flex -space-x-2 mb-4">
-              {meetup.speakers.slice(0, 3).map((speaker, index) => (
+              {activeSpeakers.slice(0, 3).map((speaker, index) => (
                 <Avatar key={speaker.id || `speaker-${index}`} className="h-8 w-8 border-2 border-background">
                   <AvatarImage src={speaker.photo} alt={speaker.name} />
                   <AvatarFallback>{speaker.name.charAt(0)}</AvatarFallback>
                 </Avatar>
               ))}
-              {meetup.speakers.length > 3 && (
+              {activeSpeakers.length > 3 && (
                 <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center text-xs border-2 border-background">
-                  +{meetup.speakers.length - 3}
+                  +{activeSpeakers.length - 3}
                 </div>
               )}
             </div>
-          )}
+            );
+          })()}
 
           <Button className="w-full" variant="outline">
             View Details
@@ -219,7 +222,7 @@ function MeetupDetail({ meetup: initialMeetup, onBack }: { meetup: Meetup; onBac
   // Combine all people and filter by search query
   const allPeople = useMemo(() => {
     const roledPeople = [
-      ...(meetup.speakers?.map(s => ({ ...s, role: 'Speaker' })) || []),
+      ...(getActiveSpeakers(meetup.speakers).map(s => ({ ...s, role: 'Speaker' })) || []),
       ...(meetup.hosts?.map((h, i) => ({ ...h, id: `host-${i}`, role: 'Organizer' })) || []),
       ...(meetup.volunteers?.map((v, i) => ({ ...v, id: `volunteer-${i}`, role: 'Volunteer' })) || []),
     ];
@@ -246,7 +249,7 @@ function MeetupDetail({ meetup: initialMeetup, onBack }: { meetup: Meetup; onBac
 
   // Check if user is organizer, speaker, or volunteer (auto-registered)
   const isOrganizer = user && meetup.hosts?.some(h => h.userId === user.id);
-  const isSpeaker = user && meetup.speakers?.some(s => s.userId === user.id);
+  const isSpeaker = user && getActiveSpeakers(meetup.speakers).some(s => s.userId === user.id);
   const isVolunteer = user && meetup.volunteers?.some(v => v.userId === user.id);
   const isAutoRegistered = isOrganizer || isSpeaker || isVolunteer;
 

@@ -23,6 +23,8 @@ import Leaderboard from "./pages/Leaderboard";
 import Admin from "./pages/Admin";
 import Dashboard from "./pages/Dashboard";
 import AWSEvents from "./pages/AWSEvents";
+import SpeakerCodeOfConduct from "./pages/SpeakerCodeOfConduct";
+import SpeakerInvite from "./pages/SpeakerInvite";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -56,6 +58,11 @@ const App = () => (
             <Route path="/badges/:badgeId/:userSlug" element={<BadgePublic />} />
             {/* OB v2 verification page — public */}
             <Route path="/ob2/verify" element={<BadgeVerify />} />
+
+            {/* Speaker Code of Conduct — public so it can be linked from the footer and emails */}
+            <Route path="/speaker-code-of-conduct" element={<SpeakerCodeOfConduct />} />
+            {/* Speaker invitation acceptance — public landing; accepting requires sign-in */}
+            <Route path="/speaker-invite/:meetupId/:token" element={<SpeakerInvite />} />
             
             {/* Protected Routes */}
             <Route path="/profile" element={

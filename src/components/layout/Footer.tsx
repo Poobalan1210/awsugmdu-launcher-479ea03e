@@ -77,9 +77,9 @@ export function Footer() {
               </Link>
             </li>
             <li>
-              <a href="#" className="text-sm text-muted-foreground hover:text-primary transition-colors">
-                Code of Conduct
-              </a>
+              <Link to="/speaker-code-of-conduct" className="text-sm text-muted-foreground hover:text-primary transition-colors">
+                Speaker Code of Conduct
+              </Link>
             </li>
           </ul>
         </div>

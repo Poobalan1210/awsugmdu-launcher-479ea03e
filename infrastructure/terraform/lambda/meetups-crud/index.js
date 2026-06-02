@@ -1,10 +1,17 @@
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, PutCommand, GetCommand, UpdateCommand, ScanCommand, QueryCommand, DeleteCommand, BatchGetCommand } = require('@aws-sdk/lib-dynamodb');
+const crypto = require('crypto');
 const { authorize, createUnauthorizedResponse } = require('./shared/auth');
 const { sendEmail, renderEmail, APP_URL } = require('./shared/email');
 
 const client = new DynamoDBClient({ region: process.env.AWS_REGION });
-let docClient = DynamoDBDocumentClient.from(client);
+let docClient = DynamoDBDocumentClient.from(client, {
+  marshallOptions: {
+    // Strip undefined values so optional fields (e.g. speaker.userId, company)
+    // don't break PutCommand/UpdateCommand marshalling.
+    removeUndefinedValues: true,
+  },
+});
 
 const MEETUPS_TABLE = process.env.MEETUPS_TABLE_NAME || 'awsug-meetups';
 const USERS_TABLE = process.env.USERS_TABLE_NAME || 'awsug-users';
@@ -125,6 +132,15 @@ exports.handler = async (event) => {
       } else if (method === 'POST' && id && action === 'register') {
         // POST /meetups/{id}/register - Register user for meetup
         return await registerForMeetup(id, event);
+      } else if (method === 'POST' && id && action === 'invite-speaker') {
+        // POST /meetups/{id}/invite-speaker - Invite a speaker (admin only)
+        return await inviteSpeaker(id, event);
+      } else if (method === 'GET' && id && action === 'speaker-invite' && routeParts[3]) {
+        // GET /meetups/{id}/speaker-invite/{token} - Public: look up an invite
+        return await getSpeakerInvite(id, routeParts[3]);
+      } else if (method === 'POST' && id && action === 'speaker-invite' && routeParts[3]) {
+        // POST /meetups/{id}/speaker-invite/{token} - Accept or decline (body.action)
+        return await respondToSpeakerInvite(id, routeParts[3], event);
       } else if (method === 'POST' && id && action === 'mark-attendance') {
         // POST /meetups/{id}/mark-attendance - Mark attendance for users
         return await markAttendance(id, event);
@@ -362,10 +378,10 @@ async function createMeetup(event) {
   // Auto-register organizers, speakers, and volunteers
   const autoRegisteredUsers = new Set();
 
-  // Add speakers
+  // Add speakers (skip pending/declined invitations — they register on accept)
   if (speakers && Array.isArray(speakers)) {
     speakers.forEach(speaker => {
-      if (speaker.userId) {
+      if (speaker.userId && isActiveSpeakerEntry(speaker)) {
         autoRegisteredUsers.add(speaker.userId);
       }
     });
@@ -512,17 +528,17 @@ async function updateMeetup(id, event) {
   if (body.speakers || body.hosts || body.volunteers) {
     const autoRegisteredUsers = new Set(existing.Item.registeredUsers || []);
 
-    // Add speakers
+    // Add speakers (skip pending/declined invitations — they register on accept)
     if (body.speakers && Array.isArray(body.speakers)) {
       body.speakers.forEach(speaker => {
-        if (speaker.userId) {
+        if (speaker.userId && isActiveSpeakerEntry(speaker)) {
           autoRegisteredUsers.add(speaker.userId);
         }
       });
     } else if (existing.Item.speakers) {
-      // Keep existing speakers registered
+      // Keep existing (accepted/direct) speakers registered
       existing.Item.speakers.forEach(speaker => {
-        if (speaker.userId) {
+        if (speaker.userId && isActiveSpeakerEntry(speaker)) {
           autoRegisteredUsers.add(speaker.userId);
         }
       });
@@ -742,6 +758,320 @@ async function registerForMeetup(id, event) {
     message: 'Successfully registered for meetup',
     alreadyRegistered: false
   });
+}
+
+// ============== Speaker invitations + code of conduct ==============
+
+const APP_BASE_URL = (process.env.APP_URL || 'https://www.awsugmdu.in').replace(/\/$/, '');
+
+// Invite a speaker to a meetup. Records a pending speaker entry with an invite
+// token and emails the invitee a link to review the code of conduct and accept.
+// Does NOT add them to the active speaker list until they accept.
+// Authorization is enforced by the route gate (meetups:update) in shared/auth.js.
+async function inviteSpeaker(id, event) {
+  const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
+  const { email, name, topic, sessionDetails, userId } = body || {};
+
+  if (!email || typeof email !== 'string' || !email.includes('@')) {
+    return createResponse(400, { error: 'A valid speaker email is required' });
+  }
+  const normalizedEmail = email.trim().toLowerCase();
+
+  const existing = await docClient.send(new GetCommand({
+    TableName: MEETUPS_TABLE,
+    Key: { id }
+  }));
+  if (!existing.Item) {
+    return createResponse(404, { error: 'Meetup not found' });
+  }
+  const meetup = existing.Item;
+  const speakers = Array.isArray(meetup.speakers) ? [...meetup.speakers] : [];
+
+  // If this email is already an accepted speaker, don't re-invite.
+  const already = speakers.find(s =>
+    (s.invitedEmail && s.invitedEmail.toLowerCase() === normalizedEmail) ||
+    (s.email && s.email.toLowerCase() === normalizedEmail)
+  );
+  if (already && already.inviteStatus === 'accepted') {
+    return createResponse(200, {
+      meetup,
+      message: 'This speaker has already accepted an invitation for this meetup',
+      inviteUrl: `${APP_BASE_URL}/speaker-invite/${id}/${already.inviteToken || ''}`,
+      emailSent: false,
+    });
+  }
+
+  const token = crypto.randomBytes(24).toString('hex');
+  const now = new Date().toISOString();
+
+  const speakerEntry = {
+    id: already ? already.id : `speaker-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    userId: userId || (already ? already.userId : undefined),
+    name: name || (already ? already.name : normalizedEmail.split('@')[0]),
+    photo: already ? (already.photo || '') : '',
+    designation: already ? (already.designation || '') : '',
+    topic: topic || (already ? already.topic : '') || '',
+    sessionDetails: sessionDetails || (already ? already.sessionDetails : '') || '',
+    invitedEmail: normalizedEmail,
+    inviteToken: token,
+    inviteStatus: 'pending',
+    invitedAt: now,
+  };
+
+  let updatedSpeakers;
+  if (already) {
+    updatedSpeakers = speakers.map(s => (s.id === already.id ? speakerEntry : s));
+  } else {
+    updatedSpeakers = [...speakers, speakerEntry];
+  }
+
+  await docClient.send(new UpdateCommand({
+    TableName: MEETUPS_TABLE,
+    Key: { id },
+    UpdateExpression: 'SET speakers = :speakers, updatedAt = :updatedAt',
+    ExpressionAttributeValues: {
+      ':speakers': updatedSpeakers,
+      ':updatedAt': now,
+    },
+  }));
+
+  const inviteUrl = `${APP_BASE_URL}/speaker-invite/${id}/${token}`;
+  const eventDateStr = meetup.date
+    ? `${meetup.date}${meetup.time ? ' at ' + meetup.time : ''}`
+    : '';
+
+  const bodyHtml = `
+    <p>Hi ${escapeForEmail(speakerEntry.name)},</p>
+    <p>You have been invited to speak at <strong>${escapeForEmail(meetup.title)}</strong>${eventDateStr ? `, scheduled for <strong>${escapeForEmail(eventDateStr)}</strong>` : ''}.</p>
+    ${topic ? `<p><strong>Proposed topic:</strong> ${escapeForEmail(topic)}</p>` : ''}
+    <p>Before confirming, please review and agree to our <strong>Speaker Code of Conduct</strong>. Click the button below to view the invitation, read the code of conduct, and accept.</p>
+    <p>If you don't yet have an AWS User Group Madurai account, you'll be asked to create one first &mdash; it only takes a minute, and you'll return to this invitation right after.</p>
+  `;
+
+  const html = renderEmail({
+    heading: 'You\u2019re invited to speak \uD83C\uDF99\uFE0F',
+    bodyHtml,
+    cta: { label: 'Review & accept invitation', url: inviteUrl },
+    footerNote: 'You received this because an AWS User Group Madurai organiser invited you to speak.',
+  });
+
+  const sendResult = await sendEmail({
+    to: normalizedEmail,
+    subject: `Speaker invitation: ${meetup.title}`,
+    html,
+  });
+
+  return createResponse(200, {
+    meetup: { ...meetup, speakers: updatedSpeakers },
+    message: 'Speaker invitation sent',
+    inviteUrl,
+    emailSent: !!(sendResult && sendResult.ok),
+  });
+}
+
+// Public: look up a speaker invitation by token (no auth required so an
+// unregistered speaker can see the details before signing up).
+async function getSpeakerInvite(id, token) {
+  if (!token) {
+    return createResponse(400, { error: 'Missing invite token' });
+  }
+  const result = await docClient.send(new GetCommand({
+    TableName: MEETUPS_TABLE,
+    Key: { id }
+  }));
+  if (!result.Item) {
+    return createResponse(404, { error: 'Meetup not found' });
+  }
+  const meetup = result.Item;
+  const speaker = (meetup.speakers || []).find(s => s.inviteToken === token);
+  if (!speaker) {
+    return createResponse(404, { error: 'Invitation not found or no longer valid' });
+  }
+
+  return createResponse(200, {
+    invite: {
+      meetupId: id,
+      meetupTitle: meetup.title,
+      meetupDate: meetup.date || '',
+      meetupTime: meetup.time || '',
+      speakerName: speaker.name || '',
+      invitedEmail: speaker.invitedEmail || speaker.email || '',
+      topic: speaker.topic || '',
+      inviteStatus: speaker.inviteStatus || 'pending',
+    },
+  });
+}
+
+// Authenticated/public: speaker responds to an invitation. The token comes from
+// the URL path; the body's `action` selects accept vs decline.
+async function respondToSpeakerInvite(id, token, event) {
+  const body = typeof event.body === 'string' ? JSON.parse(event.body) : (event.body || {});
+  const action = (body.action || '').toLowerCase();
+  if (action === 'decline') {
+    return declineSpeakerInvite(id, token, event);
+  }
+  // Default to accept
+  return acceptSpeakerInvite(id, token, event);
+}
+
+// Authenticated: speaker accepts the invitation after agreeing to the CoC.
+// Adds them to the speaker list (accepted) and registers them for the meetup,
+// bypassing the Meetup.com membership gate (the organiser invite is the trust
+// signal here).
+async function acceptSpeakerInvite(id, token, event) {
+  const body = typeof event.body === 'string' ? JSON.parse(event.body) : (event.body || {});
+  const { userId, agreedToCodeOfConduct, codeOfConductVersion } = body;
+
+  if (!token) return createResponse(400, { error: 'Missing invite token' });
+  if (!userId) return createResponse(400, { error: 'Missing userId' });
+  if (!agreedToCodeOfConduct) {
+    return createResponse(400, { error: 'You must agree to the Speaker Code of Conduct to accept' });
+  }
+
+  // The authenticated caller must be the user accepting on their own behalf.
+  const callerId = event.userContext && event.userContext.userId;
+  if (callerId && callerId !== userId) {
+    return createResponse(403, { error: 'You can only accept an invitation for your own account' });
+  }
+
+  const result = await docClient.send(new GetCommand({
+    TableName: MEETUPS_TABLE,
+    Key: { id }
+  }));
+  if (!result.Item) {
+    return createResponse(404, { error: 'Meetup not found' });
+  }
+  const meetup = result.Item;
+  const speakers = Array.isArray(meetup.speakers) ? [...meetup.speakers] : [];
+  const idx = speakers.findIndex(s => s.inviteToken === token);
+  if (idx === -1) {
+    return createResponse(404, { error: 'Invitation not found or no longer valid' });
+  }
+
+  const speaker = speakers[idx];
+  if (speaker.inviteStatus === 'declined') {
+    return createResponse(400, { error: 'This invitation was declined and can no longer be accepted' });
+  }
+
+  // Fetch the accepting user's profile to validate the email matches and to
+  // enrich the speaker entry with their details.
+  let userProfile = null;
+  try {
+    const userResult = await docClient.send(new GetCommand({
+      TableName: USERS_TABLE,
+      Key: { userId },
+    }));
+    userProfile = userResult.Item || null;
+  } catch (err) {
+    console.error('Failed to load accepting user profile:', err);
+  }
+
+  if (!userProfile) {
+    return createResponse(404, { error: 'Your user profile was not found. Please complete your sign up first.' });
+  }
+
+  const invitedEmail = (speaker.invitedEmail || speaker.email || '').toLowerCase();
+  const profileEmail = (userProfile.email || '').toLowerCase();
+  if (invitedEmail && profileEmail && invitedEmail !== profileEmail) {
+    return createResponse(403, {
+      error: `This invitation was sent to ${speaker.invitedEmail}. Please sign in with that email address to accept.`,
+    });
+  }
+
+  const now = new Date().toISOString();
+  speakers[idx] = {
+    ...speaker,
+    userId,
+    name: userProfile.name || speaker.name,
+    photo: userProfile.avatar || speaker.photo || '',
+    designation: userProfile.designation || speaker.designation || '',
+    company: userProfile.companyName || userProfile.company || speaker.company,
+    linkedIn: userProfile.linkedIn || speaker.linkedIn,
+    inviteStatus: 'accepted',
+    respondedAt: now,
+    codeOfConductAgreedAt: now,
+    codeOfConductVersion: codeOfConductVersion || null,
+  };
+
+  // Register the speaker for the meetup (bypasses Meetup.com verification).
+  const registeredUsers = new Set(meetup.registeredUsers || []);
+  registeredUsers.add(userId);
+  const updatedRegisteredUsers = Array.from(registeredUsers);
+
+  await docClient.send(new UpdateCommand({
+    TableName: MEETUPS_TABLE,
+    Key: { id },
+    UpdateExpression: 'SET speakers = :speakers, registeredUsers = :registeredUsers, attendees = :attendees, updatedAt = :updatedAt',
+    ExpressionAttributeValues: {
+      ':speakers': speakers,
+      ':registeredUsers': updatedRegisteredUsers,
+      ':attendees': updatedRegisteredUsers.length,
+      ':updatedAt': now,
+    },
+  }));
+
+  const updated = await docClient.send(new GetCommand({
+    TableName: MEETUPS_TABLE,
+    Key: { id }
+  }));
+
+  return createResponse(200, {
+    meetup: updated.Item,
+    message: 'Invitation accepted. You are confirmed as a speaker.',
+  });
+}
+
+// Public: speaker declines the invitation.
+async function declineSpeakerInvite(id, token, event) {
+  if (!token) return createResponse(400, { error: 'Missing invite token' });
+
+  const result = await docClient.send(new GetCommand({
+    TableName: MEETUPS_TABLE,
+    Key: { id }
+  }));
+  if (!result.Item) {
+    return createResponse(404, { error: 'Meetup not found' });
+  }
+  const meetup = result.Item;
+  const speakers = Array.isArray(meetup.speakers) ? [...meetup.speakers] : [];
+  const idx = speakers.findIndex(s => s.inviteToken === token);
+  if (idx === -1) {
+    return createResponse(404, { error: 'Invitation not found or no longer valid' });
+  }
+  if (speakers[idx].inviteStatus === 'accepted') {
+    return createResponse(400, { error: 'This invitation was already accepted and cannot be declined here' });
+  }
+
+  const now = new Date().toISOString();
+  speakers[idx] = { ...speakers[idx], inviteStatus: 'declined', respondedAt: now };
+
+  await docClient.send(new UpdateCommand({
+    TableName: MEETUPS_TABLE,
+    Key: { id },
+    UpdateExpression: 'SET speakers = :speakers, updatedAt = :updatedAt',
+    ExpressionAttributeValues: {
+      ':speakers': speakers,
+      ':updatedAt': now,
+    },
+  }));
+
+  return createResponse(200, { message: 'Invitation declined' });
+}
+
+// Minimal HTML escaper for values interpolated into email bodies.
+function escapeForEmail(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+// A speaker entry is "active" (registered + shown publicly) when it was added
+// directly by an organiser (no invite flow, so no inviteStatus) or the invitee
+// has accepted. Pending/declined invitations are excluded.
+function isActiveSpeakerEntry(speaker) {
+  if (!speaker) return false;
+  return !speaker.inviteStatus || speaker.inviteStatus === 'accepted';
 }
 
 // Get meetup participants

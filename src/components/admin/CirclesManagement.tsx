@@ -8,14 +8,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Plus, Edit, Trash2, Users, Crown, Award, Clock } from 'lucide-react';
+import { Plus, Edit, Trash2, Users, Crown, Award, Clock, Bot } from 'lucide-react';
 import { toast } from 'sonner';
+import { Switch } from '@/components/ui/switch';
 import { 
   listCircles, 
   createCircle, 
   updateCircle, 
   deleteCircle,
-  Circle 
+  Circle,
+  AgentConfig 
 } from '@/lib/circles';
 import { User as UserType } from '@/data/mockData';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
@@ -57,12 +59,12 @@ function CreateGroupDialog({ onSuccess, allUsers }: { onSuccess: () => void; all
         color: formData.color
       });
       
-      toast.success('Circle group created successfully!');
+      toast.success('Circle created successfully!');
       setOpen(false);
       onSuccess();
       setFormData({ name: '', level: 'Associate', description: '', color: 'bg-blue-500', ownerIds: [] });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to create group');
+      toast.error(error instanceof Error ? error.message : 'Failed to create circle');
     } finally {
       setLoading(false);
     }
@@ -80,18 +82,18 @@ function CreateGroupDialog({ onSuccess, allUsers }: { onSuccess: () => void; all
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button className="gap-2"><Plus className="h-4 w-4" />Create Group</Button>
+        <Button className="gap-2"><Plus className="h-4 w-4" />Create Circle</Button>
       </DialogTrigger>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Create Circle Group</DialogTitle>
-          <DialogDescription>Create a new study group for AWS certification preparation</DialogDescription>
+          <DialogTitle>Create Circle</DialogTitle>
+          <DialogDescription>Create a new circle for the community to join and collaborate in</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label>Group Name *</Label>
+            <Label>Circle Name *</Label>
             <Input 
-              placeholder="e.g., Cloud Practitioner"
+              placeholder="e.g., AWS News Digest"
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               required
@@ -106,6 +108,7 @@ function CreateGroupDialog({ onSuccess, allUsers }: { onSuccess: () => void; all
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="General">General</SelectItem>
                   <SelectItem value="Foundational">Foundational</SelectItem>
                   <SelectItem value="Associate">Associate</SelectItem>
                   <SelectItem value="Professional">Professional</SelectItem>
@@ -136,13 +139,13 @@ function CreateGroupDialog({ onSuccess, allUsers }: { onSuccess: () => void; all
               rows={3}
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              placeholder="Describe the certification and what members will learn..."
+              placeholder="Describe what this circle is about and what members will get..."
               required
             />
           </div>
 
           <div className="space-y-2">
-            <Label>Group Owners * (Select one or more)</Label>
+            <Label>Circle Owners * (Select one or more)</Label>
             <Popover open={ownerSearchOpen} onOpenChange={setOwnerSearchOpen}>
               <PopoverTrigger asChild>
                 <Button variant="outline" className="w-full justify-between">
@@ -193,11 +196,156 @@ function CreateGroupDialog({ onSuccess, allUsers }: { onSuccess: () => void; all
 
           <div className="flex gap-2 pt-4 border-t">
             <Button type="submit" className="flex-1" disabled={loading}>
-              {loading ? <><Clock className="h-4 w-4 mr-2 animate-spin" />Creating...</> : <><Plus className="h-4 w-4 mr-2" />Create Group</>}
+              {loading ? <><Clock className="h-4 w-4 mr-2 animate-spin" />Creating...</> : <><Plus className="h-4 w-4 mr-2" />Create Circle</>}
             </Button>
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
           </div>
         </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AgentConfigDialog({ group, onSuccess }: { group: Circle; onSuccess: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const existing = group.agentConfig;
+  const [form, setForm] = useState({
+    enabled: existing?.enabled ?? false,
+    type: existing?.type ?? 'aws-news-digest',
+    frequency: existing?.frequency ?? 'daily',
+    botName: existing?.botName ?? 'AWS News Digest',
+    mode: existing?.mode ?? 'replace',
+  });
+
+  const save = async () => {
+    setLoading(true);
+    try {
+      await updateCircle(group.id, {
+        agentConfig: {
+          enabled: form.enabled,
+          type: form.type as AgentConfig['type'],
+          frequency: form.frequency as AgentConfig['frequency'],
+          botName: form.botName,
+          mode: form.mode as AgentConfig['mode'],
+        },
+      });
+      toast.success('Agent settings saved');
+      setOpen(false);
+      onSuccess();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to save agent settings');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const detach = async () => {
+    if (!confirm('Remove the agent from this circle? It will stop posting.')) return;
+    setLoading(true);
+    try {
+      await updateCircle(group.id, { agentConfig: null });
+      toast.success('Agent removed from circle');
+      setOpen(false);
+      onSuccess();
+    } catch (e) {
+      toast.error('Failed to remove agent');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" className="gap-1">
+          <Bot className="h-4 w-4" />
+          Agent
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Bot className="h-5 w-5 text-primary" />
+            Agent Circle Settings
+          </DialogTitle>
+          <DialogDescription>
+            Turn "{group.name}" into an agent circle. An AI agent will post digests here on a schedule.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <Label className="font-medium">Enable agent posting</Label>
+              <p className="text-xs text-muted-foreground">When on, the agent posts automatically.</p>
+            </div>
+            <Switch
+              checked={form.enabled}
+              onCheckedChange={(v) => setForm({ ...form, enabled: v })}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Agent</Label>
+            <Select value={form.type} onValueChange={(v) => setForm({ ...form, type: v })}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="aws-news-digest">AWS News Digest</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Frequency</Label>
+              <Select value={form.frequency} onValueChange={(v) => setForm({ ...form, frequency: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="hourly">Hourly</SelectItem>
+                  <SelectItem value="daily">Daily</SelectItem>
+                  <SelectItem value="weekly">Weekly</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Posting mode</Label>
+              <Select value={form.mode} onValueChange={(v) => setForm({ ...form, mode: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="replace">Update one pinned post</SelectItem>
+                  <SelectItem value="append">New post each run</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Bot display name</Label>
+            <Input
+              value={form.botName}
+              onChange={(e) => setForm({ ...form, botName: e.target.value })}
+              placeholder="AWS News Digest"
+            />
+          </div>
+
+          {existing?.lastRunAt && (
+            <p className="text-xs text-muted-foreground">
+              Last run: {existing.lastRunAt}{existing.lastRunStatus ? ` (${existing.lastRunStatus})` : ''}
+            </p>
+          )}
+        </div>
+
+        <div className="flex gap-2 pt-4 border-t">
+          <Button onClick={save} disabled={loading} className="flex-1">
+            {loading ? <><Clock className="h-4 w-4 mr-2 animate-spin" />Saving...</> : 'Save'}
+          </Button>
+          {existing && (
+            <Button variant="destructive" onClick={detach} disabled={loading}>
+              Remove agent
+            </Button>
+          )}
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -228,10 +376,10 @@ export default function CirclesManagement({ allUsers }: CirclesManagementProps) 
     
     try {
       await deleteCircle(id);
-      toast.success('Group deleted successfully');
+      toast.success('Circle deleted successfully');
       fetchGroups();
     } catch (error) {
-      toast.error('Failed to delete group');
+      toast.error('Failed to delete circle');
     }
   };
 
@@ -242,20 +390,20 @@ export default function CirclesManagement({ allUsers }: CirclesManagementProps) 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold">Manage Circle Groups</h2>
+        <h2 className="text-xl font-semibold">Manage Circles</h2>
         <CreateGroupDialog onSuccess={fetchGroups} allUsers={allUsers} />
       </div>
 
       {loading ? (
         <div className="text-center py-8">
           <Clock className="h-8 w-8 animate-spin mx-auto mb-4 text-muted-foreground" />
-          <p className="text-muted-foreground">Loading groups...</p>
+          <p className="text-muted-foreground">Loading circles...</p>
         </div>
       ) : groups.length === 0 ? (
         <Card className="glass-card">
           <CardContent className="p-8 text-center">
             <Award className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <p className="text-muted-foreground">No circle groups found. Create your first group!</p>
+            <p className="text-muted-foreground">No circles found. Create your first circle!</p>
           </CardContent>
         </Card>
       ) : (
@@ -268,6 +416,15 @@ export default function CirclesManagement({ allUsers }: CirclesManagementProps) 
                     <div className="flex items-center gap-2 mb-2">
                       <h3 className="font-semibold text-lg">{group.name}</h3>
                       <Badge className={group.color}>{group.level}</Badge>
+                      {group.agentConfig && (
+                        <Badge
+                          variant={group.agentConfig.enabled ? 'default' : 'secondary'}
+                          className="gap-1"
+                        >
+                          <Bot className="h-3 w-3" />
+                          {group.agentConfig.enabled ? 'Agent on' : 'Agent off'}
+                        </Badge>
+                      )}
                     </div>
                     <p className="text-sm text-muted-foreground mb-3">{group.description}</p>
                     <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
@@ -282,6 +439,7 @@ export default function CirclesManagement({ allUsers }: CirclesManagementProps) 
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
+                    <AgentConfigDialog group={group} onSuccess={fetchGroups} />
                     <Button variant="outline" size="sm" className="gap-1">
                       <Edit className="h-4 w-4" />
                       Edit

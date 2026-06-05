@@ -1,15 +1,27 @@
 import { API_BASE_URL } from './aws-config';
 
+export interface AgentConfig {
+  enabled: boolean;
+  type: 'aws-news-digest';
+  frequency: 'hourly' | 'daily' | 'weekly';
+  botName: string;
+  botAvatar?: string;
+  mode: 'replace' | 'append';
+  lastRunAt?: string | null;
+  lastRunStatus?: string | null;
+}
+
 export interface Circle {
   id: string;
   name: string;
-  level: 'Foundational' | 'Associate' | 'Professional' | 'Specialty';
+  level: 'General' | 'Foundational' | 'Associate' | 'Professional' | 'Specialty';
   description: string;
   members: string[];
   owners: string[];
   color: string;
   scheduledSessions: GroupSession[];
   messages: GroupMessage[];
+  agentConfig?: AgentConfig | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -96,6 +108,7 @@ export async function updateCircle(id: string, updates: {
   name?: string;
   description?: string;
   color?: string;
+  agentConfig?: AgentConfig | null;
 }): Promise<Circle> {
   const response = await fetch(`${API_BASE_URL}/circles/${id}`, {
     method: 'PUT',

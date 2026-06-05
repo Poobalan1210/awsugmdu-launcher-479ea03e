@@ -134,6 +134,7 @@ LAMBDA_FUNCTIONS=(
   "user-profile-creation"
   "badges-crud"          # Open Badges v2.0
   "circles-crud"
+  "circle-digest"
   "discussions-crud"
   "cloud-clubs-crud"
   "colleges-crud"

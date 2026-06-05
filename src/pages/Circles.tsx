@@ -13,9 +13,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   Award, Users, BookOpen, Calendar, CheckCircle, ArrowRight, 
   MessageSquare, Send, ThumbsUp, Pin, Video, Clock,
-  ChevronDown, Crown, ArrowLeft, Link2, Trash2
+  ChevronDown, Crown, ArrowLeft, Link2, Trash2, Bot
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { marked } from 'marked';
 import { Circle } from '@/data/mockData';
 import { format, parseISO } from 'date-fns';
 import { normalizeUrl } from '@/lib/utils';
@@ -26,6 +27,13 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { listCircles, joinCircle, postGroupMessage, getCircle, addMessageReply, toggleMessageLike, toggleReplyLike } from '@/lib/circles';
 import { API_BASE_URL } from '@/lib/aws-config';
 import { profilePath } from '@/lib/profileSlug';
+
+// Configure marked once for agent post rendering (matches Meetups/SkillSprint).
+marked.setOptions({ breaks: true, gfm: true });
+
+function renderAgentMarkdown(content: string): string {
+  return marked.parse(content) as string;
+}
 
 function GroupCard({ group, onSelect }: { group: Circle; onSelect: () => void }) {
   const { user } = useAuth();
@@ -51,6 +59,15 @@ function GroupCard({ group, onSelect }: { group: Circle; onSelect: () => void })
           <CardTitle className="text-lg flex items-center gap-2">
             {group.name}
             {isOwner && <Crown className="h-4 w-4 text-amber-500" />}
+            {group.agentConfig?.enabled && (
+              <Badge
+                variant="secondary"
+                className="gap-1 h-5 px-1.5 text-xs"
+              >
+                <Bot className="h-3 w-3" />
+                Agent
+              </Badge>
+            )}
           </CardTitle>
           <CardDescription className="line-clamp-2">{group.description}</CardDescription>
         </CardHeader>
@@ -708,6 +725,12 @@ function MessageCard({
               <Link to={profilePath(message.userName, message.userId)} className="font-semibold hover:text-primary">
                 {message.userName}
               </Link>
+              {message.userId?.startsWith('agent-') && (
+                <Badge variant="secondary" className="gap-1 h-5 px-1.5 text-xs">
+                  <Bot className="h-3 w-3" />
+                  Agent
+                </Badge>
+              )}
               <span className="text-sm text-muted-foreground">
                 · {format(parseISO(message.createdAt), 'MMM d, yyyy')}
               </span>
@@ -722,7 +745,24 @@ function MessageCard({
                 </button>
               )}
             </div>
-            <p className="text-sm mb-3">{message.content}</p>
+            {message.userId?.startsWith('agent-') ? (
+              <div
+                className="prose prose-sm max-w-none dark:prose-invert mb-3
+                  prose-headings:text-foreground prose-headings:font-bold prose-headings:mt-0
+                  prose-h2:text-xl prose-h2:mb-1
+                  prose-h3:text-base prose-h3:mb-1
+                  prose-p:text-sm prose-p:text-muted-foreground prose-p:my-1
+                  prose-strong:text-foreground prose-strong:font-semibold prose-strong:text-base
+                  prose-a:text-primary prose-a:font-medium prose-a:no-underline hover:prose-a:underline
+                  prose-code:text-xs prose-code:font-medium prose-code:text-primary
+                  prose-code:bg-primary/10 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded
+                  prose-code:before:content-[''] prose-code:after:content-['']
+                  prose-li:text-sm prose-li:text-muted-foreground"
+                dangerouslySetInnerHTML={{ __html: renderAgentMarkdown(message.content) }}
+              />
+            ) : (
+              <p className="text-sm mb-3">{message.content}</p>
+            )}
             
             <div className="flex items-center gap-4 text-sm text-muted-foreground">
               <button 
@@ -961,15 +1001,16 @@ export default function Circles() {
               >
                 <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber-500/10 text-amber-600 text-sm font-medium mb-4">
                   <Award className="h-4 w-4" />
-                  Study Groups & Channels
+                  Community Channels
                 </div>
                 <h1 className="text-3xl md:text-5xl font-bold mb-4">Circles</h1>
                 <p className="text-muted-foreground max-w-2xl mx-auto mb-8">
-                  Join our study group channels to prepare for AWS certifications together. 
-                  Share resources, discuss concepts, schedule study sessions, and ace your exams.
+                  Join topic channels to learn and collaborate with the community.
+                  Prep for AWS certifications together, share resources, follow curated
+                  news digests, and schedule sessions.
                 </p>
                 <Button size="lg">
-                  Find Your Study Group
+                  Explore Circles
                   <ArrowRight className="ml-2 h-5 w-5" />
                 </Button>
               </motion.section>

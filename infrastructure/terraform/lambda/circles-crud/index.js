@@ -6,6 +6,41 @@ const docClient = DynamoDBDocumentClient.from(client);
 
 const GROUPS_TABLE = process.env.CERTIFICATION_GROUPS_TABLE_NAME || 'awsug-circles';
 
+// Agent types an admin may attach to a circle. The UI only ever sends a `type`
+// from this list; the real ARN + request/response handling live in the
+// circle-digest Lambda. Keeping ARNs out of the DB/UI is intentional (security
+// + single source of truth). Add new agents here AND in the digest Lambda.
+const AGENT_TYPES = ['aws-news-digest'];
+const AGENT_FREQUENCIES = ['hourly', 'daily', 'weekly'];
+
+// Whitelist + coerce the agentConfig coming from the client so callers can't
+// inject arbitrary fields (e.g. ARNs) onto the circle record.
+function sanitizeAgentConfig(input, previous) {
+  const prev = previous || {};
+  const type = AGENT_TYPES.includes(input.type) ? input.type : prev.type;
+  if (!type) throw new Error('Invalid agentConfig: unknown agent type');
+
+  const frequency = AGENT_FREQUENCIES.includes(input.frequency)
+    ? input.frequency
+    : (prev.frequency || 'daily');
+
+  return {
+    enabled: typeof input.enabled === 'boolean' ? input.enabled : (prev.enabled ?? false),
+    type,
+    frequency,
+    // Bot identity shown on the posted message.
+    botName: typeof input.botName === 'string' && input.botName.trim()
+      ? input.botName.trim()
+      : (prev.botName || 'AWS News Digest'),
+    botAvatar: typeof input.botAvatar === 'string' ? input.botAvatar : (prev.botAvatar || ''),
+    // 'replace' keeps one pinned digest updated; 'append' posts a new message each run.
+    mode: ['replace', 'append'].includes(input.mode) ? input.mode : (prev.mode || 'replace'),
+    // Preserve run bookkeeping written by the digest Lambda.
+    lastRunAt: prev.lastRunAt || null,
+    lastRunStatus: prev.lastRunStatus || null,
+  };
+}
+
 function getCorsHeaders() {
   return {
     'Access-Control-Allow-Origin': '*',
@@ -138,13 +173,23 @@ async function updateGroup(id, event) {
   const existing = await docClient.send(new GetCommand({ TableName: GROUPS_TABLE, Key: { id } }));
   if (!existing.Item) return createResponse(404, { error: 'Group not found' });
   
-  const { name, description, color } = body;
+  const { name, description, color, agentConfig } = body;
   const updates = [];
   const values = { ':updatedAt': new Date().toISOString() };
   
   if (name) { updates.push('name = :name'); values[':name'] = name; }
   if (description) { updates.push('description = :description'); values[':description'] = description; }
   if (color) { updates.push('color = :color'); values[':color'] = color; }
+  // agentConfig is set/cleared by admins from the UI. Pass null to remove it.
+  if (agentConfig !== undefined) {
+    if (agentConfig === null) {
+      updates.push('agentConfig = :agentConfig');
+      values[':agentConfig'] = null;
+    } else {
+      updates.push('agentConfig = :agentConfig');
+      values[':agentConfig'] = sanitizeAgentConfig(agentConfig, existing.Item.agentConfig);
+    }
+  }
   updates.push('updatedAt = :updatedAt');
   
   await docClient.send(new UpdateCommand({

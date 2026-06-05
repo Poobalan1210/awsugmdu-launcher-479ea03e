@@ -24,7 +24,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { useAuth } from '@/contexts/AuthContext';
 import { getMeetupsByCertificationGroup } from '@/lib/meetups';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { listCircles, joinCircle, postGroupMessage, getCircle, addMessageReply, toggleMessageLike, toggleReplyLike } from '@/lib/circles';
+import { listCircles, joinCircle, postGroupMessage, getCircle, addMessageReply, toggleMessageLike, toggleReplyLike, groupAgentPostsByDigest } from '@/lib/circles';
 import { API_BASE_URL } from '@/lib/aws-config';
 import { profilePath } from '@/lib/profileSlug';
 
@@ -101,6 +101,7 @@ function GroupDetail({ group: initialGroup, onBack }: { group: Circle; onBack: (
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyContent, setReplyContent] = useState('');
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set());
+  const [collapsedDigests, setCollapsedDigests] = useState<Set<string>>(new Set());
   const messageRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
 
   // Fetch fresh group data
@@ -416,9 +417,10 @@ function GroupDetail({ group: initialGroup, onBack }: { group: Circle; onBack: (
                 </div>
               )}
 
-              {/* Regular Messages */}
+              {/* Regular Messages & Agent Digests */}
               <div className="space-y-4">
-                {regularMessages.map((message) => (
+                {/* Non-agent regular messages */}
+                {regularMessages.filter(m => !m.userId?.startsWith('agent-')).map((message) => (
                   <div key={message.id} ref={el => messageRefs.current[message.id] = el}>
                     <MessageCard 
                       message={message}
@@ -437,6 +439,97 @@ function GroupDetail({ group: initialGroup, onBack }: { group: Circle; onBack: (
                     />
                   </div>
                 ))}
+
+                {/* Agent digest archives (grouped by run) */}
+                {Array.from(groupAgentPostsByDigest(regularMessages).entries()).map(([digestKey, digestMessages]) => {
+                  const leadMessage = digestMessages.find(m => m.isPinned);
+                  const itemMessages = digestMessages.filter(m => !m.isPinned);
+                  const isCollapsed = collapsedDigests.has(digestKey);
+                  const digestDate = leadMessage 
+                    ? new Date(leadMessage.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                    : 'Unknown date';
+                  const itemCount = itemMessages.length;
+
+                  return (
+                    <Collapsible 
+                      key={digestKey} 
+                      open={!isCollapsed}
+                      onOpenChange={(open) => {
+                        if (open) {
+                          setCollapsedDigests(prev => {
+                            const next = new Set(prev);
+                            next.delete(digestKey);
+                            return next;
+                          });
+                        } else {
+                          setCollapsedDigests(prev => new Set([...prev, digestKey]));
+                        }
+                      }}
+                      className="border rounded-lg"
+                    >
+                      <CollapsibleTrigger asChild>
+                        <button className="w-full p-4 bg-muted/50 hover:bg-muted flex items-center justify-between rounded-lg">
+                          <div className="flex items-center gap-3 text-left">
+                            <div className="flex items-center gap-2">
+                              <Bot className="h-4 w-4 text-primary" />
+                              <span className="font-medium">AWS News Digest</span>
+                              <span className="text-sm text-muted-foreground">{digestDate}</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className="text-xs">
+                              {itemCount} item{itemCount !== 1 ? 's' : ''}
+                            </Badge>
+                            <ChevronDown className={`h-4 w-4 transition-transform ${isCollapsed ? '' : 'rotate-180'}`} />
+                          </div>
+                        </button>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent className="space-y-3 p-4 pt-0 border-t">
+                        {/* Lead message */}
+                        {leadMessage && (
+                          <div ref={el => messageRefs.current[leadMessage.id] = el}>
+                            <MessageCard 
+                              message={leadMessage}
+                              groupId={group.id}
+                              isExpanded={expandedMessages.has(leadMessage.id)}
+                              onToggle={() => toggleMessageExpand(leadMessage.id)}
+                              replyingTo={replyingTo}
+                              setReplyingTo={setReplyingTo}
+                              replyContent={replyContent}
+                              setReplyContent={setReplyContent}
+                              onSendReply={handleSendReply}
+                              isPinned
+                              isOwner={isOwner}
+                              currentUserId={user?.id}
+                              currentUser={user}
+                              messageRefs={messageRefs}
+                            />
+                          </div>
+                        )}
+                        {/* Item messages */}
+                        {itemMessages.map((message) => (
+                          <div key={message.id} ref={el => messageRefs.current[message.id] = el}>
+                            <MessageCard 
+                              message={message}
+                              groupId={group.id}
+                              isExpanded={expandedMessages.has(message.id)}
+                              onToggle={() => toggleMessageExpand(message.id)}
+                              replyingTo={replyingTo}
+                              setReplyingTo={setReplyingTo}
+                              replyContent={replyContent}
+                              setReplyContent={setReplyContent}
+                              onSendReply={handleSendReply}
+                              isOwner={isOwner}
+                              currentUserId={user?.id}
+                              currentUser={user}
+                              messageRefs={messageRefs}
+                            />
+                          </div>
+                        ))}
+                      </CollapsibleContent>
+                    </Collapsible>
+                  );
+                })}
               </div>
 
               {group.messages.length === 0 && (

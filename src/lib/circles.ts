@@ -50,6 +50,7 @@ export interface GroupMessage {
   likes: number;
   likedBy: string[];
   isPinned?: boolean;
+  digestRunId?: string; // Groups posts from same agent run
 }
 
 export interface GroupReply {
@@ -252,6 +253,22 @@ export async function toggleReplyLike(groupId: string, messageId: string, replyI
   });
   if (!response.ok) throw new Error('Failed to toggle reply like');
   return await response.json();
+}
+
+// Group agent posts by digest run (digestRunId or date)
+export function groupAgentPostsByDigest(messages: GroupMessage[]): Map<string, GroupMessage[]> {
+  const agentMessages = messages.filter(m => m.userId?.startsWith('agent-'));
+  const grouped = new Map<string, GroupMessage[]>();
+
+  for (const msg of agentMessages) {
+    const key = msg.digestRunId || msg.createdAt.split('T')[0]; // Group by runId or date
+    if (!grouped.has(key)) {
+      grouped.set(key, []);
+    }
+    grouped.get(key)!.push(msg);
+  }
+
+  return grouped;
 }
 
 // Create a session

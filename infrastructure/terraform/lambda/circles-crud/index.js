@@ -33,8 +33,9 @@ function sanitizeAgentConfig(input, previous) {
       ? input.botName.trim()
       : (prev.botName || 'AWS News Digest'),
     botAvatar: typeof input.botAvatar === 'string' ? input.botAvatar : (prev.botAvatar || ''),
-    // 'replace' keeps one pinned digest updated; 'append' posts a new message each run.
-    mode: ['replace', 'append'].includes(input.mode) ? input.mode : (prev.mode || 'replace'),
+    // 'append' posts a new message each run (digests group & collapse by date);
+    // 'replace' keeps one pinned digest updated.
+    mode: ['replace', 'append'].includes(input.mode) ? input.mode : (prev.mode || 'append'),
     // Preserve run bookkeeping written by the digest Lambda.
     lastRunAt: prev.lastRunAt || null,
     lastRunStatus: prev.lastRunStatus || null,

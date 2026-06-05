@@ -215,7 +215,7 @@ function AgentConfigDialog({ group, onSuccess }: { group: Circle; onSuccess: () 
     type: existing?.type ?? 'aws-news-digest',
     frequency: existing?.frequency ?? 'daily',
     botName: existing?.botName ?? 'AWS News Digest',
-    mode: existing?.mode ?? 'replace',
+    mode: existing?.mode ?? 'append',
   });
 
   const save = async () => {
@@ -313,10 +313,15 @@ function AgentConfigDialog({ group, onSuccess }: { group: Circle; onSuccess: () 
               <Select value={form.mode} onValueChange={(v) => setForm({ ...form, mode: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="append">New post each run (archive older)</SelectItem>
                   <SelectItem value="replace">Update one pinned post</SelectItem>
-                  <SelectItem value="append">New post each run</SelectItem>
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                {form.mode === 'append' 
+                  ? 'Posts accumulate and group into collapsible digests by date.'
+                  : 'Keeps one pinned post, replacing it on each run.'}
+              </p>
             </div>
           </div>
 

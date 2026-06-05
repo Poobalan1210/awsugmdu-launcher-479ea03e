@@ -164,7 +164,8 @@ async function postIntoCircle(circle, cfg, posts) {
   const now = new Date().toISOString();
   const botUserId = `agent-${cfg.type}`;
   const botName = cfg.botName || 'AWS News Digest';
-  const mode = cfg.mode || 'replace';
+  const mode = cfg.mode || 'append';
+  const digestRunId = `digest-${randomUUID().slice(0, 8)}`; // Tag all posts from this run
 
   let messages = circle.messages || [];
 
@@ -185,6 +186,7 @@ async function postIntoCircle(circle, cfg, posts) {
       content: p.content,
       now: ts,
       pinned: !!p.pinned,
+      digestRunId, // Tag this post with the digest run
     }));
     i += 1;
   }
@@ -199,7 +201,7 @@ async function postIntoCircle(circle, cfg, posts) {
   );
 }
 
-function buildMessage({ circle, botUserId, botName, content, now, pinned }) {
+function buildMessage({ circle, botUserId, botName, content, now, pinned, digestRunId }) {
   return {
     id: `msg-${Date.now()}-${randomUUID().slice(0, 8)}`,
     groupId: circle.id,
@@ -212,6 +214,7 @@ function buildMessage({ circle, botUserId, botName, content, now, pinned }) {
     likes: 0,
     likedBy: [],
     isPinned: !!pinned,
+    digestRunId, // Group posts by digest run
   };
 }
 

@@ -35,10 +35,50 @@ function renderAgentMarkdown(content: string): string {
   return marked.parse(content) as string;
 }
 
+// Pull a human-readable headline from a digest's lead/summary post so the
+// collapsed row previews its content instead of repeating the bot name.
+function getDigestTitle(leadContent: string): string {
+  if (!leadContent) return 'AWS News Digest';
+  const lines = leadContent.split('\n').map(l => l.trim()).filter(Boolean);
+  for (const line of lines) {
+    if (line.startsWith('#')) continue;                       // skip "## 📰 ..." title
+    if (line.startsWith('_') && line.endsWith('_')) continue; // skip "_N updates below._"
+    return line.replace(/[*_`]/g, '').trim();                 // strip md emphasis
+  }
+  return lines[0]?.replace(/^#+\s*/, '').replace(/[*_`📰]/g, '').trim() || 'AWS News Digest';
+}
+
+// Relative date for recent digests, absolute for older ones.
+function formatDigestDate(dateStr: string): string {
+  const d = new Date(dateStr);
+  const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate());
+  const diffDays = Math.round((startOfDay(new Date()).getTime() - startOfDay(d).getTime()) / 86400000);
+  if (diffDays <= 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return `${diffDays} days ago`;
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function getMonthLabel(dateStr: string): string {
+  return new Date(dateStr).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+}
+
+// Day divider label for the discussion feed (chat-style separators).
+function formatDaySeparator(dateStr: string): string {
+  const d = new Date(dateStr);
+  const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate());
+  const diffDays = Math.round((startOfDay(new Date()).getTime() - startOfDay(d).getTime()) / 86400000);
+  if (diffDays <= 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+}
+
 function GroupCard({ group, onSelect }: { group: Circle; onSelect: () => void }) {
   const { user } = useAuth();
   const isOwner = user && group.owners.includes(user.id);
   const isMember = user && group.members.includes(user.id);
+  const isAgent = !!group.agentConfig?.enabled;
+  const lastRunAt = group.agentConfig?.lastRunAt;
 
   return (
     <motion.div
@@ -47,7 +87,14 @@ function GroupCard({ group, onSelect }: { group: Circle; onSelect: () => void })
       whileHover={{ y: -5 }}
       transition={{ duration: 0.3 }}
     >
-      <Card className="glass-card hover-lift cursor-pointer h-full" onClick={onSelect}>
+      <Card
+        className={`hover-lift cursor-pointer h-full ${
+          isAgent
+            ? 'border-primary/40 ring-1 ring-primary/20 bg-gradient-to-br from-primary/[0.07] to-transparent'
+            : 'glass-card'
+        }`}
+        onClick={onSelect}
+      >
         <CardHeader>
           <div className="flex items-center justify-between mb-2">
             <Badge className={group.color}>{group.level}</Badge>
@@ -59,11 +106,8 @@ function GroupCard({ group, onSelect }: { group: Circle; onSelect: () => void })
           <CardTitle className="text-lg flex items-center gap-2">
             {group.name}
             {isOwner && <Crown className="h-4 w-4 text-amber-500" />}
-            {group.agentConfig?.enabled && (
-              <Badge
-                variant="secondary"
-                className="gap-1 h-5 px-1.5 text-xs"
-              >
+            {isAgent && (
+              <Badge className="gap-1 h-5 px-1.5 text-xs bg-primary text-primary-foreground hover:bg-primary">
                 <Bot className="h-3 w-3" />
                 Agent
               </Badge>
@@ -74,8 +118,14 @@ function GroupCard({ group, onSelect }: { group: Circle; onSelect: () => void })
         <CardContent>
           <div className="flex items-center gap-2 mb-4 text-sm text-muted-foreground">
             <MessageSquare className="h-4 w-4" />
-            {group.messages.length} messages
-            {group.scheduledSessions.length > 0 && (
+            {group.messages.length} {isAgent ? 'updates' : 'messages'}
+            {isAgent && lastRunAt ? (
+              <>
+                <span className="mx-2">·</span>
+                <Clock className="h-4 w-4" />
+                {formatDigestDate(lastRunAt)}
+              </>
+            ) : group.scheduledSessions.length > 0 && (
               <>
                 <span className="mx-2">·</span>
                 <Calendar className="h-4 w-4" />
@@ -83,8 +133,8 @@ function GroupCard({ group, onSelect }: { group: Circle; onSelect: () => void })
               </>
             )}
           </div>
-          <Button variant={isMember ? "outline" : "default"} className="w-full">
-            {isMember ? 'View Group' : 'Join Group'}
+          <Button variant={isAgent || isMember ? 'outline' : 'default'} className="w-full">
+            {isAgent ? 'View Digest' : isMember ? 'View Group' : 'Join Group'}
           </Button>
         </CardContent>
       </Card>
@@ -102,6 +152,8 @@ function GroupDetail({ group: initialGroup, onBack }: { group: Circle; onBack: (
   const [replyContent, setReplyContent] = useState('');
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set());
   const [collapsedDigests, setCollapsedDigests] = useState<Set<string>>(new Set());
+  const [showAllDigests, setShowAllDigests] = useState(false);
+  const initializedDigestKeys = useRef<Set<string>>(new Set());
   const messageRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
 
   // Fetch fresh group data
@@ -114,6 +166,9 @@ function GroupDetail({ group: initialGroup, onBack }: { group: Circle; onBack: (
 
   const isOwner = user && group.owners.includes(user.id);
   const isMember = user && group.members.includes(user.id);
+  // Agent circles are broadcast channels: no top-level posting, but replies and
+  // likes on the agent's digests stay enabled.
+  const isAgentCircle = !!group.agentConfig?.enabled;
 
   // Fetch owner details from backend
   const { data: ownerDetails = [] } = useQuery({
@@ -206,6 +261,30 @@ function GroupDetail({ group: initialGroup, onBack }: { group: Circle; onBack: (
     }
   }, [searchParams, group.messages]);
 
+  // Default newest agent digest expanded, older ones collapsed. Only applies to
+  // digest groups we haven't seen yet, so it never overrides the user's clicks.
+  useEffect(() => {
+    const grouped = groupAgentPostsByDigest(group.messages);
+    const sortedKeys = Array.from(grouped.entries())
+      .sort((a, b) => new Date(b[1][0].createdAt).getTime() - new Date(a[1][0].createdAt).getTime())
+      .map(([key]) => key);
+
+    const newlySeen = sortedKeys.filter(k => !initializedDigestKeys.current.has(k));
+    if (newlySeen.length === 0) return;
+
+    setCollapsedDigests(prev => {
+      const next = new Set(prev);
+      // Collapse every digest except the single newest one.
+      sortedKeys.forEach((key, idx) => {
+        if (!initializedDigestKeys.current.has(key) && idx !== 0) {
+          next.add(key);
+        }
+      });
+      return next;
+    });
+    newlySeen.forEach(k => initializedDigestKeys.current.add(k));
+  }, [group.messages]);
+
   const toggleMessageExpand = (messageId: string) => {
     setExpandedMessages(prev => {
       const newSet = new Set(prev);
@@ -274,8 +353,118 @@ function GroupDetail({ group: initialGroup, onBack }: { group: Circle; onBack: (
     }
   };
 
-  const pinnedMessages = group.messages.filter(m => m.isPinned);
-  const regularMessages = group.messages.filter(m => !m.isPinned);
+  // Human-authored messages only. Agent posts are rendered separately as
+  // collapsible digest groups, so keep them out of the pinned/regular lists.
+  const pinnedMessages = group.messages.filter(m => m.isPinned && !m.userId?.startsWith('agent-'));
+  const regularMessages = group.messages.filter(m => !m.isPinned && !m.userId?.startsWith('agent-'));
+
+  // Agent digests grouped by run, newest first. Only the latest is expanded
+  // by default; older ones collapse to a single header line.
+  const agentDigests = Array.from(groupAgentPostsByDigest(group.messages).entries())
+    .sort((a, b) => new Date(b[1][0].createdAt).getTime() - new Date(a[1][0].createdAt).getTime());
+
+  // Show a limited window of digests, with a "show older" cutoff so the list
+  // stays manageable as months of history pile up.
+  const DIGEST_VISIBLE_LIMIT = 8;
+  const visibleDigests = showAllDigests ? agentDigests : agentDigests.slice(0, DIGEST_VISIBLE_LIMIT);
+  const hiddenDigestCount = agentDigests.length - visibleDigests.length;
+
+  // Bucket the visible digests under month headers (e.g. "June 2026").
+  const digestsByMonth: Array<{ month: string; digests: typeof agentDigests }> = [];
+  for (const entry of visibleDigests) {
+    const month = getMonthLabel(entry[1][0].createdAt);
+    const last = digestsByMonth[digestsByMonth.length - 1];
+    if (last && last.month === month) last.digests.push(entry);
+    else digestsByMonth.push({ month, digests: [entry] });
+  }
+
+  // Renders a single digest as a headline-titled collapsible card.
+  const renderDigest = (digestKey: string, digestMessages: typeof group.messages) => {
+    const leadMessage = digestMessages.find(m => m.isDigestLead) || digestMessages[0];
+    const itemMessages = digestMessages.filter(m => m.id !== leadMessage?.id);
+    const isCollapsed = collapsedDigests.has(digestKey);
+    const title = getDigestTitle(leadMessage?.content || '');
+    const dateLabel = formatDigestDate(digestMessages[0].createdAt);
+    const itemCount = itemMessages.length;
+
+    return (
+      <Collapsible
+        key={digestKey}
+        open={!isCollapsed}
+        onOpenChange={(open) => {
+          setCollapsedDigests(prev => {
+            const next = new Set(prev);
+            if (open) next.delete(digestKey);
+            else next.add(digestKey);
+            return next;
+          });
+        }}
+        className="border rounded-lg overflow-hidden"
+      >
+        <CollapsibleTrigger asChild>
+          <button className="w-full p-4 bg-muted/50 hover:bg-muted flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 text-left min-w-0">
+              <Bot className="h-4 w-4 text-primary shrink-0" />
+              <div className="min-w-0">
+                <div className="font-medium truncate">{title}</div>
+                <div className="text-xs text-muted-foreground">{dateLabel}</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Badge variant="outline" className="text-xs">
+                {itemCount} item{itemCount !== 1 ? 's' : ''}
+              </Badge>
+              <ChevronDown className={`h-4 w-4 transition-transform ${isCollapsed ? '' : 'rotate-180'}`} />
+            </div>
+          </button>
+        </CollapsibleTrigger>
+        {/* Cap height so a big digest scrolls internally and the rows below
+            stay reachable. */}
+        <CollapsibleContent className="border-t">
+          <div className="space-y-3 p-4 max-h-[600px] overflow-y-auto">
+            {leadMessage && (
+              <div ref={el => messageRefs.current[leadMessage.id] = el}>
+                <MessageCard
+                  message={leadMessage}
+                  groupId={group.id}
+                  isExpanded={expandedMessages.has(leadMessage.id)}
+                  onToggle={() => toggleMessageExpand(leadMessage.id)}
+                  replyingTo={replyingTo}
+                  setReplyingTo={setReplyingTo}
+                  replyContent={replyContent}
+                  setReplyContent={setReplyContent}
+                  onSendReply={handleSendReply}
+                  isOwner={isOwner}
+                  currentUserId={user?.id}
+                  currentUser={user}
+                  messageRefs={messageRefs}
+                />
+              </div>
+            )}
+            {itemMessages.map((message) => (
+              <div key={message.id} ref={el => messageRefs.current[message.id] = el}>
+                <MessageCard
+                  message={message}
+                  groupId={group.id}
+                  isExpanded={expandedMessages.has(message.id)}
+                  onToggle={() => toggleMessageExpand(message.id)}
+                  replyingTo={replyingTo}
+                  setReplyingTo={setReplyingTo}
+                  replyContent={replyContent}
+                  setReplyContent={setReplyContent}
+                  onSendReply={handleSendReply}
+                  isOwner={isOwner}
+                  currentUserId={user?.id}
+                  currentUser={user}
+                  messageRefs={messageRefs}
+                />
+              </div>
+            ))}
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+    );
+  };
 
   return (
     <motion.div
@@ -352,12 +541,22 @@ function GroupDetail({ group: initialGroup, onBack }: { group: Circle; onBack: (
                 Channel Discussion
               </CardTitle>
               <CardDescription>
-                Share resources, ask questions, and support fellow learners
+                Share resources, ask questions, and collaborate with the community
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* New Message Form - Only show if logged in */}
-              {user ? (
+              {/* New Message Form - hidden for agent (broadcast) circles */}
+              {isAgentCircle ? (
+                <div className="p-4 rounded-lg bg-muted/50 text-center flex flex-col items-center gap-1">
+                  <div className="flex items-center gap-2 text-sm font-medium">
+                    <Bot className="h-4 w-4 text-primary" />
+                    Agent-powered circle
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    This circle is curated by an agent. You can reply to and like its updates below.
+                  </p>
+                </div>
+              ) : user ? (
                 isMember && (
                   <form onSubmit={handleSendMessage} className="p-4 rounded-lg bg-muted/50">
                     <div className="flex gap-4">
@@ -419,117 +618,75 @@ function GroupDetail({ group: initialGroup, onBack }: { group: Circle; onBack: (
 
               {/* Regular Messages & Agent Digests */}
               <div className="space-y-4">
-                {/* Non-agent regular messages */}
-                {regularMessages.filter(m => !m.userId?.startsWith('agent-')).map((message) => (
-                  <div key={message.id} ref={el => messageRefs.current[message.id] = el}>
-                    <MessageCard 
-                      message={message}
-                      groupId={group.id}
-                      isExpanded={expandedMessages.has(message.id)}
-                      onToggle={() => toggleMessageExpand(message.id)}
-                      replyingTo={replyingTo}
-                      setReplyingTo={setReplyingTo}
-                      replyContent={replyContent}
-                      setReplyContent={setReplyContent}
-                      onSendReply={handleSendReply}
-                      isOwner={isOwner}
-                      currentUserId={user?.id}
-                      currentUser={user}
-                      messageRefs={messageRefs}
-                    />
+                {/* Non-agent regular messages, with chat-style day separators */}
+                {regularMessages.map((message, idx) => {
+                  const dayKey = new Date(message.createdAt).toDateString();
+                  const prevDayKey = idx > 0 ? new Date(regularMessages[idx - 1].createdAt).toDateString() : null;
+                  const showSeparator = dayKey !== prevDayKey;
+                  return (
+                    <div key={message.id} className="space-y-4">
+                      {showSeparator && (
+                        <div className="flex items-center gap-3">
+                          <div className="flex-1 h-px bg-border" />
+                          <span className="text-xs font-medium text-muted-foreground px-2">
+                            {formatDaySeparator(message.createdAt)}
+                          </span>
+                          <div className="flex-1 h-px bg-border" />
+                        </div>
+                      )}
+                      <div ref={el => messageRefs.current[message.id] = el}>
+                        <MessageCard 
+                          message={message}
+                          groupId={group.id}
+                          isExpanded={expandedMessages.has(message.id)}
+                          onToggle={() => toggleMessageExpand(message.id)}
+                          replyingTo={replyingTo}
+                          setReplyingTo={setReplyingTo}
+                          replyContent={replyContent}
+                          setReplyContent={setReplyContent}
+                          onSendReply={handleSendReply}
+                          isOwner={isOwner}
+                          currentUserId={user?.id}
+                          currentUser={user}
+                          messageRefs={messageRefs}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* Agent digest archive: grouped by month, headline-titled rows,
+                    newest expanded, "show older" cutoff. */}
+                {digestsByMonth.map(({ month, digests }) => (
+                  <div key={month} className="space-y-3">
+                    <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2 pt-2">
+                      <Bot className="h-4 w-4" />
+                      {month}
+                    </h3>
+                    {digests.map(([digestKey, digestMessages]) => renderDigest(digestKey, digestMessages))}
                   </div>
                 ))}
 
-                {/* Agent digest archives (grouped by run) */}
-                {Array.from(groupAgentPostsByDigest(regularMessages).entries()).map(([digestKey, digestMessages]) => {
-                  const leadMessage = digestMessages.find(m => m.isPinned);
-                  const itemMessages = digestMessages.filter(m => !m.isPinned);
-                  const isCollapsed = collapsedDigests.has(digestKey);
-                  const digestDate = leadMessage 
-                    ? new Date(leadMessage.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                    : 'Unknown date';
-                  const itemCount = itemMessages.length;
-
-                  return (
-                    <Collapsible 
-                      key={digestKey} 
-                      open={!isCollapsed}
-                      onOpenChange={(open) => {
-                        if (open) {
-                          setCollapsedDigests(prev => {
-                            const next = new Set(prev);
-                            next.delete(digestKey);
-                            return next;
-                          });
-                        } else {
-                          setCollapsedDigests(prev => new Set([...prev, digestKey]));
-                        }
-                      }}
-                      className="border rounded-lg"
-                    >
-                      <CollapsibleTrigger asChild>
-                        <button className="w-full p-4 bg-muted/50 hover:bg-muted flex items-center justify-between rounded-lg">
-                          <div className="flex items-center gap-3 text-left">
-                            <div className="flex items-center gap-2">
-                              <Bot className="h-4 w-4 text-primary" />
-                              <span className="font-medium">AWS News Digest</span>
-                              <span className="text-sm text-muted-foreground">{digestDate}</span>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Badge variant="outline" className="text-xs">
-                              {itemCount} item{itemCount !== 1 ? 's' : ''}
-                            </Badge>
-                            <ChevronDown className={`h-4 w-4 transition-transform ${isCollapsed ? '' : 'rotate-180'}`} />
-                          </div>
-                        </button>
-                      </CollapsibleTrigger>
-                      <CollapsibleContent className="space-y-3 p-4 pt-0 border-t">
-                        {/* Lead message */}
-                        {leadMessage && (
-                          <div ref={el => messageRefs.current[leadMessage.id] = el}>
-                            <MessageCard 
-                              message={leadMessage}
-                              groupId={group.id}
-                              isExpanded={expandedMessages.has(leadMessage.id)}
-                              onToggle={() => toggleMessageExpand(leadMessage.id)}
-                              replyingTo={replyingTo}
-                              setReplyingTo={setReplyingTo}
-                              replyContent={replyContent}
-                              setReplyContent={setReplyContent}
-                              onSendReply={handleSendReply}
-                              isPinned
-                              isOwner={isOwner}
-                              currentUserId={user?.id}
-                              currentUser={user}
-                              messageRefs={messageRefs}
-                            />
-                          </div>
-                        )}
-                        {/* Item messages */}
-                        {itemMessages.map((message) => (
-                          <div key={message.id} ref={el => messageRefs.current[message.id] = el}>
-                            <MessageCard 
-                              message={message}
-                              groupId={group.id}
-                              isExpanded={expandedMessages.has(message.id)}
-                              onToggle={() => toggleMessageExpand(message.id)}
-                              replyingTo={replyingTo}
-                              setReplyingTo={setReplyingTo}
-                              replyContent={replyContent}
-                              setReplyContent={setReplyContent}
-                              onSendReply={handleSendReply}
-                              isOwner={isOwner}
-                              currentUserId={user?.id}
-                              currentUser={user}
-                              messageRefs={messageRefs}
-                            />
-                          </div>
-                        ))}
-                      </CollapsibleContent>
-                    </Collapsible>
-                  );
-                })}
+                {hiddenDigestCount > 0 && (
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => setShowAllDigests(true)}
+                  >
+                    <ChevronDown className="h-4 w-4 mr-2" />
+                    Show {hiddenDigestCount} older digest{hiddenDigestCount !== 1 ? 's' : ''}
+                  </Button>
+                )}
+                {showAllDigests && agentDigests.length > DIGEST_VISIBLE_LIMIT && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full text-muted-foreground"
+                    onClick={() => setShowAllDigests(false)}
+                  >
+                    Show less
+                  </Button>
+                )}
               </div>
 
               {group.messages.length === 0 && (
@@ -1060,6 +1217,7 @@ export default function Circles() {
   }, [groupId, allGroups, selectedGroup]);
 
   const groupsByLevel = {
+    General: allGroups.filter(g => g.level === 'General'),
     Foundational: allGroups.filter(g => g.level === 'Foundational'),
     Associate: allGroups.filter(g => g.level === 'Associate'),
     Professional: allGroups.filter(g => g.level === 'Professional'),
@@ -1099,8 +1257,8 @@ export default function Circles() {
                 <h1 className="text-3xl md:text-5xl font-bold mb-4">Circles</h1>
                 <p className="text-muted-foreground max-w-2xl mx-auto mb-8">
                   Join topic channels to learn and collaborate with the community.
-                  Prep for AWS certifications together, share resources, follow curated
-                  news digests, and schedule sessions.
+                  Share resources, follow curated digests from agents, discuss with
+                  others, and schedule sessions.
                 </p>
                 <Button size="lg">
                   Explore Circles
@@ -1113,8 +1271,8 @@ export default function Circles() {
                 <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 max-w-4xl mx-auto">
                   {[
                     { icon: MessageSquare, text: 'Discussion channels' },
-                    { icon: Users, text: 'Group study sessions' },
-                    { icon: CheckCircle, text: 'Practice questions' },
+                    { icon: Bot, text: 'Agent-powered digests' },
+                    { icon: Users, text: 'Community collaboration' },
                     { icon: Calendar, text: 'Scheduled meetups' },
                   ].map((item, i) => (
                     <motion.div 
@@ -1138,7 +1296,7 @@ export default function Circles() {
                 <Card className="glass-card">
                   <CardContent className="p-12 text-center">
                     <Award className="h-12 w-12 mx-auto mb-4 text-muted-foreground animate-pulse" />
-                    <p className="text-muted-foreground">Loading circle groups...</p>
+                    <p className="text-muted-foreground">Loading circles...</p>
                   </CardContent>
                 </Card>
               )}
@@ -1148,8 +1306,8 @@ export default function Circles() {
                 <Card className="glass-card">
                   <CardContent className="p-12 text-center">
                     <Award className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                    <h3 className="text-lg font-semibold mb-2">No Circle Groups Yet</h3>
-                    <p className="text-muted-foreground">Check back soon for new study groups!</p>
+                    <h3 className="text-lg font-semibold mb-2">No Circles Yet</h3>
+                    <p className="text-muted-foreground">Check back soon for new circles!</p>
                   </CardContent>
                 </Card>
               )}
@@ -1157,7 +1315,7 @@ export default function Circles() {
               {/* Study Groups by Level */}
               {!isLoading && Object.entries(groupsByLevel).map(([level, groups]) => groups.length > 0 && (
                 <section key={level} className="mb-12">
-                  <h2 className="text-2xl font-bold mb-6">{level} Level</h2>
+                  <h2 className="text-2xl font-bold mb-6">{level === 'General' ? 'General' : `${level} Level`}</h2>
                   <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                     {groups.map((group, index) => (
                       <motion.div

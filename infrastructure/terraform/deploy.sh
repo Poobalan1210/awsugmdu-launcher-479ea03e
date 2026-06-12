@@ -177,6 +177,20 @@ if [ -f "lambda/shared/email.js" ]; then
   echo ""
 fi
 
+# Derive the agent-type whitelist from the circle-digest agent modules (the
+# single source of truth) and bake it into circles-crud so the API validation
+# stays in sync automatically when agents are added/removed.
+if [ -d "lambda/circle-digest/agents" ] && [ -d "lambda/circles-crud" ]; then
+  AGENT_IDS=$(cd lambda/circle-digest && node -e "const _l=console.log;console.log=()=>{};const {AGENTS}=require('./agents');console.log=_l;process.stdout.write(JSON.stringify(Object.keys(AGENTS)))" 2>/dev/null)
+  if [ -n "$AGENT_IDS" ] && [ "$AGENT_IDS" != "[]" ]; then
+    echo "$AGENT_IDS" > lambda/circles-crud/agent-types.generated.json
+    ok "Synced agent whitelist → circles-crud ($AGENT_IDS)"
+  else
+    info "Could not derive agent whitelist; keeping existing agent-types.generated.json"
+  fi
+  echo ""
+fi
+
 for func in "${LAMBDA_FUNCTIONS[@]}"; do
   # Deduplicate (meetups-crud appears twice in the list above)
   if [ -d "lambda/$func" ] && [ -f "lambda/$func/package.json" ]; then

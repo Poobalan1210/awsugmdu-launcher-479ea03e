@@ -7,7 +7,8 @@
 //      the circle, and stamp agentConfig.lastRunAt / lastRunStatus.
 //
 // Adding an agent circle is a UI action (Admin -> Circles -> Agent), NOT a
-// deploy. Adding a new agent TYPE is a code change in AGENTS below + IAM.
+// deploy. Onboarding a new agent TYPE is a drop-in module under ./agents/
+// (copy agents/_template.js) — see that file for the full checklist.
 //
 // Env vars:
 //   CIRCLES_TABLE_NAME  - DynamoDB circles table (default awsug-circles)
@@ -20,24 +21,13 @@ const {
 } = require('@aws-sdk/client-bedrock-agentcore');
 const { randomUUID } = require('crypto');
 
+// Auto-loaded agent registry. Each agent is a self-contained module in ./agents.
+const { AGENTS } = require('./agents');
+
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const agentCore = new BedrockAgentCoreClient({});
 
 const CIRCLES_TABLE = process.env.CIRCLES_TABLE_NAME || 'awsug-circles';
-
-// Agent registry. The UI/DB only stores a `type`; the ARN + how to build the
-// request and format the response live here, server-side. Add new agents here.
-const AGENTS = {
-  'aws-news-digest': {
-    agentRuntimeArn:
-      'arn:aws:bedrock-agentcore:us-east-1:333105300941:runtime/awsnewsdigest-F6VbLM4VC5',
-    qualifier: 'DEFAULT',
-    buildPayload: () => ({ format: 'json', hours: 24, max_items: 8 }),
-    // Turn the structured digest into an ARRAY of small posts (one lead post +
-    // one post per news item). Returns [] to skip posting (nothing newsworthy).
-    format: (body) => formatNewsDigest(body),
-  },
-};
 
 const FREQUENCY_MS = {
   hourly: 60 * 60 * 1000,
@@ -122,42 +112,6 @@ async function invokeAgent(agent) {
   return JSON.parse(raw);
 }
 
-// ---- aws-news-digest formatting -------------------------------------------
-// Returns an array of small posts: a short lead, then one post per news item.
-function formatNewsDigest(body) {
-  const digest = body && body.digest;
-  const items = (digest && digest.items) || [];
-  if (!items.length) return []; // "all quiet" — skip posting
-
-  // Dedupe on link (same announcement can come from both feeds).
-  const seen = new Set();
-  const unique = items.filter((it) => {
-    const key = it.link || it.headline;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-
-  const posts = [];
-
-  // Lead post: title + one-line overview. Pinned so it stays at the top.
-  const leadLines = [`## 📰 ${digest.title || 'AWS News'}`];
-  if (digest.headline) leadLines.push(`\n${digest.headline}`);
-  leadLines.push(`\n_${unique.length} update${unique.length === 1 ? '' : 's'} below._`);
-  posts.push({ content: leadLines.join('\n'), pinned: true });
-
-  // One compact post per item.
-  for (const it of unique) {
-    const lines = [`**${it.headline}**`];
-    if (it.category) lines.push(`\`${it.category}\``);
-    if (it.summary) lines.push(`\n${it.summary}`);
-    if (it.link) lines.push(`\n[Read more →](${it.link})`);
-    posts.push({ content: lines.join('\n'), pinned: false });
-  }
-
-  return posts;
-}
-
 // ---- posting ---------------------------------------------------------------
 // `posts` is an array of { content, pinned } — one lead + one per item.
 async function postIntoCircle(circle, cfg, posts) {
@@ -187,6 +141,7 @@ async function postIntoCircle(circle, cfg, posts) {
       now: ts,
       pinned: !!p.pinned,
       digestRunId, // Tag this post with the digest run
+      isLead: !!p.isLead, // Mark the digest's lead/summary post
     }));
     i += 1;
   }
@@ -201,7 +156,7 @@ async function postIntoCircle(circle, cfg, posts) {
   );
 }
 
-function buildMessage({ circle, botUserId, botName, content, now, pinned, digestRunId }) {
+function buildMessage({ circle, botUserId, botName, content, now, pinned, digestRunId, isLead }) {
   return {
     id: `msg-${Date.now()}-${randomUUID().slice(0, 8)}`,
     groupId: circle.id,
@@ -215,6 +170,7 @@ function buildMessage({ circle, botUserId, botName, content, now, pinned, digest
     likedBy: [],
     isPinned: !!pinned,
     digestRunId, // Group posts by digest run
+    isDigestLead: !!isLead, // First/summary post of the digest
   };
 }
 

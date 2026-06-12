@@ -19,6 +19,7 @@ import {
   Circle,
   AgentConfig 
 } from '@/lib/circles';
+import { AGENT_CATALOG, getAgentCatalogEntry, DEFAULT_AGENT_ID } from '@/lib/agentCatalog';
 import { User as UserType } from '@/data/mockData';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -206,16 +207,135 @@ function CreateGroupDialog({ onSuccess, allUsers }: { onSuccess: () => void; all
   );
 }
 
+function EditCircleDialog({ group, onSuccess }: { group: Circle; onSuccess: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState({
+    name: group.name,
+    level: group.level as Circle['level'],
+    description: group.description,
+    color: group.color || 'bg-blue-500',
+  });
+
+  // Keep the form in sync if the circle data changes (e.g. after a refetch).
+  useEffect(() => {
+    setFormData({
+      name: group.name,
+      level: group.level,
+      description: group.description,
+      color: group.color || 'bg-blue-500',
+    });
+  }, [group.id, group.name, group.level, group.description, group.color]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.name.trim() || !formData.description.trim()) {
+      toast.error('Name and description are required');
+      return;
+    }
+    setLoading(true);
+    try {
+      await updateCircle(group.id, {
+        name: formData.name.trim(),
+        level: formData.level,
+        description: formData.description.trim(),
+        color: formData.color,
+      });
+      toast.success('Circle updated successfully!');
+      setOpen(false);
+      onSuccess();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to update circle');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" className="gap-1">
+          <Edit className="h-4 w-4" />
+          Edit
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Edit Circle</DialogTitle>
+          <DialogDescription>Update this circle's name, level, description, and color</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label>Circle Name *</Label>
+            <Input
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              required
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Level *</Label>
+              <Select value={formData.level} onValueChange={(value: any) => setFormData({ ...formData, level: value })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="General">General</SelectItem>
+                  <SelectItem value="Foundational">Foundational</SelectItem>
+                  <SelectItem value="Associate">Associate</SelectItem>
+                  <SelectItem value="Professional">Professional</SelectItem>
+                  <SelectItem value="Specialty">Specialty</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Color</Label>
+              <Select value={formData.color} onValueChange={(value) => setFormData({ ...formData, color: value })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="bg-blue-500">Blue</SelectItem>
+                  <SelectItem value="bg-green-500">Green</SelectItem>
+                  <SelectItem value="bg-purple-500">Purple</SelectItem>
+                  <SelectItem value="bg-orange-500">Orange</SelectItem>
+                  <SelectItem value="bg-red-500">Red</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Description *</Label>
+            <Textarea
+              rows={3}
+              value={formData.description}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              required
+            />
+          </div>
+
+          <div className="flex gap-2 pt-4 border-t">
+            <Button type="submit" className="flex-1" disabled={loading}>
+              {loading ? <><Clock className="h-4 w-4 mr-2 animate-spin" />Saving...</> : <><Edit className="h-4 w-4 mr-2" />Save Changes</>}
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function AgentConfigDialog({ group, onSuccess }: { group: Circle; onSuccess: () => void }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const existing = group.agentConfig;
+  const initialDefaults = getAgentCatalogEntry(existing?.type) ?? AGENT_CATALOG[0];
   const [form, setForm] = useState({
     enabled: existing?.enabled ?? false,
-    type: existing?.type ?? 'aws-news-digest',
-    frequency: existing?.frequency ?? 'daily',
-    botName: existing?.botName ?? 'AWS News Digest',
-    mode: existing?.mode ?? 'append',
+    type: existing?.type ?? DEFAULT_AGENT_ID,
+    frequency: existing?.frequency ?? initialDefaults?.defaultFrequency ?? 'daily',
+    botName: existing?.botName ?? initialDefaults?.defaultBotName ?? '',
+    mode: existing?.mode ?? initialDefaults?.defaultMode ?? 'append',
   });
 
   const save = async () => {
@@ -288,12 +408,31 @@ function AgentConfigDialog({ group, onSuccess }: { group: Circle; onSuccess: () 
 
           <div className="space-y-2">
             <Label>Agent</Label>
-            <Select value={form.type} onValueChange={(v) => setForm({ ...form, type: v })}>
+            <Select
+              value={form.type}
+              onValueChange={(v) => {
+                const entry = getAgentCatalogEntry(v);
+                setForm({
+                  ...form,
+                  type: v,
+                  botName: entry?.defaultBotName ?? form.botName,
+                  frequency: entry?.defaultFrequency ?? form.frequency,
+                  mode: entry?.defaultMode ?? form.mode,
+                });
+              }}
+            >
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="aws-news-digest">AWS News Digest</SelectItem>
+                {AGENT_CATALOG.map((a) => (
+                  <SelectItem key={a.id} value={a.id}>{a.label}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
+            {getAgentCatalogEntry(form.type)?.description && (
+              <p className="text-xs text-muted-foreground">
+                {getAgentCatalogEntry(form.type)?.description}
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -445,10 +584,7 @@ export default function CirclesManagement({ allUsers }: CirclesManagementProps) 
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <AgentConfigDialog group={group} onSuccess={fetchGroups} />
-                    <Button variant="outline" size="sm" className="gap-1">
-                      <Edit className="h-4 w-4" />
-                      Edit
-                    </Button>
+                    <EditCircleDialog group={group} onSuccess={fetchGroups} />
                     <Button variant="destructive" size="sm" className="gap-1" onClick={() => handleDelete(group.id, group.name)}>
                       <Trash2 className="h-4 w-4" />
                       Delete

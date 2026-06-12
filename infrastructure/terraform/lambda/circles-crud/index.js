@@ -8,9 +8,21 @@ const GROUPS_TABLE = process.env.CERTIFICATION_GROUPS_TABLE_NAME || 'awsug-circl
 
 // Agent types an admin may attach to a circle. The UI only ever sends a `type`
 // from this list; the real ARN + request/response handling live in the
-// circle-digest Lambda. Keeping ARNs out of the DB/UI is intentional (security
-// + single source of truth). Add new agents here AND in the digest Lambda.
-const AGENT_TYPES = ['aws-news-digest'];
+// circle-digest Lambda's ./agents/<id>.js module. Keeping ARNs out of the
+// DB/UI is intentional (security + single source of truth).
+//
+// This whitelist is GENERATED at deploy time from the circle-digest agent
+// modules (see deploy.sh), so the agents/ folder is the single source of truth
+// — adding a module there auto-updates this whitelist. The fallback below is
+// only used if the generated file is missing (e.g. local dev).
+let AGENT_TYPES;
+try {
+  // eslint-disable-next-line import/no-unresolved
+  AGENT_TYPES = require('./agent-types.generated.json');
+  if (!Array.isArray(AGENT_TYPES) || AGENT_TYPES.length === 0) throw new Error('empty');
+} catch (e) {
+  AGENT_TYPES = ['aws-news-digest'];
+}
 const AGENT_FREQUENCIES = ['hourly', 'daily', 'weekly'];
 
 // Whitelist + coerce the agentConfig coming from the client so callers can't
@@ -181,6 +193,13 @@ async function updateGroup(id, event) {
   if (name) { updates.push('name = :name'); values[':name'] = name; }
   if (description) { updates.push('description = :description'); values[':description'] = description; }
   if (color) { updates.push('color = :color'); values[':color'] = color; }
+  // level is a reserved-ish attribute name in DDB expressions; alias it.
+  let names;
+  if (body.level) {
+    updates.push('#level = :level');
+    values[':level'] = body.level;
+    names = { '#level': 'level' };
+  }
   // agentConfig is set/cleared by admins from the UI. Pass null to remove it.
   if (agentConfig !== undefined) {
     if (agentConfig === null) {
@@ -196,7 +215,8 @@ async function updateGroup(id, event) {
   await docClient.send(new UpdateCommand({
     TableName: GROUPS_TABLE, Key: { id },
     UpdateExpression: `SET ${updates.join(', ')}`,
-    ExpressionAttributeValues: values
+    ExpressionAttributeValues: values,
+    ...(names ? { ExpressionAttributeNames: names } : {})
   }));
   
   const updated = await docClient.send(new GetCommand({ TableName: GROUPS_TABLE, Key: { id } }));
@@ -276,6 +296,13 @@ async function postMessage(id, event) {
   if (!existing.Item) return createResponse(404, { error: 'Group not found' });
   
   const group = existing.Item;
+
+  // Agent circles are broadcast channels: only the agent itself may create
+  // top-level posts. Humans can still reply/like (handled by other routes).
+  if (group.agentConfig && group.agentConfig.enabled && !String(userId).startsWith('agent-')) {
+    return createResponse(403, { error: 'This is an agent circle. Top-level posting is disabled; you can reply to the agent\'s updates.' });
+  }
+
   const messageId = `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
   const now = new Date().toISOString();
   

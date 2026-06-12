@@ -2,7 +2,7 @@ import { API_BASE_URL } from './aws-config';
 
 export interface AgentConfig {
   enabled: boolean;
-  type: 'aws-news-digest';
+  type: 'aws-news-digest' | 'aws-jobs';
   frequency: 'hourly' | 'daily' | 'weekly';
   botName: string;
   botAvatar?: string;
@@ -51,6 +51,7 @@ export interface GroupMessage {
   likedBy: string[];
   isPinned?: boolean;
   digestRunId?: string; // Groups posts from same agent run
+  isDigestLead?: boolean; // First/summary post of a digest run
 }
 
 export interface GroupReply {
@@ -107,6 +108,7 @@ export async function createCircle(group: {
 // Update a circle
 export async function updateCircle(id: string, updates: {
   name?: string;
+  level?: string;
   description?: string;
   color?: string;
   agentConfig?: AgentConfig | null;

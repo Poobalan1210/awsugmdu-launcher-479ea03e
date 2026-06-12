@@ -14,6 +14,7 @@ variable "agent_runtime_arns" {
   type        = list(string)
   default = [
     "arn:aws:bedrock-agentcore:us-east-1:333105300941:runtime/awsnewsdigest-F6VbLM4VC5",
+    "arn:aws:bedrock-agentcore:us-east-1:333105300941:runtime/awsjobs-GW1BCZ2qfj",
   ]
 }
 

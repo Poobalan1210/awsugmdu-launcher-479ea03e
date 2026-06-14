@@ -109,7 +109,7 @@ function GroupCard({ group, onSelect }: { group: Circle; onSelect: () => void })
             {isAgent && (
               <Badge className="gap-1 h-5 px-1.5 text-xs bg-primary text-primary-foreground hover:bg-primary">
                 <Bot className="h-3 w-3" />
-                Agent
+                AI-curated
               </Badge>
             )}
           </CardTitle>

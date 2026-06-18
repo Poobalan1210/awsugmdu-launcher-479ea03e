@@ -1400,7 +1400,7 @@ export default function Circles() {
                     <h2 className="text-2xl font-bold">AI-Curated Feeds</h2>
                   </div>
                   <p className="text-muted-foreground mb-6">
-                    Run automatically by AI agents — follow for fresh updates, no posting needed.
+                    Curated by AI agents. Follow along for the latest.
                   </p>
                   <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                     {agentGroups.map((group, index) => (

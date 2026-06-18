@@ -155,6 +155,10 @@ function GroupDetail({ group: initialGroup, onBack }: { group: Circle; onBack: (
   const [showAllDigests, setShowAllDigests] = useState(false);
   const initializedDigestKeys = useRef<Set<string>>(new Set());
   const messageRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
+  const digestRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
+  // Remembers which ?digest= link we've already focused, so a later data
+  // refetch doesn't fight the user by re-collapsing sections they reopened.
+  const handledDigestLink = useRef<string | null>(null);
 
   // Fetch fresh group data
   const { data: group = initialGroup } = useQuery({
@@ -229,7 +233,35 @@ function GroupDetail({ group: initialGroup, onBack }: { group: Circle; onBack: (
   useEffect(() => {
     const messageId = searchParams.get('message');
     const replyId = searchParams.get('reply');
-    
+    const digestId = searchParams.get('digest');
+
+    if (digestId && handledDigestLink.current !== digestId) {
+      // A shared digest link: focus that one section. Collapse every other
+      // digest and expand only the target, then reveal (in case it's behind
+      // "show older"), scroll to, and highlight it.
+      const allKeys = Array.from(groupAgentPostsByDigest(group.messages).keys());
+      if (allKeys.includes(digestId)) {
+        handledDigestLink.current = digestId;
+        setShowAllDigests(true);
+        // Suppress the auto-collapse effect for these keys so it doesn't
+        // override our focused state on the same render.
+        allKeys.forEach(k => initializedDigestKeys.current.add(k));
+        setCollapsedDigests(() => {
+          const next = new Set(allKeys);
+          next.delete(digestId);
+          return next;
+        });
+        setTimeout(() => {
+          const el = digestRefs.current[digestId];
+          el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          el?.classList.add('ring-2', 'ring-primary', 'ring-offset-2');
+          setTimeout(() => {
+            el?.classList.remove('ring-2', 'ring-primary', 'ring-offset-2');
+          }, 2000);
+        }, 500);
+      }
+    }
+
     if (replyId) {
       // If it's a reply, find the parent message and expand it
       const parentMessage = group.messages.find(m => 
@@ -378,6 +410,14 @@ function GroupDetail({ group: initialGroup, onBack }: { group: Circle; onBack: (
     else digestsByMonth.push({ month, digests: [entry] });
   }
 
+  // Build a shareable deep link to a single digest section and copy it.
+  const handleShareDigest = (digestKey: string) => {
+    const url = `${window.location.origin}/circles?group=${group.id}&digest=${encodeURIComponent(digestKey)}`;
+    navigator.clipboard.writeText(url)
+      .then(() => toast.success('Link copied! Share this digest with the community.'))
+      .catch(() => toast.error('Failed to copy link'));
+  };
+
   // Renders a single digest as a headline-titled collapsible card.
   const renderDigest = (digestKey: string, digestMessages: typeof group.messages) => {
     const leadMessage = digestMessages.find(m => m.isDigestLead) || digestMessages[0];
@@ -390,6 +430,7 @@ function GroupDetail({ group: initialGroup, onBack }: { group: Circle; onBack: (
     return (
       <Collapsible
         key={digestKey}
+        ref={el => { digestRefs.current[digestKey] = el; }}
         open={!isCollapsed}
         onOpenChange={(open) => {
           setCollapsedDigests(prev => {
@@ -399,25 +440,36 @@ function GroupDetail({ group: initialGroup, onBack }: { group: Circle; onBack: (
             return next;
           });
         }}
-        className="border rounded-lg overflow-hidden"
+        className="border rounded-lg overflow-hidden transition-shadow"
       >
-        <CollapsibleTrigger asChild>
-          <button className="w-full p-4 bg-muted/50 hover:bg-muted flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3 text-left min-w-0">
-              <Bot className="h-4 w-4 text-primary shrink-0" />
-              <div className="min-w-0">
-                <div className="font-medium truncate">{title}</div>
-                <div className="text-xs text-muted-foreground">{dateLabel}</div>
+        <div className="flex items-stretch bg-muted/50 hover:bg-muted">
+          <CollapsibleTrigger asChild>
+            <button className="flex-1 min-w-0 p-4 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 text-left min-w-0">
+                <Bot className="h-4 w-4 text-primary shrink-0" />
+                <div className="min-w-0">
+                  <div className="font-medium truncate">{title}</div>
+                  <div className="text-xs text-muted-foreground">{dateLabel}</div>
+                </div>
               </div>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <Badge variant="outline" className="text-xs">
-                {itemCount} item{itemCount !== 1 ? 's' : ''}
-              </Badge>
-              <ChevronDown className={`h-4 w-4 transition-transform ${isCollapsed ? '' : 'rotate-180'}`} />
-            </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Badge variant="outline" className="text-xs">
+                  {itemCount} item{itemCount !== 1 ? 's' : ''}
+                </Badge>
+                <ChevronDown className={`h-4 w-4 transition-transform ${isCollapsed ? '' : 'rotate-180'}`} />
+              </div>
+            </button>
+          </CollapsibleTrigger>
+          <button
+            type="button"
+            onClick={() => handleShareDigest(digestKey)}
+            title="Copy shareable link"
+            aria-label="Copy shareable link to this digest"
+            className="px-3 flex items-center text-muted-foreground hover:text-primary border-l border-border/50"
+          >
+            <Link2 className="h-4 w-4" />
           </button>
-        </CollapsibleTrigger>
+        </div>
         {/* Cap height so a big digest scrolls internally and the rows below
             stay reachable. */}
         <CollapsibleContent className="border-t">

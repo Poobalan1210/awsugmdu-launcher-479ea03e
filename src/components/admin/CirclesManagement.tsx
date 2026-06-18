@@ -34,7 +34,7 @@ function CreateGroupDialog({ onSuccess, allUsers }: { onSuccess: () => void; all
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
-    level: 'Associate' as 'Foundational' | 'Associate' | 'Professional' | 'Specialty',
+    level: 'Associate' as Circle['level'],
     description: '',
     color: 'bg-blue-500',
     ownerIds: [] as string[]
@@ -110,6 +110,7 @@ function CreateGroupDialog({ onSuccess, allUsers }: { onSuccess: () => void; all
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="General">General</SelectItem>
+                  <SelectItem value="AI-Curated">AI-Curated</SelectItem>
                   <SelectItem value="Foundational">Foundational</SelectItem>
                   <SelectItem value="Associate">Associate</SelectItem>
                   <SelectItem value="Professional">Professional</SelectItem>
@@ -281,6 +282,7 @@ function EditCircleDialog({ group, onSuccess }: { group: Circle; onSuccess: () =
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="General">General</SelectItem>
+                  <SelectItem value="AI-Curated">AI-Curated</SelectItem>
                   <SelectItem value="Foundational">Foundational</SelectItem>
                   <SelectItem value="Associate">Associate</SelectItem>
                   <SelectItem value="Professional">Professional</SelectItem>

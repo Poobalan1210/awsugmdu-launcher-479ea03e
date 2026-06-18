@@ -189,34 +189,33 @@ async function updateGroup(id, event) {
   const { name, description, color, agentConfig } = body;
   const updates = [];
   const values = { ':updatedAt': new Date().toISOString() };
-  
-  if (name) { updates.push('name = :name'); values[':name'] = name; }
-  if (description) { updates.push('description = :description'); values[':description'] = description; }
-  if (color) { updates.push('color = :color'); values[':color'] = color; }
-  // level is a reserved-ish attribute name in DDB expressions; alias it.
-  let names;
-  if (body.level) {
-    updates.push('#level = :level');
-    values[':level'] = body.level;
-    names = { '#level': 'level' };
-  }
+  // Alias every attribute name. Several of these ("name", "level") are
+  // DynamoDB reserved words, and an unaliased reserved word makes the WHOLE
+  // UpdateExpression fail (e.g. editing a circle's level silently 500s because
+  // the form also sends "name"). Routing all attributes through
+  // ExpressionAttributeNames sidesteps the reserved-word list entirely.
+  const names = { '#updatedAt': 'updatedAt' };
+
+  if (name) { updates.push('#name = :name'); values[':name'] = name; names['#name'] = 'name'; }
+  if (description) { updates.push('#description = :description'); values[':description'] = description; names['#description'] = 'description'; }
+  if (color) { updates.push('#color = :color'); values[':color'] = color; names['#color'] = 'color'; }
+  if (body.level) { updates.push('#level = :level'); values[':level'] = body.level; names['#level'] = 'level'; }
+
   // agentConfig is set/cleared by admins from the UI. Pass null to remove it.
   if (agentConfig !== undefined) {
-    if (agentConfig === null) {
-      updates.push('agentConfig = :agentConfig');
-      values[':agentConfig'] = null;
-    } else {
-      updates.push('agentConfig = :agentConfig');
-      values[':agentConfig'] = sanitizeAgentConfig(agentConfig, existing.Item.agentConfig);
-    }
+    updates.push('#agentConfig = :agentConfig');
+    names['#agentConfig'] = 'agentConfig';
+    values[':agentConfig'] = agentConfig === null
+      ? null
+      : sanitizeAgentConfig(agentConfig, existing.Item.agentConfig);
   }
-  updates.push('updatedAt = :updatedAt');
-  
+  updates.push('#updatedAt = :updatedAt');
+
   await docClient.send(new UpdateCommand({
     TableName: GROUPS_TABLE, Key: { id },
     UpdateExpression: `SET ${updates.join(', ')}`,
+    ExpressionAttributeNames: names,
     ExpressionAttributeValues: values,
-    ...(names ? { ExpressionAttributeNames: names } : {})
   }));
   
   const updated = await docClient.send(new GetCommand({ TableName: GROUPS_TABLE, Key: { id } }));

@@ -98,20 +98,29 @@ function GroupCard({ group, onSelect }: { group: Circle; onSelect: () => void })
         <CardHeader>
           <div className="flex items-center justify-between mb-2">
             <Badge className={group.color}>{group.level}</Badge>
-            <div className="flex items-center gap-1 text-sm text-muted-foreground">
+            {/* Same slot for both card types: agent circles count followers,
+                human circles count members. */}
+            <div
+              className="flex items-center gap-1 text-sm text-muted-foreground"
+              title={isAgent ? 'Followers' : 'Members'}
+            >
               <Users className="h-4 w-4" />
               {group.members.length}
             </div>
           </div>
           <CardTitle className="text-lg flex items-center gap-2">
-            {group.name}
-            {isOwner && <Crown className="h-4 w-4 text-amber-500" />}
+            {/* Bot avatar is the agent circle's identity — the one icon that
+                signals "automated", shown where a human circle's avatar would be. */}
             {isAgent && (
-              <Badge className="gap-1 h-5 px-1.5 text-xs bg-primary text-primary-foreground hover:bg-primary">
-                <Bot className="h-3 w-3" />
-                AI-curated
-              </Badge>
+              <span
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground"
+                aria-hidden="true"
+              >
+                <Bot className="h-4 w-4" />
+              </span>
             )}
+            <span className="min-w-0 truncate">{group.name}</span>
+            {isOwner && <Crown className="h-4 w-4 text-amber-500 shrink-0" />}
           </CardTitle>
           <CardDescription className="line-clamp-2">{group.description}</CardDescription>
         </CardHeader>
@@ -543,13 +552,23 @@ function GroupDetail({ group: initialGroup, onBack }: { group: Circle; onBack: (
           )}
         </div>
         
-        <h1 className="text-3xl font-bold mb-2">{group.name}</h1>
+        <div className="flex items-center gap-3 mb-2">
+          {isAgentCircle && (
+            <span
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground"
+              aria-hidden="true"
+            >
+              <Bot className="h-5 w-5" />
+            </span>
+          )}
+          <h1 className="text-3xl font-bold">{group.name}</h1>
+        </div>
         <p className="text-muted-foreground mb-4">{group.description}</p>
         
         <div className="flex flex-wrap gap-6 text-sm">
           <div className="flex items-center gap-2">
             <Users className="h-4 w-4 text-primary" />
-            <span>{group.members.length} members</span>
+            <span>{group.members.length} {isAgentCircle ? 'followers' : 'members'}</span>
           </div>
         </div>
 
@@ -602,10 +621,10 @@ function GroupDetail({ group: initialGroup, onBack }: { group: Circle; onBack: (
                 <div className="p-4 rounded-lg bg-muted/50 text-center flex flex-col items-center gap-1">
                   <div className="flex items-center gap-2 text-sm font-medium">
                     <Bot className="h-4 w-4 text-primary" />
-                    Agent-powered circle
+                    Run by an AI agent
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    This circle is curated by an agent. You can reply to and like its updates below.
+                    Updates here are posted automatically. You can reply to and like them below.
                   </p>
                 </div>
               ) : user ? (
@@ -1268,12 +1287,18 @@ export default function Circles() {
     }
   }, [groupId, allGroups, selectedGroup]);
 
+  // AI-Curated circles get their own section so newcomers immediately see they're
+  // automated. A circle counts as AI-curated if it's categorized "AI-Curated" or
+  // has an agent actively posting.
+  const agentGroups = allGroups.filter(g => g.level === 'AI-Curated' || !!g.agentConfig?.enabled);
+  const communityGroups = allGroups.filter(g => g.level !== 'AI-Curated' && !g.agentConfig?.enabled);
+
   const groupsByLevel = {
-    General: allGroups.filter(g => g.level === 'General'),
-    Foundational: allGroups.filter(g => g.level === 'Foundational'),
-    Associate: allGroups.filter(g => g.level === 'Associate'),
-    Professional: allGroups.filter(g => g.level === 'Professional'),
-    Specialty: allGroups.filter(g => g.level === 'Specialty'),
+    General: communityGroups.filter(g => g.level === 'General'),
+    Foundational: communityGroups.filter(g => g.level === 'Foundational'),
+    Associate: communityGroups.filter(g => g.level === 'Associate'),
+    Professional: communityGroups.filter(g => g.level === 'Professional'),
+    Specialty: communityGroups.filter(g => g.level === 'Specialty'),
   };
 
   return (
@@ -1362,6 +1387,37 @@ export default function Circles() {
                     <p className="text-muted-foreground">Check back soon for new circles!</p>
                   </CardContent>
                 </Card>
+              )}
+
+              {/* AI-Curated Feeds — automated circles in their own clearly
+                  labeled section so newcomers grasp the difference at a glance. */}
+              {!isLoading && agentGroups.length > 0 && (
+                <section className="mb-12">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                      <Bot className="h-5 w-5" />
+                    </span>
+                    <h2 className="text-2xl font-bold">AI-Curated Feeds</h2>
+                  </div>
+                  <p className="text-muted-foreground mb-6">
+                    Run automatically by AI agents — follow for fresh updates, no posting needed.
+                  </p>
+                  <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                    {agentGroups.map((group, index) => (
+                      <motion.div
+                        key={group.id}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: index * 0.1 }}
+                      >
+                        <GroupCard
+                          group={group}
+                          onSelect={() => setSelectedGroup(group)}
+                        />
+                      </motion.div>
+                    ))}
+                  </div>
+                </section>
               )}
 
               {/* Study Groups by Level */}

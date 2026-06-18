@@ -417,7 +417,7 @@ export interface ForumReply {
 export interface Circle {
   id: string;
   name: string;
-  level: 'Foundational' | 'Associate' | 'Professional' | 'Specialty';
+  level: 'General' | 'Foundational' | 'Associate' | 'Professional' | 'Specialty' | 'AI-Curated';
   description: string;
   members: string[];
   owners: string[];

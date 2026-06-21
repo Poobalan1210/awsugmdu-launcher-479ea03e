@@ -457,8 +457,8 @@ function GroupDetail({ group: initialGroup, onBack }: { group: Circle; onBack: (
               <div className="flex items-center gap-3 text-left min-w-0">
                 <Bot className="h-4 w-4 text-primary shrink-0" />
                 <div className="min-w-0">
-                  <div className="font-medium truncate">{title}</div>
-                  <div className="text-xs text-muted-foreground">{dateLabel}</div>
+                  <div className="font-medium">{dateLabel}</div>
+                  <div className="text-xs text-muted-foreground truncate">{title}</div>
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0">
@@ -1034,32 +1034,32 @@ function MessageCard({
   return (
     <Card className={`border ${isPinned ? 'border-primary/30 bg-primary/5' : ''}`}>
       <CardContent className="p-4">
-        <div className="flex gap-4">
+        <div className="flex gap-3 sm:gap-4">
           <Link to={profilePath(message.userName, message.userId)}>
             <Avatar className="h-10 w-10 cursor-pointer hover:ring-2 hover:ring-primary">
               <AvatarImage src={message.userAvatar} />
               <AvatarFallback>{message.userName.charAt(0)}</AvatarFallback>
             </Avatar>
           </Link>
-          <div className="flex-1">
-            <div className="flex items-center gap-2 mb-1">
-              <Link to={profilePath(message.userName, message.userId)} className="font-semibold hover:text-primary">
+          <div className="flex-1 min-w-0">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mb-1">
+              <Link to={profilePath(message.userName, message.userId)} className="font-semibold hover:text-primary break-words">
                 {message.userName}
               </Link>
               {message.userId?.startsWith('agent-') && (
-                <Badge variant="secondary" className="gap-1 h-5 px-1.5 text-xs">
+                <Badge variant="secondary" className="gap-1 h-5 px-1.5 text-xs shrink-0">
                   <Bot className="h-3 w-3" />
                   Agent
                 </Badge>
               )}
-              <span className="text-sm text-muted-foreground">
+              <span className="text-sm text-muted-foreground whitespace-nowrap shrink-0">
                 · {format(parseISO(message.createdAt), 'MMM d, yyyy')}
               </span>
-              {isPinned && <Pin className="h-3 w-3 text-primary" />}
+              {isPinned && <Pin className="h-3 w-3 text-primary shrink-0" />}
               {canDelete && (
                 <button 
                   onClick={handleDelete}
-                  className="ml-auto text-muted-foreground hover:text-destructive"
+                  className="ml-auto text-muted-foreground hover:text-destructive shrink-0"
                   title="Delete message"
                 >
                   <Trash2 className="h-4 w-4" />
@@ -1211,16 +1211,16 @@ function MessageCard({
                             <AvatarFallback>{reply.userName.charAt(0)}</AvatarFallback>
                           </Avatar>
                         </Link>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 text-sm">
-                            <Link to={profilePath(reply.userName, reply.userId)} className="font-medium hover:text-primary">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
+                            <Link to={profilePath(reply.userName, reply.userId)} className="font-medium hover:text-primary break-words">
                               {reply.userName}
                             </Link>
-                            <span className="text-muted-foreground">· {format(parseISO(reply.createdAt), 'MMM d')}</span>
+                            <span className="text-muted-foreground whitespace-nowrap shrink-0">· {format(parseISO(reply.createdAt), 'MMM d')}</span>
                             {canDeleteReply && (
                               <button 
                                 onClick={() => handleDeleteReply(reply.id)}
-                                className="ml-auto text-muted-foreground hover:text-destructive"
+                                className="ml-auto text-muted-foreground hover:text-destructive shrink-0"
                                 title="Delete reply"
                               >
                                 <Trash2 className="h-3 w-3" />
@@ -1269,6 +1269,12 @@ export default function Circles() {
   const groupId = searchParams.get('group');
   
   const [selectedGroup, setSelectedGroup] = useState<Circle | null>(null);
+
+  // Anchor for the "Explore Circles" CTA so it scrolls down to the listings.
+  const circlesListRef = useRef<HTMLDivElement>(null);
+  const scrollToCircles = () => {
+    circlesListRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   // Fetch certification groups from backend
   const { data: allGroups = [], isLoading } = useQuery({
@@ -1337,15 +1343,15 @@ export default function Circles() {
                   Share resources, follow curated digests from agents, discuss with
                   others, and schedule sessions.
                 </p>
-                <Button size="lg">
+                <Button size="lg" onClick={scrollToCircles}>
                   Explore Circles
                   <ArrowRight className="ml-2 h-5 w-5" />
                 </Button>
               </motion.section>
 
               {/* Benefits */}
-              <section className="mb-12 py-8 px-6 rounded-xl bg-muted/30">
-                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 max-w-4xl mx-auto">
+              <section className="mb-12 py-8 px-4 sm:px-6 rounded-xl bg-muted/30">
+                <div className="grid grid-cols-2 gap-4 sm:gap-6 lg:grid-cols-4 max-w-4xl mx-auto">
                   {[
                     { icon: MessageSquare, text: 'Discussion channels' },
                     { icon: Bot, text: 'Agent-powered digests' },
@@ -1354,21 +1360,22 @@ export default function Circles() {
                   ].map((item, i) => (
                     <motion.div 
                       key={i} 
-                      className="flex flex-col items-center text-center p-4"
+                      className="flex flex-col items-center text-center p-2 sm:p-4"
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: i * 0.1 }}
                     >
-                      <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-3">
-                        <item.icon className="h-6 w-6 text-primary" />
+                      <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-primary/10 flex items-center justify-center mb-3">
+                        <item.icon className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
                       </div>
-                      <p className="font-medium">{item.text}</p>
+                      <p className="font-medium text-sm sm:text-base">{item.text}</p>
                     </motion.div>
                   ))}
                 </div>
               </section>
 
               {/* Loading State */}
+              <div ref={circlesListRef} className="scroll-mt-24">
               {isLoading && (
                 <Card className="glass-card">
                   <CardContent className="p-12 text-center">
@@ -1441,6 +1448,7 @@ export default function Circles() {
                   </div>
                 </section>
               ))}
+              </div>
             </motion.div>
           )}
         </AnimatePresence>

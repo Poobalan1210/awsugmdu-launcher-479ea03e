@@ -13,6 +13,11 @@ export interface StoreItem {
   category?: string;
   itemType: ItemType;
   availableCodes?: string[]; // For virtual items
+  // Optional custom email (virtual items). When set, overrides the default code email.
+  // Supported placeholders in subject/message: {{code}}, {{itemName}}, {{points}}, {{name}}
+  emailSubject?: string;
+  emailMessage?: string;
+  emailImageUrl?: string; // Optional image URL rendered at the top of the email body
   createdAt?: string;
   updatedAt?: string;
 }

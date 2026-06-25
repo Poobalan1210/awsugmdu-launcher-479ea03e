@@ -50,6 +50,77 @@ async function sendEmail(to, subject, htmlBody, textBody) {
   }
 }
 
+// Replace {{code}}, {{itemName}}, {{points}}, {{name}} placeholders
+function applyPlaceholders(template, vars) {
+  return String(template)
+    .replace(/\{\{\s*code\s*\}\}/g, vars.code ?? '')
+    .replace(/\{\{\s*itemName\s*\}\}/g, vars.itemName ?? '')
+    .replace(/\{\{\s*points\s*\}\}/g, vars.points ?? '')
+    .replace(/\{\{\s*name\s*\}\}/g, vars.name ?? '');
+}
+
+// Build the code-delivery email. Uses the item's custom subject/message/image
+// when provided, otherwise falls back to the default template.
+function buildCodeEmail(item, { code, points, name }) {
+  const itemName = item.name;
+  const vars = { code, itemName, points: String(points), name: name || 'there' };
+
+  const codeBoxHtml = `
+      <div style="background-color: #f4f4f4; padding: 15px; border-radius: 5px; font-family: monospace; font-size: 18px; text-align: center; margin: 20px 0;">
+        <strong>${code}</strong>
+      </div>`;
+
+  const imageHtml = item.emailImageUrl
+    ? `<div style="text-align: center; margin-bottom: 16px;"><img src="${item.emailImageUrl}" alt="${itemName}" style="max-width: 100%; height: auto; border-radius: 8px;" /></div>`
+    : '';
+
+  // Subject: custom (with placeholders) or default
+  const subject = item.emailSubject
+    ? applyPlaceholders(item.emailSubject, vars)
+    : `Your ${itemName} Code`;
+
+  // Custom message path
+  if (item.emailMessage && item.emailMessage.trim()) {
+    const hasCodePlaceholder = /\{\{\s*code\s*\}\}/.test(item.emailMessage);
+    const messageWithVars = applyPlaceholders(item.emailMessage, vars);
+    const messageHtml = messageWithVars.replace(/\n/g, '<br>');
+
+    const htmlBody = `
+      ${imageHtml}
+      <div>${messageHtml}</div>
+      ${hasCodePlaceholder ? '' : codeBoxHtml}
+    `;
+
+    const textBody = `${messageWithVars}${hasCodePlaceholder ? '' : `\n\nYour code: ${code}`}\n`;
+
+    return { subject, htmlBody, textBody };
+  }
+
+  // Default template path
+  const htmlBody = `
+    ${imageHtml}
+    <h2>Congratulations! 🎉</h2>
+    <p>You have successfully redeemed <strong>${itemName}</strong> for ${points} points.</p>
+    <p>Here is your code:</p>
+    ${codeBoxHtml}
+    <p>Thank you for being part of our community!</p>
+    <p>Best regards,<br>AWS User Group MDU Team</p>
+  `;
+  const textBody = `
+Congratulations!
+
+You have successfully redeemed ${itemName} for ${points} points.
+
+Your code: ${code}
+
+Thank you for being part of our community!
+
+Best regards,
+AWS User Group MDU Team
+  `;
+  return { subject, htmlBody, textBody };
+}
+
 exports.handler = async (event) => {
   console.log('Event:', JSON.stringify(event, null, 2));
 
@@ -151,6 +222,9 @@ async function createStoreItem(data) {
     category: data.category || 'general',
     itemType: data.itemType || 'physical',
     availableCodes: data.availableCodes || [],
+    emailSubject: data.emailSubject || '',
+    emailMessage: data.emailMessage || '',
+    emailImageUrl: data.emailImageUrl || '',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
@@ -236,6 +310,21 @@ async function updateStoreItem(id, data) {
     updateExpressions.push('#availableCodes = :availableCodes');
     expressionAttributeNames['#availableCodes'] = 'availableCodes';
     expressionAttributeValues[':availableCodes'] = data.availableCodes;
+  }
+  if (data.emailSubject !== undefined) {
+    updateExpressions.push('#emailSubject = :emailSubject');
+    expressionAttributeNames['#emailSubject'] = 'emailSubject';
+    expressionAttributeValues[':emailSubject'] = data.emailSubject;
+  }
+  if (data.emailMessage !== undefined) {
+    updateExpressions.push('#emailMessage = :emailMessage');
+    expressionAttributeNames['#emailMessage'] = 'emailMessage';
+    expressionAttributeValues[':emailMessage'] = data.emailMessage;
+  }
+  if (data.emailImageUrl !== undefined) {
+    updateExpressions.push('#emailImageUrl = :emailImageUrl');
+    expressionAttributeNames['#emailImageUrl'] = 'emailImageUrl';
+    expressionAttributeValues[':emailImageUrl'] = data.emailImageUrl;
   }
   if (data.quantity !== undefined) {
     updateExpressions.push('#quantity = :quantity');
@@ -515,29 +604,12 @@ async function assignCodeToOrder(id, data) {
   
   if (userResult.Item && userResult.Item.email) {
     const user = userResult.Item;
-    const subject = `Your ${order.itemName} Code`;
-    const htmlBody = `
-      <h2>Congratulations! 🎉</h2>
-      <p>You have successfully redeemed <strong>${order.itemName}</strong> for ${order.points} points.</p>
-      <p>Here is your code:</p>
-      <div style="background-color: #f4f4f4; padding: 15px; border-radius: 5px; font-family: monospace; font-size: 18px; text-align: center; margin: 20px 0;">
-        <strong>${data.code}</strong>
-      </div>
-      <p>Thank you for being part of our community!</p>
-      <p>Best regards,<br>AWS User Group MDU Team</p>
-    `;
-    const textBody = `
-Congratulations!
-
-You have successfully redeemed ${order.itemName} for ${order.points} points.
-
-Your code: ${data.code}
-
-Thank you for being part of our community!
-
-Best regards,
-AWS User Group MDU Team
-    `;
+    const emailItem = itemResult.Item || { name: order.itemName };
+    const { subject, htmlBody, textBody } = buildCodeEmail(emailItem, {
+      code: data.code,
+      points: order.points,
+      name: user.name,
+    });
     await sendEmail(user.email, subject, htmlBody, textBody);
   }
 
@@ -689,29 +761,11 @@ async function redeemItem(itemId, data) {
 
     // Send email with the code
     if (user.email) {
-      const subject = `Your ${item.name} Code`;
-      const htmlBody = `
-        <h2>Congratulations! 🎉</h2>
-        <p>You have successfully redeemed <strong>${item.name}</strong> for ${item.points} points.</p>
-        <p>Here is your code:</p>
-        <div style="background-color: #f4f4f4; padding: 15px; border-radius: 5px; font-family: monospace; font-size: 18px; text-align: center; margin: 20px 0;">
-          <strong>${code}</strong>
-        </div>
-        <p>Thank you for being part of our community!</p>
-        <p>Best regards,<br>AWS User Group MDU Team</p>
-      `;
-      const textBody = `
-Congratulations!
-
-You have successfully redeemed ${item.name} for ${item.points} points.
-
-Your code: ${code}
-
-Thank you for being part of our community!
-
-Best regards,
-AWS User Group MDU Team
-      `;
+      const { subject, htmlBody, textBody } = buildCodeEmail(item, {
+        code,
+        points: item.points,
+        name: user.name,
+      });
       await sendEmail(user.email, subject, htmlBody, textBody);
     }
   }

@@ -36,6 +36,9 @@ export default function StoreManagement() {
     inStock: true,
     quantity: 0,
     availableCodes: [] as string[],
+    emailSubject: '',
+    emailMessage: '',
+    emailImageUrl: '',
   });
 
   const [codeInput, setCodeInput] = useState('');
@@ -99,6 +102,9 @@ export default function StoreManagement() {
       inStock: true,
       quantity: 0,
       availableCodes: [],
+      emailSubject: '',
+      emailMessage: '',
+      emailImageUrl: '',
     });
     setShowItemDialog(true);
   };
@@ -115,6 +121,9 @@ export default function StoreManagement() {
       inStock: item.inStock,
       quantity: item.quantity || 0,
       availableCodes: item.availableCodes || [],
+      emailSubject: item.emailSubject || '',
+      emailMessage: item.emailMessage || '',
+      emailImageUrl: item.emailImageUrl || '',
     });
     setShowItemDialog(true);
   };
@@ -655,6 +664,52 @@ export default function StoreManagement() {
                 <p className="text-xs text-muted-foreground">
                   {itemForm.availableCodes.length} code(s) available
                 </p>
+              </div>
+            )}
+
+            {itemForm.itemType === 'virtual' && (
+              <div className="grid gap-4 border-t pt-4">
+                <div>
+                  <Label className="text-sm font-semibold">Custom Email (optional)</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Customize the email sent with the code. Leave blank to use the default template.
+                    Placeholders: <code>{'{{code}}'}</code>, <code>{'{{itemName}}'}</code>, <code>{'{{points}}'}</code>, <code>{'{{name}}'}</code>
+                  </p>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="emailSubject">Email Subject</Label>
+                  <Input
+                    id="emailSubject"
+                    value={itemForm.emailSubject}
+                    onChange={(e) => setItemForm({ ...itemForm, emailSubject: e.target.value })}
+                    placeholder="Your ACD Bangalore 25% off code"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="emailMessage">Email Message</Label>
+                  <Textarea
+                    id="emailMessage"
+                    rows={6}
+                    value={itemForm.emailMessage}
+                    onChange={(e) => setItemForm({ ...itemForm, emailMessage: e.target.value })}
+                    placeholder={"Hi {{name}},\n\nHere's your 25% off code for ACD Bangalore: {{code}}\n\nSee you there!"}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Basic HTML is allowed. If you don't include <code>{'{{code}}'}</code>, the code will be added automatically below your message.
+                  </p>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="emailImageUrl">Image URL (optional)</Label>
+                  <Input
+                    id="emailImageUrl"
+                    value={itemForm.emailImageUrl}
+                    onChange={(e) => setItemForm({ ...itemForm, emailImageUrl: e.target.value })}
+                    placeholder="https://...  (shown at the top of the email)"
+                  />
+                  {itemForm.emailImageUrl?.startsWith('http') && (
+                    <img src={itemForm.emailImageUrl} alt="Email preview" className="max-h-32 w-auto object-contain rounded mt-1" />
+                  )}
+                </div>
               </div>
             )}
           </div>

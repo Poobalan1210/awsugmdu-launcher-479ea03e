@@ -24,6 +24,7 @@ export default function StoreManagement() {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [saving, setSaving] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [uploadingEmailImage, setUploadingEmailImage] = useState(false);
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
 
   const [itemForm, setItemForm] = useState({
@@ -141,6 +142,22 @@ export default function StoreManagement() {
       toast.error(error.message || 'Failed to upload image');
     } finally {
       setUploadingImage(false);
+    }
+  };
+
+  const handleEmailImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setUploadingEmailImage(true);
+      const url = await uploadFileToS3(file, 'store-email-images');
+      setItemForm((prev) => ({ ...prev, emailImageUrl: url }));
+      toast.success('Email image uploaded');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to upload image');
+    } finally {
+      setUploadingEmailImage(false);
     }
   };
 
@@ -699,13 +716,35 @@ export default function StoreManagement() {
                   </p>
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="emailImageUrl">Image URL (optional)</Label>
-                  <Input
-                    id="emailImageUrl"
-                    value={itemForm.emailImageUrl}
-                    onChange={(e) => setItemForm({ ...itemForm, emailImageUrl: e.target.value })}
-                    placeholder="https://...  (shown at the top of the email)"
-                  />
+                  <Label htmlFor="emailImageUrl">Image (optional)</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="emailImageUrl"
+                      value={itemForm.emailImageUrl}
+                      onChange={(e) => setItemForm({ ...itemForm, emailImageUrl: e.target.value })}
+                      placeholder="Paste image URL or upload →"
+                      className="flex-1"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      disabled={uploadingEmailImage}
+                      onClick={() => document.getElementById('email-image-upload')?.click()}
+                    >
+                      {uploadingEmailImage ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                    </Button>
+                    <input
+                      id="email-image-upload"
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleEmailImageUpload}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Shown at the top of the email. Paste a URL or upload an image.
+                  </p>
                   {itemForm.emailImageUrl?.startsWith('http') && (
                     <img src={itemForm.emailImageUrl} alt="Email preview" className="max-h-32 w-auto object-contain rounded mt-1" />
                   )}

@@ -108,6 +108,8 @@ exports.handler = async (event) => {
       ? `spotlight-images/${timestamp}-${sanitizedFileName}`
       : bucketType === 'badge-images'
       ? `badge-images/${timestamp}-${sanitizedFileName}`
+      : bucketType === 'store-email-images'
+      ? `store-email-images/${timestamp}-${sanitizedFileName}`
       : `posters/${timestamp}-${sanitizedFileName}`;
     
     // Generate presigned URL (valid for 5 minutes)
@@ -124,7 +126,7 @@ exports.handler = async (event) => {
     // Generate public URL - use CloudFront if available, otherwise S3
     const publicUrl = bucketType === 'profile-photos' && CLOUDFRONT_PROFILE_PHOTOS
       ? `https://${CLOUDFRONT_PROFILE_PHOTOS}/${key}`
-      : bucketType === 'meetup-posters' && CLOUDFRONT_MEETUP_POSTERS
+      : (bucketType === 'meetup-posters' || bucketType === 'store-email-images') && CLOUDFRONT_MEETUP_POSTERS
       ? `https://${CLOUDFRONT_MEETUP_POSTERS}/${key}`
       : `https://${bucketName}.s3.${process.env.AWS_REGION}.amazonaws.com/${key}`;
     

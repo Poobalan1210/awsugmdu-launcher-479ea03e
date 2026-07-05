@@ -387,11 +387,16 @@ async function handleLeaderboard(event) {
   return ok({ entries: board, totalItems: board.length, window });
 }
 
-async function handleMetrics(userId) {
+async function handleMetrics(userId, event) {
   const user = await getUserById(userId);
   if (!user) return createResponse(404, { data: null, error: { code: 'NOT_FOUND', message: 'User not found' } });
   const title = getTitle(user.score || 0);
   const badges = getBadges(user);
+
+  // Credit/spend data is personal — only return it when the caller is the owner
+  // (identified by their Cognito token). Everyone else gets nulls for those fields.
+  const caller = extractUserId(event?.headers?.Authorization || event?.headers?.authorization);
+  const isOwner = !!caller && caller === user.user_id;
 
   const monthlyLimit = user.monthly_limit || null;
   const currentUsage = user.current_usage || 0;
@@ -428,16 +433,18 @@ async function handleMetrics(userId) {
     toolBreakdown: Object.entries(user.tool_breakdown || {}).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),
     hookBreakdown: [{ name: 'promptSubmit', count: user.total_prompts || 0 }],
     plan: user.plan || 'Auto-Auto',
-    planPrice: user.plan_price || 0,
-    monthlyLimit,
-    currentUsage: Math.round(currentUsage * 100) / 100,
-    percentageUsed: Math.round(percentageUsed * 100) / 100,
-    creditsRemaining,
-    creditsConsumedTotal: Math.round((user.credits_consumed_total || 0) * 100) / 100,
-    resetDate: user.reset_date || null,
-    daysUntilReset,
-    dailyBurnRate: Math.round(dailyBurnRate * 100) / 100,
-    daysRemaining,
+    // ── Private (owner-only): null for anyone who isn't this user ──
+    planPrice: isOwner ? (user.plan_price || 0) : null,
+    monthlyLimit: isOwner ? monthlyLimit : null,
+    currentUsage: isOwner ? Math.round(currentUsage * 100) / 100 : null,
+    percentageUsed: isOwner ? Math.round(percentageUsed * 100) / 100 : null,
+    creditsRemaining: isOwner ? creditsRemaining : null,
+    creditsConsumedTotal: isOwner ? Math.round((user.credits_consumed_total || 0) * 100) / 100 : null,
+    resetDate: isOwner ? (user.reset_date || null) : null,
+    daysUntilReset: isOwner ? daysUntilReset : null,
+    dailyBurnRate: isOwner ? Math.round(dailyBurnRate * 100) / 100 : null,
+    daysRemaining: isOwner ? daysRemaining : null,
+    isOwner,
   });
 }
 
@@ -571,7 +578,7 @@ exports.handler = async (event) => {
       // /kironomics/users/{userId}/...
       const userId = r[1] ? decodeURIComponent(r[1]) : null;
       if (method === 'GET' && userId) {
-        if (r[2] === 'metrics') return await handleMetrics(userId);
+        if (r[2] === 'metrics') return await handleMetrics(userId, event);
         if (r[2] === 'sessions') return await handleUserSessions(userId, event);
         if (r[2] === 'badges') return await handleBadges(userId);
         if (r[2] === 'history') return await handleHistory(userId, event);

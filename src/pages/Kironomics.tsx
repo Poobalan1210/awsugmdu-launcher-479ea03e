@@ -19,7 +19,7 @@ import { KironomicsNav, KironomicsFooter } from '@/components/kironomics/Kironom
 import { KironomicsIntro } from '@/components/kironomics/KironomicsIntro';
 import {
   getKironomicsLeaderboard, getKironomicsUserMetrics, getKironomicsUserHeatmap,
-  type LeaderboardWindow, type HeatmapDay,
+  type LeaderboardWindow, type HeatmapDay, type KironomicsMetrics,
 } from '@/lib/kironomics';
 
 // Scoped retro theme. Press Start 2P for headings, VT323 for body copy.
@@ -160,6 +160,88 @@ function StatTile({ icon: Icon, label, value }: { icon: typeof Wrench; label: st
   );
 }
 
+function ProfileDetails({ m, heatmap, showCredits }: { m: KironomicsMetrics; heatmap: HeatmapDay[]; showCredits: boolean }) {
+  return (
+    <>
+      <div className="flex items-center gap-3 mb-1 pr-8">
+        <span className="text-3xl">{m.titleIcon}</span>
+        <div className="min-w-0">
+          <h3 className="font-retro text-2xl text-violet-50 truncate leading-none">{m.displayName}</h3>
+          <p className="font-retro text-base text-violet-400/80">{m.title}</p>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 mb-5">
+        <span className="font-pixel text-[8px] px-2 py-1 rounded bg-violet-500/20 text-violet-200">{m.plan}</span>
+        <span className="font-pixel text-[11px] text-amber-200 ml-auto">{m.compositeScore.toLocaleString()} pts</span>
+      </div>
+
+      <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mb-5">
+        <StatTile icon={Wrench} label="Tools" value={m.totalMcpCalls} />
+        <StatTile icon={MessageSquare} label="Prompts" value={m.totalHookTriggers} />
+        <StatTile icon={Activity} label="Sessions" value={m.totalSessions} />
+        <StatTile icon={Clock} label="Time" value={fmtDuration(m.totalDuration)} />
+        <StatTile icon={Flame} label="Streak" value={`${m.streakDays}d`} />
+      </div>
+
+      {showCredits && (
+        m.monthlyLimit ? (
+          <div className="rounded-lg bg-black/40 border border-violet-500/20 p-4 mb-5">
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-pixel text-[10px] text-violet-200 flex items-center gap-2">
+                <CreditCard className="h-4 w-4" /> CREDITS
+                <span className="font-retro text-sm text-violet-400/70 normal-case">(private to you)</span>
+              </span>
+              <span className="font-retro text-base text-violet-300/80">
+                {(m.currentUsage ?? 0).toLocaleString()} / {m.monthlyLimit.toLocaleString()}
+              </span>
+            </div>
+            <div className="h-2 rounded bg-violet-500/15 overflow-hidden mb-3">
+              <div className="h-full bg-violet-400" style={{ width: `${Math.min(100, m.percentageUsed ?? 0)}%` }} />
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <StatTile icon={TrendingUp} label="Burn/day" value={m.dailyBurnRate ?? '—'} />
+              <StatTile icon={CreditCard} label="Remaining" value={m.creditsRemaining ?? '—'} />
+              <StatTile icon={Calendar} label="Resets in" value={m.daysUntilReset != null ? `${m.daysUntilReset}d` : '—'} />
+              <StatTile icon={Clock} label="Runs out" value={m.daysRemaining != null ? `${m.daysRemaining}d` : '—'} />
+            </div>
+          </div>
+        ) : (
+          <p className="font-retro text-base text-violet-400/70 mb-5">
+            Plan shows <span className="text-violet-200">Auto-Auto</span> — no credit data reported yet.
+            It fills in once the reporter reads your Kiro usage.
+          </p>
+        )
+      )}
+
+      <div className="mb-5">
+        <div className="font-pixel text-[10px] text-violet-200 mb-2 flex items-center gap-2">
+          <Award className="h-4 w-4" /> BADGES
+        </div>
+        {m.badges.length ? (
+          <div className="flex flex-wrap gap-2">
+            {m.badges.map((b) => (
+              <span key={b.name} className="font-retro text-base text-violet-100 bg-violet-500/15 border border-violet-500/25 rounded-full px-3 py-1">
+                {b.icon} {b.name}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="font-retro text-base text-violet-400/70">No badges yet.</p>
+        )}
+      </div>
+
+      {heatmap.length > 0 && (
+        <div>
+          <div className="font-pixel text-[10px] text-violet-200 mb-2 flex items-center gap-2">
+            <Activity className="h-4 w-4" /> LAST 365 DAYS
+          </div>
+          <ProfileHeatmap days={heatmap} />
+        </div>
+      )}
+    </>
+  );
+}
+
 function UserProfileModal({
   userId, displayName, onClose,
 }: { userId: string; displayName: string; onClose: () => void }) {
@@ -211,84 +293,50 @@ function UserProfileModal({
             No detailed stats for <span className="text-violet-100">{displayName}</span> yet.
           </div>
         ) : (
-          <>
-            <div className="flex items-center gap-3 mb-1 pr-8">
-              <span className="text-3xl">{m.titleIcon}</span>
-              <div className="min-w-0">
-                <h3 className="font-retro text-2xl text-violet-50 truncate leading-none">{m.displayName}</h3>
-                <p className="font-retro text-base text-violet-400/80">{m.title}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 mb-5">
-              <span className="font-pixel text-[8px] px-2 py-1 rounded bg-violet-500/20 text-violet-200">{m.plan}</span>
-              <span className="font-pixel text-[11px] text-amber-200 ml-auto">{m.compositeScore.toLocaleString()} pts</span>
-            </div>
-
-            <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mb-5">
-              <StatTile icon={Wrench} label="Tools" value={m.totalMcpCalls} />
-              <StatTile icon={MessageSquare} label="Prompts" value={m.totalHookTriggers} />
-              <StatTile icon={Activity} label="Sessions" value={m.totalSessions} />
-              <StatTile icon={Clock} label="Time" value={fmtDuration(m.totalDuration)} />
-              <StatTile icon={Flame} label="Streak" value={`${m.streakDays}d`} />
-            </div>
-
-            {m.monthlyLimit ? (
-              <div className="rounded-lg bg-black/40 border border-violet-500/20 p-4 mb-5">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="font-pixel text-[10px] text-violet-200 flex items-center gap-2">
-                    <CreditCard className="h-4 w-4" /> CREDITS
-                  </span>
-                  <span className="font-retro text-base text-violet-300/80">
-                    {m.currentUsage.toLocaleString()} / {m.monthlyLimit.toLocaleString()}
-                  </span>
-                </div>
-                <div className="h-2 rounded bg-violet-500/15 overflow-hidden mb-3">
-                  <div className="h-full bg-violet-400" style={{ width: `${Math.min(100, m.percentageUsed)}%` }} />
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  <StatTile icon={TrendingUp} label="Burn/day" value={m.dailyBurnRate} />
-                  <StatTile icon={CreditCard} label="Remaining" value={m.creditsRemaining ?? '—'} />
-                  <StatTile icon={Calendar} label="Resets in" value={m.daysUntilReset != null ? `${m.daysUntilReset}d` : '—'} />
-                  <StatTile icon={Clock} label="Runs out" value={m.daysRemaining != null ? `${m.daysRemaining}d` : '—'} />
-                </div>
-              </div>
-            ) : (
-              <p className="font-retro text-base text-violet-400/70 mb-5">
-                Plan shows <span className="text-violet-200">Auto-Auto</span> — no credit data reported yet.
-                It fills in once the reporter reads your Kiro usage.
-              </p>
-            )}
-
-            <div className="mb-5">
-              <div className="font-pixel text-[10px] text-violet-200 mb-2 flex items-center gap-2">
-                <Award className="h-4 w-4" /> BADGES
-              </div>
-              {m.badges.length ? (
-                <div className="flex flex-wrap gap-2">
-                  {m.badges.map((b) => (
-                    <span key={b.name} className="font-retro text-base text-violet-100 bg-violet-500/15 border border-violet-500/25 rounded-full px-3 py-1">
-                      {b.icon} {b.name}
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                <p className="font-retro text-base text-violet-400/70">No badges yet.</p>
-              )}
-            </div>
-
-            {heatmap.length > 0 && (
-              <div>
-                <div className="font-pixel text-[10px] text-violet-200 mb-2 flex items-center gap-2">
-                  <Activity className="h-4 w-4" /> LAST 365 DAYS
-                </div>
-                <ProfileHeatmap days={heatmap} />
-              </div>
-            )}
-          </>
+          <ProfileDetails m={m} heatmap={heatmap} showCredits={false} />
         )}
       </motion.div>
     </motion.div>,
     document.body,
+  );
+}
+
+function MyStatsSection() {
+  const { user, isAuthenticated } = useAuth();
+  const userId = user?.id;
+  const { data: m } = useQuery({
+    queryKey: ['kironomics-my-metrics', userId],
+    queryFn: () => getKironomicsUserMetrics(userId as string),
+    enabled: !!userId,
+  });
+  const { data: heatmap = [] } = useQuery({
+    queryKey: ['kironomics-my-heatmap', userId],
+    queryFn: () => getKironomicsUserHeatmap(userId as string),
+    enabled: !!userId,
+  });
+
+  if (!isAuthenticated) return null; // only the signed-in user sees their own stats
+
+  return (
+    <section id="my-stats" className="relative z-10 container mx-auto px-4 pt-14">
+      <div className="max-w-3xl mx-auto">
+        <div className="text-center mb-6">
+          <h2 className="font-pixel text-xl sm:text-2xl text-violet-200 kiro-text-glow">YOUR STATS</h2>
+          <p className="font-retro text-lg text-violet-300/80 mt-2">
+            Private to you — including credit usage no one else can see.
+          </p>
+        </div>
+        <div className="rounded-lg bg-black/40 kiro-pixel-border p-6">
+          {!m ? (
+            <p className="py-8 text-center font-retro text-xl text-violet-300/70">
+              No stats yet — generate your API key below, set up the Power, and your stats will show up here.
+            </p>
+          ) : (
+            <ProfileDetails m={m} heatmap={heatmap} showCredits />
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -776,6 +824,7 @@ export default function Kironomics() {
         </section>
 
         <FeatureCards />
+        <MyStatsSection />
         <LeaderboardSection />
         <InstallSection />
         <PrivacySection />

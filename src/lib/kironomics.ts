@@ -152,16 +152,18 @@ export interface KironomicsMetrics {
   longestStreak: number;
   badges: KironomicsBadge[];
   plan: string;
-  planPrice: number;
+  // Private (owner-only): the backend returns null for these unless you're the owner.
+  planPrice: number | null;
   monthlyLimit: number | null;
-  currentUsage: number;
-  percentageUsed: number;
+  currentUsage: number | null;
+  percentageUsed: number | null;
   creditsRemaining: number | null;
-  creditsConsumedTotal: number;
+  creditsConsumedTotal: number | null;
   resetDate: string | null;
   daysUntilReset: number | null;
-  dailyBurnRate: number;
+  dailyBurnRate: number | null;
   daysRemaining: number | null;
+  isOwner?: boolean;
 }
 
 export interface HeatmapDay {

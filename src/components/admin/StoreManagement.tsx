@@ -540,6 +540,103 @@ export default function StoreManagement() {
               </div>
             )}
           </div>
+
+          <div className="mt-8">
+            <h3 className="text-lg font-semibold mb-4">Other Orders</h3>
+            <p className="text-sm text-muted-foreground mb-4">Shipped, delivered, or cancelled orders</p>
+            {otherOrders.length === 0 ? (
+              <Card>
+                <CardContent className="py-8 text-center text-muted-foreground">
+                  No other orders
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="max-h-[400px] overflow-y-auto space-y-2 pr-2">
+                {otherOrders.map((order) => {
+                  const isExpanded = expandedOrders.has(order.id);
+                  return (
+                    <Card key={order.id}>
+                      <div
+                        className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-muted/50 transition-colors"
+                        onClick={() => {
+                          setExpandedOrders(prev => {
+                            const next = new Set(prev);
+                            if (next.has(order.id)) next.delete(order.id);
+                            else next.add(order.id);
+                            return next;
+                          });
+                        }}
+                      >
+                        <div>
+                          <p className="font-medium text-sm">{order.itemName}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {userDetails[order.userId]?.name || 'Unknown'} · {new Date(order.createdAt).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant={order.status === 'cancelled' ? 'destructive' : 'secondary'} className="capitalize">
+                            {order.status}
+                          </Badge>
+                          {isExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                        </div>
+                      </div>
+                      {isExpanded && (
+                        <CardContent className="pt-0 pb-4">
+                          <div className="space-y-2 text-sm border-t pt-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-muted-foreground">Order ID:</span>
+                              <span className="font-mono text-xs">#{order.id.slice(-8)}</span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-muted-foreground">User ID:</span>
+                              <span className="font-mono text-xs">{order.userId}</span>
+                            </div>
+                            {userDetails[order.userId]?.email && (
+                              <div className="flex items-center justify-between">
+                                <span className="text-muted-foreground">Email:</span>
+                                <span className="text-xs">{userDetails[order.userId].email}</span>
+                              </div>
+                            )}
+                            <div className="flex items-center justify-between">
+                              <span className="text-muted-foreground">Points:</span>
+                              <span className="font-semibold">{order.points}</span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-muted-foreground">Type:</span>
+                              <Badge variant="outline">{order.itemType}</Badge>
+                            </div>
+                            {order.code && (
+                              <div className="flex items-center justify-between">
+                                <span className="text-muted-foreground">Code:</span>
+                                <code className="text-xs bg-muted px-2 py-1 rounded">{order.code}</code>
+                              </div>
+                            )}
+                            {order.itemType === 'physical' && order.shippingAddress && (
+                              <div className="text-sm pt-2 border-t">
+                                <p className="font-semibold mb-1">Shipping Address:</p>
+                                <p className="text-muted-foreground text-xs">
+                                  {order.shippingAddress.name}<br />
+                                  {order.shippingAddress.address}<br />
+                                  {order.shippingAddress.city}, {order.shippingAddress.state} {order.shippingAddress.zipCode}<br />
+                                  {order.shippingAddress.phone}
+                                </p>
+                              </div>
+                            )}
+                            {order.adminNotes && (
+                              <div className="text-sm pt-2 border-t">
+                                <p className="font-semibold mb-1">Admin Notes:</p>
+                                <p className="text-muted-foreground text-xs">{order.adminNotes}</p>
+                              </div>
+                            )}
+                          </div>
+                        </CardContent>
+                      )}
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </TabsContent>
       </Tabs>
 

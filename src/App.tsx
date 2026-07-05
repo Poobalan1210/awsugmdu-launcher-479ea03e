@@ -25,6 +25,7 @@ import Dashboard from "./pages/Dashboard";
 import AWSEvents from "./pages/AWSEvents";
 import SpeakerCodeOfConduct from "./pages/SpeakerCodeOfConduct";
 import SpeakerInvite from "./pages/SpeakerInvite";
+import Kironomics from "./pages/Kironomics";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -63,6 +64,9 @@ const App = () => (
             <Route path="/speaker-code-of-conduct" element={<SpeakerCodeOfConduct />} />
             {/* Speaker invitation acceptance — public landing; accepting requires sign-in */}
             <Route path="/speaker-invite/:meetupId/:token" element={<SpeakerInvite />} />
+
+            {/* Kironomics — public landing so anyone can view rankings & install instructions */}
+            <Route path="/kironomics" element={<Kironomics />} />
             
             {/* Protected Routes */}
             <Route path="/profile" element={

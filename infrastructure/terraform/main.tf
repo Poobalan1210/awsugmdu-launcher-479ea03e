@@ -2295,6 +2295,10 @@ resource "aws_api_gateway_deployment" "api" {
       aws_api_gateway_integration.stats_get_lambda.id,
       aws_api_gateway_integration.stats_options.id,
       aws_lambda_function.stats_crud.source_code_hash,
+      # Kironomics (usage tracking + leaderboard)
+      aws_api_gateway_integration.kironomics_any_lambda.id,
+      aws_api_gateway_integration.kironomics_proxy_any_lambda.id,
+      aws_lambda_function.kironomics_crud.source_code_hash,
       # Circles (renamed from certification-groups): force redeploy so the
       # new /circles path + renamed Lambda go live on the stage.
       aws_api_gateway_integration.certification_groups_get_lambda.id,
@@ -2511,6 +2515,9 @@ resource "aws_api_gateway_deployment" "api" {
     aws_api_gateway_integration.stats_get_lambda,
     aws_api_gateway_integration.stats_options,
     aws_api_gateway_integration_response.stats_options,
+    # Kironomics
+    aws_api_gateway_integration.kironomics_any_lambda,
+    aws_api_gateway_integration.kironomics_proxy_any_lambda,
   ]
 
   rest_api_id = aws_api_gateway_rest_api.api.id

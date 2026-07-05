@@ -50,6 +50,11 @@ export function Footer() {
               </Link>
             </li>
             <li>
+              <Link to="/kironomics" className="text-sm text-muted-foreground hover:text-primary transition-colors">
+                Kironomics
+              </Link>
+            </li>
+            <li>
               <Link to="/store" className="text-sm text-muted-foreground hover:text-primary transition-colors">
                 Store
               </Link>

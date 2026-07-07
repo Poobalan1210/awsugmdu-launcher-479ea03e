@@ -161,6 +161,15 @@ function StatTile({ icon: Icon, label, value }: { icon: typeof Wrench; label: st
 }
 
 function ProfileDetails({ m, heatmap, showCredits }: { m: KironomicsMetrics; heatmap: HeatmapDay[]; showCredits: boolean }) {
+  // Session time is a coarse metric (quick turns record 0); a bare "0s" reads like a
+  // bug, so we hide the Time tile entirely when there's no meaningful duration.
+  const statTiles: { icon: typeof Wrench; label: string; value: string | number }[] = [
+    { icon: Wrench, label: 'Tools', value: m.totalMcpCalls },
+    { icon: MessageSquare, label: 'Prompts', value: m.totalHookTriggers },
+    { icon: Activity, label: 'Sessions', value: m.totalSessions },
+    ...(m.totalDuration > 0 ? [{ icon: Clock, label: 'Time', value: fmtDuration(m.totalDuration) }] : []),
+    { icon: Flame, label: 'Streak', value: `${m.streakDays}d` },
+  ];
   return (
     <>
       <div className="flex items-center gap-3 mb-1 pr-8">
@@ -175,12 +184,10 @@ function ProfileDetails({ m, heatmap, showCredits }: { m: KironomicsMetrics; hea
         <span className="font-pixel text-[11px] text-amber-200 ml-auto">{m.compositeScore.toLocaleString()} pts</span>
       </div>
 
-      <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mb-5">
-        <StatTile icon={Wrench} label="Tools" value={m.totalMcpCalls} />
-        <StatTile icon={MessageSquare} label="Prompts" value={m.totalHookTriggers} />
-        <StatTile icon={Activity} label="Sessions" value={m.totalSessions} />
-        <StatTile icon={Clock} label="Time" value={fmtDuration(m.totalDuration)} />
-        <StatTile icon={Flame} label="Streak" value={`${m.streakDays}d`} />
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-5">
+        {statTiles.map((s) => (
+          <StatTile key={s.label} icon={s.icon} label={s.label} value={s.value} />
+        ))}
       </div>
 
       {showCredits && (

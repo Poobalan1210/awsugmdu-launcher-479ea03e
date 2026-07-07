@@ -24,6 +24,19 @@ const docClient = DynamoDBDocumentClient.from(client);
 const TABLE = process.env.KIRONOMICS_TABLE_NAME || 'awsug-kironomics';
 const ADMIN_KEY = process.env.ADMIN_KEY || '';
 
+// Sanity caps for client-supplied numbers, so a corrupt/epoch-sized reading can
+// never poison a user's totals or score (see the elapsed_seconds incident).
+const MAX_SESSION_SECONDS = 86400;      // 24h per session
+const MAX_EVENTS_PER_SESSION = 100000;  // tool_calls / prompts per session
+const MAX_USAGE = 10000000;             // currentUsage / usageLimit ceiling
+const MAX_CREDITS_PER_SESSION = 100000; // one session's credit delta
+
+// Coerce to a finite number in [0, max]; anything else (NaN, negative, absurd) -> 0.
+function safeNum(v, max) {
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 && n <= max ? n : 0;
+}
+
 // ── HTTP helpers ──────────────────────────────────────────────────
 function getCorsHeaders() {
   return {
@@ -293,32 +306,50 @@ async function handleSession(event) {
   if (machine_id) user.machines = [...(user.machines || []), machine_id];
   if (ip) user.ips = [...(user.ips || []), ip];
 
+  // ── Sanitize every client-supplied number so a bad reading can't poison
+  //    totals or the score (mirrors the elapsed_seconds fix). ──
+  const safeElapsed = Math.floor(safeNum(elapsed_seconds, MAX_SESSION_SECONDS));
+  const safeTools = Math.floor(safeNum(tool_calls, MAX_EVENTS_PER_SESSION));
+  const safePrompts = Math.floor(safeNum(prompts, MAX_EVENTS_PER_SESSION));
+
+  // Credits drive the score, so only accept a plausible currentUsage and clamp the
+  // per-session delta — a garbage usage value would otherwise inflate the ranking.
   let creditsConsumed = 0;
-  if (currentUsage !== null && currentUsage !== undefined) {
+  const cu = Number(currentUsage);
+  const usageValid = currentUsage !== null && currentUsage !== undefined
+    && Number.isFinite(cu) && cu >= 0 && cu <= MAX_USAGE;
+  if (usageValid) {
     const previousUsage = user.current_usage;
     if (previousUsage === undefined || previousUsage === null) {
-      creditsConsumed = 0;
-    } else if (currentUsage >= previousUsage) {
-      creditsConsumed = currentUsage - previousUsage;
+      creditsConsumed = 0;                 // first sighting → record baseline only
+    } else if (cu >= previousUsage) {
+      creditsConsumed = cu - previousUsage;
     } else {
-      creditsConsumed = currentUsage;
+      creditsConsumed = cu;                // monthly reset
     }
-    user.current_usage = currentUsage;
-    user.monthly_limit = usageLimit || user.monthly_limit;
-    user.percentage_used = percentageUsed || user.percentage_used;
-    user.reset_date = resetDate || user.reset_date;
-    user.plan = detectPlan(usageLimit).name;
-    user.plan_price = detectPlan(usageLimit).price;
+    // No single session can plausibly consume this many credits (max plan = 10k/mo).
+    creditsConsumed = safeNum(creditsConsumed, MAX_CREDITS_PER_SESSION);
+
+    user.current_usage = cu;
+    const lim = safeNum(usageLimit, MAX_USAGE);
+    if (lim > 0) {
+      user.monthly_limit = lim;
+      user.plan = detectPlan(lim).name;
+      user.plan_price = detectPlan(lim).price;
+    }
+    const pct = safeNum(percentageUsed, 100000);
+    if (pct) user.percentage_used = pct;
+    if (resetDate && !Number.isNaN(new Date(resetDate).getTime())) user.reset_date = resetDate;
     user.credits_consumed_total = (user.credits_consumed_total || 0) + creditsConsumed;
   }
 
   const session = {
     timestamp: timestamp || new Date().toISOString(),
-    elapsed_seconds: elapsed_seconds || 0,
-    tool_calls: tool_calls || 0,
-    prompts: prompts || 0,
+    elapsed_seconds: safeElapsed,
+    tool_calls: safeTools,
+    prompts: safePrompts,
     creditsConsumed,
-    currentUsage: currentUsage ?? null,
+    currentUsage: usageValid ? cu : null,
   };
   const fraud = detectFraud(user, session);
   if (fraud.length) {
@@ -327,9 +358,9 @@ async function handleSession(event) {
   }
   user.sessions = [...(user.sessions || []), session];
   user.total_sessions = (user.total_sessions || 0) + 1;
-  user.total_elapsed_seconds = (user.total_elapsed_seconds || 0) + session.elapsed_seconds;
-  if (prompts) user.total_prompts = (user.total_prompts || 0) + prompts;
-  if (tool_calls) user.total_tool_calls = (user.total_tool_calls || 0) + tool_calls;
+  user.total_elapsed_seconds = (user.total_elapsed_seconds || 0) + safeElapsed;
+  user.total_prompts = (user.total_prompts || 0) + safePrompts;
+  user.total_tool_calls = (user.total_tool_calls || 0) + safeTools;
   user.last_activity = session.timestamp;
   recalcScore(user);
   await putUser(user);

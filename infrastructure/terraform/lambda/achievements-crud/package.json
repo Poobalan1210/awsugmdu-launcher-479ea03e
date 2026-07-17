@@ -1,0 +1,11 @@
+{
+  "name": "achievements-crud",
+  "version": "1.0.0",
+  "description": "CRUD Lambda for community achievements (image + title + LinkedIn URL)",
+  "main": "index.js",
+  "private": true,
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.621.0",
+    "@aws-sdk/lib-dynamodb": "^3.621.0"
+  }
+}

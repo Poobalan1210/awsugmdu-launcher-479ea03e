@@ -50,6 +50,7 @@ import { format, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import StoreManagement from '@/components/admin/StoreManagement';
+import AchievementsManagement from '@/components/admin/AchievementsManagement';
 import CirclesManagement from '@/components/admin/CirclesManagement';
 import SprintsTab from '@/components/admin/tabs/SprintsTab';
 import AWSEventsTab from '@/components/admin/tabs/AWSEventsTab';
@@ -7149,6 +7150,10 @@ export default function Admin() {
                     <ShoppingBag className="h-4 w-4" />
                     Store
                   </TabsTrigger>
+                  <TabsTrigger value="achievements" className="gap-2">
+                    <Trophy className="h-4 w-4" />
+                    Achievements
+                  </TabsTrigger>
                   <TabsTrigger value="members" className="gap-2">
                     <Users className="h-4 w-4" />
                     Members
@@ -7202,6 +7207,10 @@ export default function Admin() {
 
                 <TabsContent value="store">
                   <StoreManagement />
+                </TabsContent>
+
+                <TabsContent value="achievements">
+                  <AchievementsManagement />
                 </TabsContent>
 
                 <TabsContent value="members">

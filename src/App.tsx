@@ -26,6 +26,7 @@ import AWSEvents from "./pages/AWSEvents";
 import SpeakerCodeOfConduct from "./pages/SpeakerCodeOfConduct";
 import SpeakerInvite from "./pages/SpeakerInvite";
 import Kironomics from "./pages/Kironomics";
+import Achievements from "./pages/Achievements";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -67,6 +68,9 @@ const App = () => (
 
             {/* Kironomics — public landing so anyone can view rankings & install instructions */}
             <Route path="/kironomics" element={<Kironomics />} />
+
+            {/* Achievements — public showcase of awards, milestones & community highlights */}
+            <Route path="/achievements" element={<Achievements />} />
             
             {/* Protected Routes */}
             <Route path="/profile" element={

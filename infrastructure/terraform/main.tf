@@ -2274,6 +2274,8 @@ resource "aws_api_gateway_deployment" "api" {
       aws_lambda_function.cloud_clubs_crud.source_code_hash,
       aws_lambda_function.spotlight_crud.source_code_hash,
       aws_lambda_function.aws_events_crud.source_code_hash,
+      # Community achievements (admin-managed cards)
+      aws_lambda_function.achievements_crud.source_code_hash,
       # Badges (OB v2)
       aws_lambda_function.badges_crud.source_code_hash,
       aws_api_gateway_integration.ob2_issuer_get.id,
@@ -2477,6 +2479,11 @@ resource "aws_api_gateway_deployment" "api" {
     aws_api_gateway_integration.aws_events_options,
     aws_api_gateway_method_response.aws_events_options_200,
     aws_api_gateway_integration_response.aws_events_options,
+    # Community achievements integrations
+    aws_api_gateway_integration.achievements_lambda,
+    aws_api_gateway_integration.achievements_options,
+    aws_api_gateway_method_response.achievements_options_200,
+    aws_api_gateway_integration_response.achievements_options,
     # Badges (OB v2) integrations
     aws_api_gateway_integration.ob2_issuer_get,
     aws_api_gateway_integration.ob2_issuer_options,

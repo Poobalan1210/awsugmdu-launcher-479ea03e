@@ -55,7 +55,7 @@ exports.handler = async (event) => {
       ? PROFILE_PHOTOS_BUCKET
       : bucketType === 'badge-images'
       ? BADGE_IMAGES_BUCKET
-      : MEETUP_POSTERS_BUCKET; // meetup-posters, meetup-photos, meetup-reports, spotlight-images
+      : MEETUP_POSTERS_BUCKET; // meetup-posters, meetup-photos, meetup-reports, spotlight-images, achievement-images
     
     // Validate content type - allow documents for college-logos bucket
     const allowedImageTypes = [
@@ -110,6 +110,8 @@ exports.handler = async (event) => {
       ? `badge-images/${timestamp}-${sanitizedFileName}`
       : bucketType === 'store-email-images'
       ? `store-email-images/${timestamp}-${sanitizedFileName}`
+      : bucketType === 'achievement-images'
+      ? `achievement-images/${timestamp}-${sanitizedFileName}`
       : `posters/${timestamp}-${sanitizedFileName}`;
     
     // Generate presigned URL (valid for 5 minutes)

@@ -4,6 +4,7 @@ import { HeroSection } from '@/components/home/HeroSection';
 import { Leaderboard } from '@/components/home/Leaderboard';
 import { EventsSection } from '@/components/home/EventsSection';
 import { InitiativesSection } from '@/components/home/InitiativesSection';
+import { AchievementsSection } from '@/components/home/AchievementsSection';
 import { Bug } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 
@@ -17,6 +18,11 @@ const Index = () => {
         
         <div className="container mx-auto px-4 py-16">
           <InitiativesSection />
+        </div>
+
+        {/* Achievements Section */}
+        <div className="container mx-auto px-4 py-16">
+          <AchievementsSection />
         </div>
 
         {/* Events Section - Full Width */}

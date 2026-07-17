@@ -72,6 +72,11 @@ export function Footer() {
               </Link>
             </li>
             <li>
+              <Link to="/achievements" className="text-sm text-muted-foreground hover:text-primary transition-colors">
+                Achievements
+              </Link>
+            </li>
+            <li>
               <Link to="/events" className="text-sm text-muted-foreground hover:text-primary transition-colors">
                 Events
               </Link>

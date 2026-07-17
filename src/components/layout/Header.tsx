@@ -22,6 +22,7 @@ import logo from '@/assets/logo.png';
 const primaryNavItems = [
   { name: 'Home', path: '/' },
   { name: 'Meetups', path: '/meetups' },
+  { name: 'Achievements', path: '/achievements' },
   { name: 'Store', path: '/store' },
 ];
 

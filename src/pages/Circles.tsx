@@ -7,8 +7,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
+import { RichText } from '@/components/ui/rich-text';
+import { RichTextEditor } from '@/components/ui/rich-text-editor';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   Award, Users, BookOpen, Calendar, CheckCircle, ArrowRight, 
@@ -16,7 +16,6 @@ import {
   ChevronDown, Crown, ArrowLeft, Link2, Trash2, Bot
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { marked } from 'marked';
 import { Circle } from '@/data/mockData';
 import { format, parseISO } from 'date-fns';
 import { normalizeUrl } from '@/lib/utils';
@@ -27,13 +26,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { listCircles, joinCircle, postGroupMessage, getCircle, addMessageReply, toggleMessageLike, toggleReplyLike, groupAgentPostsByDigest } from '@/lib/circles';
 import { API_BASE_URL } from '@/lib/aws-config';
 import { profilePath } from '@/lib/profileSlug';
-
-// Configure marked once for agent post rendering (matches Meetups/SkillSprint).
-marked.setOptions({ breaks: true, gfm: true });
-
-function renderAgentMarkdown(content: string): string {
-  return marked.parse(content) as string;
-}
+import { markdownToPlainText } from '@/lib/markdown';
 
 // Pull a human-readable headline from a digest's lead/summary post so the
 // collapsed row previews its content instead of repeating the bot name.
@@ -43,9 +36,9 @@ function getDigestTitle(leadContent: string): string {
   for (const line of lines) {
     if (line.startsWith('#')) continue;                       // skip "## 📰 ..." title
     if (line.startsWith('_') && line.endsWith('_')) continue; // skip "_N updates below._"
-    return line.replace(/[*_`]/g, '').trim();                 // strip md emphasis
+    return markdownToPlainText(line);                          // strip md emphasis
   }
-  return lines[0]?.replace(/^#+\s*/, '').replace(/[*_`📰]/g, '').trim() || 'AWS News Digest';
+  return markdownToPlainText(lines[0] || '').replace(/📰/g, '').trim() || 'AWS News Digest';
 }
 
 // Relative date for recent digests, absolute for older ones.
@@ -163,6 +156,8 @@ function GroupDetail({ group: initialGroup, onBack }: { group: Circle; onBack: (
   const [collapsedDigests, setCollapsedDigests] = useState<Set<string>>(new Set());
   const [showAllDigests, setShowAllDigests] = useState(false);
   const initializedDigestKeys = useRef<Set<string>>(new Set());
+  // Lets ⌘/Ctrl+Enter inside the rich text editor submit the composer form.
+  const composerFormRef = useRef<HTMLFormElement>(null);
   const messageRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
   const digestRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
   // Remembers which ?digest= link we've already focused, so a later data
@@ -629,18 +624,19 @@ function GroupDetail({ group: initialGroup, onBack }: { group: Circle; onBack: (
                 </div>
               ) : user ? (
                 isMember && (
-                  <form onSubmit={handleSendMessage} className="p-4 rounded-lg bg-muted/50">
+                  <form ref={composerFormRef} onSubmit={handleSendMessage} className="p-4 rounded-lg bg-muted/50">
                     <div className="flex gap-4">
                       <Avatar className="h-10 w-10">
                         <AvatarImage src={user.avatar} />
                         <AvatarFallback>{user.name.charAt(0)}</AvatarFallback>
                       </Avatar>
-                      <div className="flex-1 space-y-3">
-                        <Textarea 
-                          placeholder="Share something with the group..."
+                      <div className="flex-1 space-y-3 min-w-0">
+                        <RichTextEditor
                           value={newMessage}
-                          onChange={(e) => setNewMessage(e.target.value)}
-                          rows={3}
+                          onChange={setNewMessage}
+                          onSubmit={() => composerFormRef.current?.requestSubmit()}
+                          placeholder="Share something with the group..."
+                          ariaLabel="New discussion message"
                         />
                         <Button type="submit" size="sm" disabled={!newMessage.trim()}>
                           <Send className="h-4 w-4 mr-2" />
@@ -1066,24 +1062,14 @@ function MessageCard({
                 </button>
               )}
             </div>
-            {message.userId?.startsWith('agent-') ? (
-              <div
-                className="prose prose-sm max-w-none dark:prose-invert mb-3
-                  prose-headings:text-foreground prose-headings:font-bold prose-headings:mt-0
-                  prose-h2:text-xl prose-h2:mb-1
-                  prose-h3:text-base prose-h3:mb-1
-                  prose-p:text-sm prose-p:text-muted-foreground prose-p:my-1
-                  prose-strong:text-foreground prose-strong:font-semibold prose-strong:text-base
-                  prose-a:text-primary prose-a:font-medium prose-a:no-underline hover:prose-a:underline
-                  prose-code:text-xs prose-code:font-medium prose-code:text-primary
-                  prose-code:bg-primary/10 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded
-                  prose-code:before:content-[''] prose-code:after:content-['']
-                  prose-li:text-sm prose-li:text-muted-foreground"
-                dangerouslySetInnerHTML={{ __html: renderAgentMarkdown(message.content) }}
-              />
-            ) : (
-              <p className="text-sm mb-3">{message.content}</p>
-            )}
+            <RichText
+              content={message.content}
+              className={`mb-3 ${
+                message.userId?.startsWith('agent-')
+                  ? 'prose-h2:text-xl prose-p:text-muted-foreground prose-li:text-muted-foreground'
+                  : ''
+              }`}
+            />
             
             <div className="flex items-center gap-4 text-sm text-muted-foreground">
               <button 
@@ -1143,11 +1129,15 @@ function MessageCard({
                       <AvatarImage src={currentUser?.avatar || currentUser?.profilePicture} />
                       <AvatarFallback>{currentUser?.name?.charAt(0) || 'U'}</AvatarFallback>
                     </Avatar>
-                    <div className="flex-1 space-y-2">
-                      <Input
-                        placeholder="Write a reply..."
+                    <div className="flex-1 space-y-2 min-w-0">
+                      <RichTextEditor
                         value={replyContent}
-                        onChange={(e) => setReplyContent(e.target.value)}
+                        onChange={setReplyContent}
+                        onSubmit={() => onSendReply(message.id)}
+                        placeholder="Write a reply..."
+                        ariaLabel="Reply"
+                        compact
+                        autoFocus
                       />
                       <div className="flex gap-2">
                         <Button 
@@ -1227,7 +1217,7 @@ function MessageCard({
                               </button>
                             )}
                           </div>
-                          <p className="text-sm">{reply.content}</p>
+                          <RichText content={reply.content} variant="compact" className="mt-0.5" />
                           <div className="flex items-center gap-3 mt-1">
                             <button 
                               className={`flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors ${isReplyLiked ? 'text-primary' : ''}`}

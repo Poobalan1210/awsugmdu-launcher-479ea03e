@@ -209,16 +209,30 @@ function detectFraud(user, session) {
   const reasons = [];
   const hookTotal = (session.tool_calls || 0) + (session.prompts || 0);
   const creditsConsumed = session.creditsConsumed || 0;
-  if (hookTotal > 5 && creditsConsumed === 0 && session.currentUsage !== null && session.currentUsage !== undefined) {
+  const hasUsageReading = session.currentUsage !== null && session.currentUsage !== undefined;
+
+  // Track consecutive "reported activity but no credit growth" sessions. This only
+  // signals fraud for users who NEVER burn credits (i.e. rely purely on the
+  // fallback hook-based score) — faking hooks is worthless to a credit-scored user
+  // (hooks add only +1/+2 each), and a lagging usage sync (Kiro syncs usage
+  // periodically) routinely produces no per-session growth for legit users.
+  if (hookTotal > 5 && creditsConsumed === 0 && hasUsageReading) {
     user.consecutive_no_credit_sessions = (user.consecutive_no_credit_sessions || 0) + 1;
   } else if (creditsConsumed > 0) {
     user.consecutive_no_credit_sessions = 0;
   }
-  if ((user.consecutive_no_credit_sessions || 0) >= 3 && hookTotal > 10) {
+  const everBurnedCredits = (user.credits_consumed_total || 0) > 0;
+  if (!everBurnedCredits && (user.consecutive_no_credit_sessions || 0) >= 5 && hookTotal > 10) {
     reasons.push('repeated_no_credit_growth');
   }
-  if (hookTotal > 0 && creditsConsumed > hookTotal * 50) {
-    reasons.push(`credits_too_high:${creditsConsumed}vs_${hookTotal}events`);
+
+  // Hook-independent corruption tripwire: a single session can never legitimately
+  // consume more than a full month's plan limit. Checked even when the session
+  // reports zero hooks — the old credits-vs-hooks ratio rule both missed those AND
+  // mis-flagged legit heavy users whose hook counters simply weren't firing.
+  const limit = user.monthly_limit || 0;
+  if (limit > 0 && (session.rawCreditsConsumed || 0) > limit) {
+    reasons.push(`credit_reading_exceeds_plan_limit:${Math.round(session.rawCreditsConsumed)}>${limit}`);
   }
   return reasons;
 }
@@ -315,23 +329,34 @@ async function handleSession(event) {
   // Credits drive the score, so only accept a plausible currentUsage and clamp the
   // per-session delta — a garbage usage value would otherwise inflate the ranking.
   let creditsConsumed = 0;
+  let rawCreditsConsumed = 0;
   const cu = Number(currentUsage);
   const usageValid = currentUsage !== null && currentUsage !== undefined
     && Number.isFinite(cu) && cu >= 0 && cu <= MAX_USAGE;
   if (usageValid) {
     const previousUsage = user.current_usage;
+    const lim = safeNum(usageLimit, MAX_USAGE) || user.monthly_limit || 0;
     if (previousUsage === undefined || previousUsage === null) {
       creditsConsumed = 0;                 // first sighting → record baseline only
     } else if (cu >= previousUsage) {
       creditsConsumed = cu - previousUsage;
     } else {
-      creditsConsumed = cu;                // monthly reset
+      // currentUsage moved backwards. A genuine monthly reset drops usage to near
+      // zero; any larger non-zero value is a stale/garbled reading, NOT a reset.
+      // Treating such a blip as a reset (crediting the whole current value) is what
+      // let a single bad reading cascade into thousands of phantom credits. So only
+      // a near-zero reading counts as a reset; otherwise credit nothing and just
+      // re-baseline to the new value.
+      const resetThreshold = lim ? lim * 0.1 : 50;
+      creditsConsumed = cu <= resetThreshold ? cu : 0;
     }
-    // No single session can plausibly consume this many credits (max plan = 10k/mo).
-    creditsConsumed = safeNum(creditsConsumed, MAX_CREDITS_PER_SESSION);
+    rawCreditsConsumed = creditsConsumed;
+    // Clamp a single session's delta to the plan's monthly limit (you can never burn
+    // more than a whole month in one session), with an absolute hard ceiling backstop.
+    const perSessionCap = Math.min(lim || MAX_CREDITS_PER_SESSION, MAX_CREDITS_PER_SESSION);
+    creditsConsumed = Math.min(safeNum(creditsConsumed, MAX_CREDITS_PER_SESSION), perSessionCap);
 
     user.current_usage = cu;
-    const lim = safeNum(usageLimit, MAX_USAGE);
     if (lim > 0) {
       user.monthly_limit = lim;
       user.plan = detectPlan(lim).name;
@@ -351,10 +376,17 @@ async function handleSession(event) {
     creditsConsumed,
     currentUsage: usageValid ? cu : null,
   };
-  const fraud = detectFraud(user, session);
+  const fraud = detectFraud(user, { ...session, rawCreditsConsumed });
   if (fraud.length) {
     user.flagged = true;
     user.flag_reasons = [...new Set([...(user.flag_reasons || []), ...fraud])];
+  } else if (user.flagged && creditsConsumed > 0) {
+    // Self-healing: a session with genuine credit consumption clears a prior soft
+    // flag. Credits are the tamper-proof signal, so real credit growth proves the
+    // account is legit — a transient bad reading can no longer hide a user forever.
+    user.flagged = false;
+    user.flag_reasons = [];
+    user.consecutive_no_credit_sessions = 0;
   }
   user.sessions = [...(user.sessions || []), session];
   user.total_sessions = (user.total_sessions || 0) + 1;
@@ -432,7 +464,7 @@ async function handleMetrics(userId, event) {
   const monthlyLimit = user.monthly_limit || null;
   const currentUsage = user.current_usage || 0;
   const percentageUsed = user.percentage_used || (monthlyLimit ? (currentUsage / monthlyLimit) * 100 : 0);
-  const creditsRemaining = monthlyLimit ? Math.max(0, monthlyLimit - currentUsage) : null;
+  const creditsRemaining = monthlyLimit ? Math.round(Math.max(0, monthlyLimit - currentUsage) * 100) / 100 : null;
 
   let daysUntilReset = null;
   if (user.reset_date) {

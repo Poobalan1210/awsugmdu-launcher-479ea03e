@@ -258,6 +258,12 @@ export interface SpotlightSubmission {
   reviewerName?: string;
   reviewedAt?: string;
   adminNotes?: string;
+  /** When the submission went live. Derived by the API for approved submissions. */
+  publishedAt?: string;
+  /** End of the public listing window. Derived by the API for approved submissions. */
+  expiresAt?: string;
+  /** True once an approved submission has rotated out of the public spotlight. */
+  expired?: boolean;
 }
 
 export interface AWSEvent {

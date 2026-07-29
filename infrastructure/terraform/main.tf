@@ -2273,6 +2273,7 @@ resource "aws_api_gateway_deployment" "api" {
       aws_api_gateway_integration.users_id_points_activities_get_lambda.id,
       aws_lambda_function.cloud_clubs_crud.source_code_hash,
       aws_lambda_function.spotlight_crud.source_code_hash,
+      aws_api_gateway_integration.spotlight_id_put_lambda.id,
       aws_lambda_function.aws_events_crud.source_code_hash,
       # Community achievements (admin-managed cards)
       aws_lambda_function.achievements_crud.source_code_hash,
@@ -2467,6 +2468,7 @@ resource "aws_api_gateway_deployment" "api" {
     aws_api_gateway_integration.spotlight_post_lambda,
     aws_api_gateway_integration.spotlight_options_lambda,
     aws_api_gateway_integration.spotlight_id_get_lambda,
+    aws_api_gateway_integration.spotlight_id_put_lambda,
     aws_api_gateway_integration.spotlight_id_delete_lambda,
     aws_api_gateway_integration.spotlight_id_options_lambda,
     aws_api_gateway_integration.spotlight_id_review_post_lambda,

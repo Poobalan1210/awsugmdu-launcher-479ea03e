@@ -2,11 +2,17 @@
 # Community Spotlight Infrastructure
 # ============================================================
 
+variable "spotlight_visibility_days" {
+  description = "Days an approved spotlight submission stays listed publicly before rotating out"
+  type        = number
+  default     = 30
+}
+
 # DynamoDB Table for Spotlight Submissions
 resource "aws_dynamodb_table" "spotlight" {
-  name           = "${var.project_name}-spotlight"
-  billing_mode   = "PAY_PER_REQUEST"
-  hash_key       = "id"
+  name         = "${var.project_name}-spotlight"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "id"
 
   attribute {
     name = "id"
@@ -24,14 +30,14 @@ resource "aws_dynamodb_table" "spotlight" {
   }
 
   global_secondary_index {
-    name     = "status-index"
-    hash_key = "status"
+    name            = "status-index"
+    hash_key        = "status"
     projection_type = "ALL"
   }
 
   global_secondary_index {
-    name     = "userId-index"
-    hash_key = "userId"
+    name            = "userId-index"
+    hash_key        = "userId"
     projection_type = "ALL"
   }
 
@@ -56,16 +62,18 @@ data "archive_file" "spotlight_crud" {
 resource "aws_lambda_function" "spotlight_crud" {
   filename         = data.archive_file.spotlight_crud.output_path
   function_name    = "${var.project_name}-spotlight-crud"
-  role            = aws_iam_role.lambda_execution.arn
-  handler         = "index.handler"
+  role             = aws_iam_role.lambda_execution.arn
+  handler          = "index.handler"
   source_code_hash = data.archive_file.spotlight_crud.output_base64sha256
-  runtime         = "nodejs20.x"
-  timeout         = 30
+  runtime          = "nodejs20.x"
+  timeout          = 30
 
   environment {
     variables = {
       SPOTLIGHT_TABLE_NAME = aws_dynamodb_table.spotlight.name
       USERS_TABLE_NAME     = aws_dynamodb_table.users.name
+      # Days an approved submission stays listed in the public spotlight
+      SPOTLIGHT_VISIBILITY_DAYS = tostring(var.spotlight_visibility_days)
     }
   }
 
@@ -129,6 +137,14 @@ resource "aws_api_gateway_method" "spotlight_id_get" {
   rest_api_id   = aws_api_gateway_rest_api.api.id
   resource_id   = aws_api_gateway_resource.spotlight_id.id
   http_method   = "GET"
+  authorization = "NONE"
+}
+
+# /spotlight/{id} PUT
+resource "aws_api_gateway_method" "spotlight_id_put" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.spotlight_id.id
+  http_method   = "PUT"
   authorization = "NONE"
 }
 
@@ -212,7 +228,7 @@ resource "aws_api_gateway_method_response" "spotlight_options_200" {
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = true
     "method.response.header.Access-Control-Allow-Methods" = true
-    "method.response.header.Access-Control-Allow-Origin" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
   }
 }
 
@@ -225,7 +241,7 @@ resource "aws_api_gateway_integration_response" "spotlight_options" {
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
     "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
-    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
   }
 }
 
@@ -234,6 +250,17 @@ resource "aws_api_gateway_integration" "spotlight_id_get_lambda" {
   rest_api_id = aws_api_gateway_rest_api.api.id
   resource_id = aws_api_gateway_resource.spotlight_id.id
   http_method = aws_api_gateway_method.spotlight_id_get.http_method
+
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.spotlight_crud.invoke_arn
+}
+
+# /spotlight/{id} PUT -> Lambda
+resource "aws_api_gateway_integration" "spotlight_id_put_lambda" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  resource_id = aws_api_gateway_resource.spotlight_id.id
+  http_method = aws_api_gateway_method.spotlight_id_put.http_method
 
   integration_http_method = "POST"
   type                    = "AWS_PROXY"
@@ -273,7 +300,7 @@ resource "aws_api_gateway_method_response" "spotlight_id_options_200" {
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = true
     "method.response.header.Access-Control-Allow-Methods" = true
-    "method.response.header.Access-Control-Allow-Origin" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
   }
 }
 
@@ -286,7 +313,7 @@ resource "aws_api_gateway_integration_response" "spotlight_id_options" {
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
     "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
-    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
   }
 }
 
@@ -323,7 +350,7 @@ resource "aws_api_gateway_method_response" "spotlight_id_review_options_200" {
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = true
     "method.response.header.Access-Control-Allow-Methods" = true
-    "method.response.header.Access-Control-Allow-Origin" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
   }
 }
 
@@ -336,7 +363,7 @@ resource "aws_api_gateway_integration_response" "spotlight_id_review_options" {
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
     "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
-    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
   }
 }
 

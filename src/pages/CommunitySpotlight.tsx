@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, forwardRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { formatDistanceToNow } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
 import { Card, CardContent } from '@/components/ui/card';
@@ -11,15 +11,41 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
   Search, Filter, ExternalLink, Plus, Loader2, Image as ImageIcon,
   Code2, FileText, Video, Sparkles, X, Tag, Upload, CheckCircle, Clock, XCircle,
-  Share2, Calendar, User as UserIcon, Copy, Check, ChevronRight
+  Share2, Calendar, User as UserIcon, Copy, Check, ChevronRight,
+  MoreVertical, Pencil, Trash2, Lock, EyeOff
 } from 'lucide-react';
 import { SpotlightSubmission, SpotlightType } from '@/data/mockData';
-import { getSpotlightSubmissions, submitSpotlight } from '@/lib/spotlight';
+import {
+  getSpotlightSubmissions,
+  getVisibleSpotlightSubmissions,
+  submitSpotlight,
+  updateSpotlight,
+  deleteSpotlight,
+  getSpotlightExpiresAt,
+  isSpotlightExpired,
+  SPOTLIGHT_VISIBILITY_DAYS,
+} from '@/lib/spotlight';
 import { uploadFileToS3 } from '@/lib/s3Upload';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
@@ -138,19 +164,55 @@ const SpotlightCard = forwardRef<HTMLDivElement, { item: SpotlightSubmission; on
   );
 });
 
-function SubmitSpotlightDialog({ onSuccess }: { onSuccess: () => void }) {
+const emptyForm = {
+  title: '',
+  description: '',
+  type: 'project' as SpotlightType,
+  url: '',
+  imageUrl: '',
+  tagsRaw: '',
+};
+
+/**
+ * Create/edit form for a spotlight submission.
+ * Pass `submission` to switch the dialog into edit mode.
+ */
+function SpotlightFormDialog({
+  open,
+  onOpenChange,
+  onSuccess,
+  submission,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSuccess: () => void;
+  submission?: SpotlightSubmission | null;
+}) {
   const { user } = useAuth();
-  const [open, setOpen] = useState(false);
+  const isEdit = !!submission;
   const [loading, setLoading] = useState(false);
   const [imageUploading, setImageUploading] = useState(false);
-  const [formData, setFormData] = useState({
-    title: '',
-    description: '',
-    type: 'project' as SpotlightType,
-    url: '',
-    imageUrl: '',
-    tagsRaw: '',
-  });
+  const [formData, setFormData] = useState(emptyForm);
+
+  // Seed the form whenever the dialog opens (or targets a different submission)
+  useEffect(() => {
+    if (!open) return;
+    setFormData(
+      submission
+        ? {
+            title: submission.title,
+            description: submission.description,
+            type: submission.type,
+            url: submission.url,
+            imageUrl: submission.imageUrl || '',
+            tagsRaw: (submission.tags || []).join(', '),
+          }
+        : emptyForm
+    );
+    // Keyed on the submission id on purpose: re-seeding on every identity change
+    // would discard in-progress edits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, submission?.id]);
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -189,45 +251,54 @@ function SubmitSpotlightDialog({ onSuccess }: { onSuccess: () => void }) {
         .map((t) => t.trim().toLowerCase())
         .filter((t) => t.length > 0);
 
-      await submitSpotlight({
-        userId: user.id,
-        userName: user.name,
-        userAvatar: user.avatar,
+      const payload = {
         title: formData.title.trim(),
         description: formData.description.trim(),
         type: formData.type,
         url: formData.url.trim(),
         imageUrl: formData.imageUrl || undefined,
         tags,
-      });
+      };
 
-      toast.success('Spotlight submission sent! It will appear once approved by an admin.');
-      setFormData({ title: '', description: '', type: 'project', url: '', imageUrl: '', tagsRaw: '' });
-      setOpen(false);
+      if (isEdit && submission) {
+        await updateSpotlight(submission.id, { userId: user.id, ...payload });
+        toast.success(
+          submission.status === 'rejected'
+            ? 'Submission updated and sent back for review.'
+            : 'Submission updated!'
+        );
+      } else {
+        await submitSpotlight({
+          userId: user.id,
+          userName: user.name,
+          userAvatar: user.avatar,
+          ...payload,
+        });
+        toast.success('Spotlight submission sent! It will appear once approved by an admin.');
+      }
+
+      setFormData(emptyForm);
+      onOpenChange(false);
       onSuccess();
     } catch (error: any) {
-      toast.error(error.message || 'Failed to submit');
+      toast.error(error.message || (isEdit ? 'Failed to update' : 'Failed to submit'));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button className="gap-2 bg-gradient-to-r from-primary to-orange-500 hover:from-primary/90 hover:to-orange-500/90 shadow-lg shadow-primary/20">
-          <Plus className="h-4 w-4" />
-          Submit Your Work
-        </Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-primary" />
-            Submit to Community Spotlight
+            {isEdit ? <Pencil className="h-5 w-5 text-primary" /> : <Sparkles className="h-5 w-5 text-primary" />}
+            {isEdit ? 'Edit Submission' : 'Submit to Community Spotlight'}
           </DialogTitle>
           <DialogDescription>
-            Share your open-source projects, blogs, videos, or any creative work with the community.
+            {isEdit
+              ? 'Update the details of your submission. Changes are reviewed by an admin before going live.'
+              : 'Share your open-source projects, blogs, videos, or any creative work with the community.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -332,9 +403,15 @@ function SubmitSpotlightDialog({ onSuccess }: { onSuccess: () => void }) {
             </p>
           </div>
 
-          <Button type="submit" disabled={loading} className="w-full gap-2">
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-            {loading ? 'Submitting...' : 'Submit for Review'}
+          <Button type="submit" disabled={loading || imageUploading} className="w-full gap-2">
+            {loading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : isEdit ? (
+              <Pencil className="h-4 w-4" />
+            ) : (
+              <Sparkles className="h-4 w-4" />
+            )}
+            {loading ? (isEdit ? 'Saving...' : 'Submitting...') : isEdit ? 'Save Changes' : 'Submit for Review'}
           </Button>
         </form>
       </DialogContent>
@@ -345,9 +422,13 @@ function SubmitSpotlightDialog({ onSuccess }: { onSuccess: () => void }) {
 function MySubmissions({
   submissions,
   onSelect,
+  onEdit,
+  onDelete,
 }: {
   submissions: SpotlightSubmission[];
   onSelect: (item: SpotlightSubmission) => void;
+  onEdit: (item: SpotlightSubmission) => void;
+  onDelete: (item: SpotlightSubmission) => void;
 }) {
   if (submissions.length === 0) return null;
 
@@ -370,22 +451,23 @@ function MySubmissions({
         My Submissions
       </h3>
       <div className="grid gap-3">
-        {submissions.map((sub) => (
+        {submissions.map((sub) => {
+          const expired = isSpotlightExpired(sub);
+          const expiresAt = getSpotlightExpiresAt(sub);
+
+          return (
           <Card
             key={sub.id}
-            onClick={() => onSelect(sub)}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                onSelect(sub);
-              }
-            }}
-            className="glass-card border-border/40 cursor-pointer hover:border-primary/40 transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40"
+            className="glass-card border-border/40 hover:border-primary/40 transition-colors focus-within:ring-2 focus-within:ring-primary/40"
           >
             <CardContent className="p-4 flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3 min-w-0">
+              {/* Details trigger — a real button so the row stays keyboard accessible
+                  without nesting the actions menu inside another button. */}
+              <button
+                type="button"
+                onClick={() => onSelect(sub)}
+                className="flex items-center gap-3 min-w-0 text-left flex-1 focus:outline-none"
+              >
                 {sub.imageUrl ? (
                   <img src={sub.imageUrl} alt="" className="h-10 w-10 rounded-md object-cover flex-shrink-0" />
                 ) : (
@@ -396,17 +478,87 @@ function MySubmissions({
                 <div className="min-w-0">
                   <p className="font-semibold text-sm truncate">{sub.title}</p>
                   <p className="text-xs text-muted-foreground truncate">{sub.url}</p>
+                  {expiresAt && (
+                    <p className="text-[10px] text-muted-foreground/80 truncate mt-0.5">
+                      {expired
+                        ? `Rotated out of the spotlight ${formatDistanceToNow(expiresAt, { addSuffix: true })}`
+                        : `Listed until ${format(expiresAt, 'MMM d, yyyy')}`}
+                    </p>
+                  )}
                 </div>
+              </button>
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                <Badge
+                  className={`capitalize font-semibold text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 ${
+                    expired ? 'bg-muted text-muted-foreground border-border/50' : statusColor[sub.status]
+                  }`}
+                >
+                  {expired ? <EyeOff className="h-3.5 w-3.5" /> : statusIcon[sub.status]}
+                  {expired ? 'expired' : sub.status}
+                </Badge>
+                <SubmissionActionsMenu
+                  submission={sub}
+                  onEdit={() => onEdit(sub)}
+                  onDelete={() => onDelete(sub)}
+                />
               </div>
-              <Badge className={`capitalize font-semibold text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 flex-shrink-0 ${statusColor[sub.status]}`}>
-                {statusIcon[sub.status]}
-                {sub.status}
-              </Badge>
             </CardContent>
           </Card>
-        ))}
+          );
+        })}
       </div>
+      <p className="text-xs text-muted-foreground">
+        Approved submissions stay in the public spotlight for {SPOTLIGHT_VISIBILITY_DAYS} days, then rotate out.
+        You can still find them here.
+      </p>
     </div>
+  );
+}
+
+/** Kebab menu with owner-only Edit / Delete actions for a submission. */
+function SubmissionActionsMenu({
+  submission,
+  onEdit,
+  onDelete,
+  className,
+}: {
+  submission: SpotlightSubmission;
+  onEdit: () => void;
+  onDelete: () => void;
+  className?: string;
+}) {
+  const editLocked = submission.status === 'approved';
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className={`h-8 w-8 ${className || ''}`}
+          aria-label={`Actions for ${submission.title}`}
+        >
+          <MoreVertical className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {editLocked ? (
+          <DropdownMenuItem disabled className="text-xs">
+            <Lock className="h-3.5 w-3.5 mr-2" />
+            Approved — editing locked
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem onClick={onEdit}>
+            <Pencil className="h-4 w-4 mr-2" />
+            Edit
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem onClick={onDelete} className="text-destructive focus:text-destructive">
+          <Trash2 className="h-4 w-4 mr-2" />
+          Delete
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -414,10 +566,16 @@ function SpotlightDetailDialog({
   item,
   open,
   onClose,
+  isOwner,
+  onEdit,
+  onDelete,
 }: {
   item: SpotlightSubmission | null;
   open: boolean;
   onClose: () => void;
+  isOwner: boolean;
+  onEdit: (item: SpotlightSubmission) => void;
+  onDelete: (item: SpotlightSubmission) => void;
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -495,6 +653,12 @@ function SpotlightDetailDialog({
                 ⭐ {item.points} pts
               </Badge>
             )}
+            {isSpotlightExpired(item) && (
+              <Badge className="bg-background/80 backdrop-blur-sm border-border/50 text-muted-foreground gap-1.5 py-1 px-2.5 text-[11px] font-bold uppercase tracking-wider">
+                <EyeOff className="h-3 w-3" />
+                No longer listed
+              </Badge>
+            )}
           </div>
         </div>
 
@@ -561,6 +725,14 @@ function SpotlightDetailDialog({
 
         {/* Footer — fixed */}
         <DialogFooter className="px-4 sm:px-6 py-3 sm:py-4 border-t border-border/40 bg-background flex-shrink-0 flex-row gap-2 sm:justify-end">
+          {isOwner && (
+            <SubmissionActionsMenu
+              submission={item}
+              onEdit={() => onEdit(item)}
+              onDelete={() => onDelete(item)}
+              className="border border-border/50 rounded-md flex-shrink-0"
+            />
+          )}
           <Button variant="outline" onClick={handleShare} className="gap-2 flex-1 sm:flex-initial">
             <Share2 className="h-4 w-4" />
             Share
@@ -587,14 +759,21 @@ export default function CommunitySpotlight() {
   const [tagFilter, setTagFilter] = useState<string>('');
   const [selected, setSelected] = useState<SpotlightSubmission | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<SpotlightSubmission | null>(null);
+  const [deleting, setDeleting] = useState<SpotlightSubmission | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const approved = await getSpotlightSubmissions('approved');
-      setSubmissions(approved);
+      // The API already drops submissions past their visibility window; the local
+      // filter keeps the grid correct against responses that predate that field.
+      const approved = await getVisibleSpotlightSubmissions();
+      setSubmissions(approved.filter((s) => !isSpotlightExpired(s)));
 
       if (user) {
+        // Owners keep seeing all of their submissions, expired ones included.
         const mine = await getSpotlightSubmissions(undefined, user.id);
         setMySubmissions(mine);
       }
@@ -644,6 +823,50 @@ export default function CommunitySpotlight() {
     const next = new URLSearchParams(searchParams);
     next.delete('id');
     setSearchParams(next, { replace: true });
+  };
+
+  const openCreate = () => {
+    setEditing(null);
+    setFormOpen(true);
+  };
+
+  // Opening a second modal in the same frame the detail dialog closes leaves Radix's
+  // pointer-events lock on <body>, so hand off after the close animation settles.
+  const afterDetailCloses = (fn: () => void) => {
+    if (!selected) {
+      fn();
+      return;
+    }
+    closeDetail();
+    window.setTimeout(fn, 200);
+  };
+
+  const openEdit = (item: SpotlightSubmission) => {
+    afterDetailCloses(() => {
+      setEditing(item);
+      setFormOpen(true);
+    });
+  };
+
+  const requestDelete = (item: SpotlightSubmission) => {
+    afterDetailCloses(() => setDeleting(item));
+  };
+
+  const handleDelete = async () => {
+    if (!deleting || !user) return;
+
+    setDeleteLoading(true);
+    try {
+      await deleteSpotlight(deleting.id, user.id);
+      setSubmissions((prev) => prev.filter((s) => s.id !== deleting.id));
+      setMySubmissions((prev) => prev.filter((s) => s.id !== deleting.id));
+      toast.success('Submission deleted');
+      setDeleting(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to delete submission');
+    } finally {
+      setDeleteLoading(false);
+    }
   };
 
   // Gather all unique tags from approved submissions
@@ -704,7 +927,13 @@ export default function CommunitySpotlight() {
 
             {isAuthenticated && (
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
-                <SubmitSpotlightDialog onSuccess={fetchData} />
+                <Button
+                  onClick={openCreate}
+                  className="gap-2 bg-gradient-to-r from-primary to-orange-500 hover:from-primary/90 hover:to-orange-500/90 shadow-lg shadow-primary/20"
+                >
+                  <Plus className="h-4 w-4" />
+                  Submit Your Work
+                </Button>
               </motion.div>
             )}
           </div>
@@ -840,12 +1069,63 @@ export default function CommunitySpotlight() {
         {/* My Submissions Section */}
         {isAuthenticated && mySubmissions.length > 0 && (
           <section className="container mx-auto px-4 pb-16">
-            <MySubmissions submissions={mySubmissions} onSelect={openDetail} />
+            <MySubmissions
+              submissions={mySubmissions}
+              onSelect={openDetail}
+              onEdit={openEdit}
+              onDelete={requestDelete}
+            />
           </section>
         )}
       </main>
 
-      <SpotlightDetailDialog item={selected} open={!!selected} onClose={closeDetail} />
+      <SpotlightDetailDialog
+        item={selected}
+        open={!!selected}
+        onClose={closeDetail}
+        isOwner={!!user && selected?.userId === user.id}
+        onEdit={openEdit}
+        onDelete={requestDelete}
+      />
+
+      <SpotlightFormDialog
+        open={formOpen}
+        onOpenChange={(open) => {
+          setFormOpen(open);
+          if (!open) setEditing(null);
+        }}
+        onSuccess={fetchData}
+        submission={editing}
+      />
+
+      <AlertDialog open={!!deleting} onOpenChange={(open) => !open && !deleteLoading && setDeleting(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete submission</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleting ? `"${deleting.title}" will be permanently removed. ` : ''}
+              This action cannot be undone.
+              {deleting?.status === 'approved'
+                ? ' It will also be removed from the public spotlight. Points already awarded stay on your profile.'
+                : ''}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteLoading}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                handleDelete();
+              }}
+              disabled={deleteLoading}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 gap-2"
+            >
+              {deleteLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+              {deleteLoading ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Footer />
     </div>

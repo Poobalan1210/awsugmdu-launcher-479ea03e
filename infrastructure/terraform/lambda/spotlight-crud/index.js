@@ -7,6 +7,36 @@ const docClient = DynamoDBDocumentClient.from(client);
 const SPOTLIGHT_TABLE = process.env.SPOTLIGHT_TABLE_NAME || 'awsug-spotlight';
 const USERS_TABLE = process.env.USERS_TABLE_NAME || 'awsug-users';
 
+// How long an approved submission stays listed in the public spotlight.
+const VISIBILITY_DAYS = parseInt(process.env.SPOTLIGHT_VISIBILITY_DAYS || '30', 10);
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// The moment a submission became publicly visible. Older records may predate
+// reviewedAt, so fall back to the submission timestamps.
+function getPublishedAt(item) {
+  return item.reviewedAt || item.submittedAt || item.createdAt || null;
+}
+
+// Annotate an approved submission with its listing window. Records are never
+// deleted on expiry — they simply stop being served to the public listing, and
+// stay visible to their owner and to admins.
+function withVisibility(item) {
+  if (!item || item.status !== 'approved') return item;
+
+  const publishedAt = getPublishedAt(item);
+  const publishedMs = publishedAt ? new Date(publishedAt).getTime() : NaN;
+  if (Number.isNaN(publishedMs)) return item;
+
+  const expiresMs = publishedMs + VISIBILITY_DAYS * DAY_MS;
+
+  return {
+    ...item,
+    publishedAt,
+    expiresAt: new Date(expiresMs).toISOString(),
+    expired: Date.now() >= expiresMs,
+  };
+}
+
 // Helper function to generate CORS headers
 function getCorsHeaders() {
   return {
@@ -64,9 +94,12 @@ exports.handler = async (event) => {
       } else if (method === 'POST' && id && action === 'review') {
         // POST /spotlight/{id}/review — Review submission
         return await reviewSubmission(id, event);
+      } else if ((method === 'PUT' || method === 'PATCH') && id && !action) {
+        // PUT /spotlight/{id} — Owner updates their own submission
+        return await updateSubmission(id, event);
       } else if (method === 'DELETE' && id && !action) {
         // DELETE /spotlight/{id} — Delete submission
-        return await deleteSubmission(id);
+        return await deleteSubmission(id, event);
       } else if (method === 'GET' && id && !action) {
         // GET /spotlight/{id} — Get single submission
         return await getSubmission(id);
@@ -122,7 +155,16 @@ async function listSubmissions(event) {
   // Sort by submittedAt descending
   submissions.sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
 
-  return createResponse(200, { submissions });
+  const decorated = submissions.map(withVisibility);
+
+  // The public listing opts in to dropping submissions past their window.
+  // Owner ("My Submissions") and admin views omit the flag and see everything.
+  const visibleOnly = ['1', 'true', 'yes'].includes(String(queryParams.visibleOnly).toLowerCase());
+
+  return createResponse(200, {
+    submissions: visibleOnly ? decorated.filter((s) => !s.expired) : decorated,
+    visibilityDays: VISIBILITY_DAYS,
+  });
 }
 
 // Get single submission
@@ -136,7 +178,7 @@ async function getSubmission(id) {
     return createResponse(404, { error: 'Spotlight submission not found' });
   }
 
-  return createResponse(200, { submission: result.Item });
+  return createResponse(200, { submission: withVisibility(result.Item) });
 }
 
 // Create a new spotlight submission
@@ -184,6 +226,110 @@ async function createSubmission(event) {
   }));
 
   return createResponse(201, { submission });
+}
+
+// Statuses a submitter is allowed to edit.
+// Approved submissions are locked: they are publicly listed and may already have
+// awarded points, so changing their content would bypass moderation.
+const OWNER_EDITABLE_STATUSES = ['pending', 'rejected'];
+
+// Update a spotlight submission (owner only)
+async function updateSubmission(id, event) {
+  const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
+
+  const { userId, title, description, type, url, imageUrl, tags } = body || {};
+
+  if (!userId) {
+    return createResponse(400, { error: 'Missing required field: userId' });
+  }
+
+  if (!title || !description || !type || !url) {
+    return createResponse(400, {
+      error: 'Missing required fields: title, description, type, url'
+    });
+  }
+
+  const validTypes = ['project', 'blog', 'video', 'other'];
+  if (!validTypes.includes(type)) {
+    return createResponse(400, { error: 'Type must be one of: project, blog, video, other' });
+  }
+
+  const existing = await docClient.send(new GetCommand({
+    TableName: SPOTLIGHT_TABLE,
+    Key: { id }
+  }));
+
+  if (!existing.Item) {
+    return createResponse(404, { error: 'Spotlight submission not found' });
+  }
+
+  const submission = existing.Item;
+
+  if (submission.userId !== userId) {
+    return createResponse(403, { error: 'You can only edit your own submissions' });
+  }
+
+  if (!OWNER_EDITABLE_STATUSES.includes(submission.status)) {
+    return createResponse(409, {
+      error: 'Approved submissions can no longer be edited. Please contact an admin.'
+    });
+  }
+
+  const now = new Date().toISOString();
+  const sets = [];
+  const removes = [];
+  const names = {};
+  const values = {};
+
+  const setAttr = (attr, value) => {
+    names[`#${attr}`] = attr;
+    values[`:${attr}`] = value;
+    sets.push(`#${attr} = :${attr}`);
+  };
+  const removeAttr = (attr) => {
+    names[`#${attr}`] = attr;
+    removes.push(`#${attr}`);
+  };
+
+  setAttr('title', String(title).trim());
+  setAttr('description', String(description).trim());
+  setAttr('type', type);
+  setAttr('url', String(url).trim());
+  setAttr('tags', Array.isArray(tags) ? tags : []);
+  setAttr('updatedAt', now);
+
+  if (imageUrl) {
+    setAttr('imageUrl', imageUrl);
+  } else if (submission.imageUrl) {
+    removeAttr('imageUrl');
+  }
+
+  // A rejected submission that gets edited goes back into the review queue.
+  if (submission.status === 'rejected') {
+    setAttr('status', 'pending');
+    setAttr('points', 0);
+    ['reviewedBy', 'reviewerName', 'reviewedAt', 'adminNotes'].forEach((attr) => {
+      if (submission[attr] !== undefined) removeAttr(attr);
+    });
+  }
+
+  const updateExpression = `SET ${sets.join(', ')}` +
+    (removes.length ? ` REMOVE ${removes.join(', ')}` : '');
+
+  await docClient.send(new UpdateCommand({
+    TableName: SPOTLIGHT_TABLE,
+    Key: { id },
+    UpdateExpression: updateExpression,
+    ExpressionAttributeNames: names,
+    ExpressionAttributeValues: values
+  }));
+
+  const updated = await docClient.send(new GetCommand({
+    TableName: SPOTLIGHT_TABLE,
+    Key: { id }
+  }));
+
+  return createResponse(200, { submission: withVisibility(updated.Item) });
 }
 
 // Review a spotlight submission (approve/reject with optional points)
@@ -313,11 +459,15 @@ async function reviewSubmission(id, event) {
     Key: { id }
   }));
 
-  return createResponse(200, { submission: updated.Item });
+  return createResponse(200, { submission: withVisibility(updated.Item) });
 }
 
-// Delete a spotlight submission
-async function deleteSubmission(id) {
+// Delete a spotlight submission.
+// When a userId is supplied (submitter deleting their own entry) ownership is enforced.
+// Admin callers omit userId and keep the previous unrestricted behaviour.
+async function deleteSubmission(id, event) {
+  const requesterId = (event?.queryStringParameters || {}).userId;
+
   const existing = await docClient.send(new GetCommand({
     TableName: SPOTLIGHT_TABLE,
     Key: { id }
@@ -325,6 +475,10 @@ async function deleteSubmission(id) {
 
   if (!existing.Item) {
     return createResponse(404, { error: 'Spotlight submission not found' });
+  }
+
+  if (requesterId && existing.Item.userId !== requesterId) {
+    return createResponse(403, { error: 'You can only delete your own submissions' });
   }
 
   await docClient.send(new DeleteCommand({

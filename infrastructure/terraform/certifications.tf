@@ -54,6 +54,11 @@ resource "aws_lambda_function" "certifications_crud" {
   environment {
     variables = {
       CERTIFICATION_GROUPS_TABLE_NAME = aws_dynamodb_table.certification_groups.name
+      # Needed to resolve the caller's platform roles for moderator-only actions
+      # (pin/unpin a post, hand-add an entry to an agent circle). Read access to
+      # this table already comes from the shared lambda_execution role policy.
+      USERS_TABLE_NAME = aws_dynamodb_table.users.name
+      ADMIN_EMAILS     = var.admin_emails
     }
   }
 

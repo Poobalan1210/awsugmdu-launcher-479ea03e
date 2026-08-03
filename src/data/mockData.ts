@@ -1,5 +1,7 @@
 // Mock data for the AWS User Group website
 
+import type { AgentConfig } from '@/lib/circles';
+
 export type UserRole = 'organiser' | 'speaker' | 'member' | 'admin';
 
 // Extended roles for community management
@@ -430,6 +432,11 @@ export interface Circle {
   color: string;
   scheduledSessions: GroupSession[];
   messages: GroupMessage[];
+  // Set when the circle is run by an AI agent (broadcast channel). Shape mirrors
+  // AgentConfig in src/lib/circles.ts, which is what the API actually returns.
+  agentConfig?: AgentConfig | null;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface GroupSession {
@@ -456,6 +463,9 @@ export interface GroupMessage {
   likes: number;
   likedBy?: string[];
   isPinned?: boolean;
+  digestRunId?: string;
+  isDigestLead?: boolean;
+  isJobPost?: boolean;
 }
 
 export interface GroupReply {
@@ -468,6 +478,7 @@ export interface GroupReply {
   createdAt: string;
   likes: number;
   likedBy?: string[];
+  isPinned?: boolean;
 }
 
 

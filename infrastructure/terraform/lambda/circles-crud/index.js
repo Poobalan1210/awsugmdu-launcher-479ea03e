@@ -5,6 +5,69 @@ const client = new DynamoDBClient({ region: process.env.AWS_REGION });
 const docClient = DynamoDBDocumentClient.from(client);
 
 const GROUPS_TABLE = process.env.CERTIFICATION_GROUPS_TABLE_NAME || 'awsug-circles';
+const USERS_TABLE = process.env.USERS_TABLE_NAME || 'awsug-users';
+
+// Platform roles allowed to moderate ANY circle (pin/unpin a post, add entries
+// by hand to an agent circle). Mirrors ADMIN_ROLES in meetups-crud.
+const ADMIN_ROLES = new Set(['admin', 'organiser']);
+
+// Email allow-list fallback, same convention as users-crud/adminUtils.js.
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '')
+  .split(',')
+  .map((e) => e.trim().toLowerCase())
+  .filter(Boolean);
+
+// Identify the caller from the Authorization header instead of a body field, so
+// a client can't just claim someone else's userId to unlock moderator actions.
+//
+// NOTE: the JWT signature is NOT verified here — the /circles routes have no
+// API Gateway authorizer attached. This matches lambda/shared/auth.js and is a
+// deliberate (documented) limitation, not a stronger guarantee than it looks.
+function getCallerId(event) {
+  const header = (event.headers && (event.headers.Authorization || event.headers.authorization)) || '';
+  const token = header.replace(/^Bearer\s+/i, '').trim();
+  if (!token) return null;
+  if (!token.includes('.')) return token; // plain userId
+
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const payload = JSON.parse(Buffer.from(base64, 'base64').toString('utf8'));
+    return payload.sub || payload['cognito:username'] || payload.userId || null;
+  } catch (e) {
+    console.error('Failed to decode auth token:', e);
+    return null;
+  }
+}
+
+// A circle's moderators are its own owners plus platform admins/organisers.
+// Returns false (never throws) so callers can treat it as a plain permission
+// check — a failed lookup denies rather than opens the action up.
+async function isModerator(circle, callerId) {
+  if (!callerId) return false;
+  if ((circle.owners || []).includes(callerId)) return true;
+
+  try {
+    const res = await docClient.send(new GetCommand({
+      TableName: USERS_TABLE,
+      Key: { userId: callerId },
+    }));
+    const user = res.Item;
+    if (!user) return false;
+
+    // roles is stored as [{ role: 'organiser', ... }]; tolerate plain strings.
+    const roles = (user.roles || []).map((r) => (typeof r === 'string' ? r : r && r.role));
+    if (roles.some((r) => ADMIN_ROLES.has(r))) return true;
+    if (user.role && ADMIN_ROLES.has(user.role)) return true;
+
+    const email = String(user.email || '').toLowerCase();
+    return !!email && ADMIN_EMAILS.includes(email);
+  } catch (e) {
+    console.error('Moderator lookup failed:', e);
+    return false;
+  }
+}
 
 // Agent types an admin may attach to a circle. The UI only ever sends a `type`
 // from this list; the real ARN + request/response handling live in the
@@ -285,7 +348,7 @@ async function leaveGroup(id, event) {
 
 async function postMessage(id, event) {
   const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
-  const { userId, userName, userAvatar, content, isPinned } = body;
+  const { userId, userName, userAvatar, content, isPinned, isJobPost } = body;
   
   if (!userId || !userName || !content) {
     return createResponse(400, { error: 'Missing required fields: userId, userName, content' });
@@ -295,10 +358,16 @@ async function postMessage(id, event) {
   if (!existing.Item) return createResponse(404, { error: 'Group not found' });
   
   const group = existing.Item;
+  const isAgentPost = String(userId).startsWith('agent-');
+  // Only resolve the caller when a privileged path actually needs it, so plain
+  // member posts keep their single-read cost.
+  const needsModerator = (group.agentConfig && group.agentConfig.enabled && !isAgentPost) || isPinned;
+  const moderator = needsModerator ? await isModerator(group, getCallerId(event)) : false;
 
-  // Agent circles are broadcast channels: only the agent itself may create
-  // top-level posts. Humans can still reply/like (handled by other routes).
-  if (group.agentConfig && group.agentConfig.enabled && !String(userId).startsWith('agent-')) {
+  // Agent circles are broadcast channels: the agent posts automatically, and a
+  // moderator may add an entry by hand (e.g. a job the scraper missed). Regular
+  // members can still reply/like (handled by other routes).
+  if (group.agentConfig && group.agentConfig.enabled && !isAgentPost && !moderator) {
     return createResponse(403, { error: 'This is an agent circle. Top-level posting is disabled; you can reply to the agent\'s updates.' });
   }
 
@@ -308,7 +377,11 @@ async function postMessage(id, event) {
   const message = {
     id: messageId, groupId: id, userId, userName,
     userAvatar: userAvatar || '', content, createdAt: now,
-    replies: [], likes: 0, likedBy: [], isPinned: isPinned || false
+    replies: [], likes: 0, likedBy: [],
+    // Pinning on create is a moderator action; agents pin via the digest Lambda.
+    isPinned: isPinned ? (isAgentPost || moderator) : false,
+    // Marks a hand-added listing so the UI can badge it as a job entry.
+    isJobPost: !!isJobPost,
   };
   
   const updatedMessages = [...(group.messages || []), message];
@@ -333,9 +406,21 @@ async function updateMessage(id, messageId, event) {
   const messages = group.messages || [];
   const msgIndex = messages.findIndex(m => m.id === messageId);
   if (msgIndex === -1) return createResponse(404, { error: 'Message not found' });
+
+  const callerId = getCallerId(event);
+  const moderator = await isModerator(group, callerId);
+
+  // Pinning is a moderator action. Content edits stay with the author (a
+  // moderator can edit too).
+  if (isPinned !== undefined && !moderator) {
+    return createResponse(403, { error: 'Only circle owners and organisers can pin or unpin posts' });
+  }
+  if (content !== undefined && !moderator && messages[msgIndex].userId !== callerId) {
+    return createResponse(403, { error: 'You can only edit your own posts' });
+  }
   
   if (content) messages[msgIndex].content = content;
-  if (isPinned !== undefined) messages[msgIndex].isPinned = isPinned;
+  if (isPinned !== undefined) messages[msgIndex].isPinned = !!isPinned;
   messages[msgIndex].updatedAt = new Date().toISOString();
   
   await docClient.send(new UpdateCommand({
@@ -445,8 +530,10 @@ async function addReply(id, messageId, event) {
 
 async function updateReply(id, messageId, replyId, event) {
   const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
-  const { content } = body;
-  if (!content) return createResponse(400, { error: 'content is required' });
+  const { content, isPinned } = body;
+  if (content === undefined && isPinned === undefined) {
+    return createResponse(400, { error: 'content or isPinned is required' });
+  }
   
   const existing = await docClient.send(new GetCommand({ TableName: GROUPS_TABLE, Key: { id } }));
   if (!existing.Item) return createResponse(404, { error: 'Group not found' });
@@ -459,8 +546,20 @@ async function updateReply(id, messageId, replyId, event) {
   const replies = messages[msgIndex].replies || [];
   const replyIndex = replies.findIndex(r => r.id === replyId);
   if (replyIndex === -1) return createResponse(404, { error: 'Reply not found' });
+
+  const callerId = getCallerId(event);
+  const moderator = await isModerator(group, callerId);
+
+  // Same split as top-level posts: moderators pin, authors edit.
+  if (isPinned !== undefined && !moderator) {
+    return createResponse(403, { error: 'Only circle owners and organisers can pin or unpin comments' });
+  }
+  if (content !== undefined && !moderator && replies[replyIndex].userId !== callerId) {
+    return createResponse(403, { error: 'You can only edit your own comments' });
+  }
   
-  replies[replyIndex].content = content;
+  if (content !== undefined) replies[replyIndex].content = content;
+  if (isPinned !== undefined) replies[replyIndex].isPinned = !!isPinned;
   replies[replyIndex].updatedAt = new Date().toISOString();
   messages[msgIndex].replies = replies;
   

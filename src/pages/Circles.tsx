@@ -12,18 +12,19 @@ import { RichTextEditor } from '@/components/ui/rich-text-editor';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   Award, Users, BookOpen, Calendar, CheckCircle, ArrowRight, 
-  MessageSquare, Send, ThumbsUp, Pin, Video, Clock,
-  ChevronDown, Crown, ArrowLeft, Link2, Trash2, Bot
+  MessageSquare, Send, ThumbsUp, Pin, PinOff, Video, Clock,
+  ChevronDown, Crown, ArrowLeft, Link2, Trash2, Bot, Briefcase
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { Circle } from '@/data/mockData';
+import type { Circle } from '@/lib/circles';
 import { format, parseISO } from 'date-fns';
 import { normalizeUrl } from '@/lib/utils';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useAuth } from '@/contexts/AuthContext';
 import { getMeetupsByCertificationGroup } from '@/lib/meetups';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { listCircles, joinCircle, postGroupMessage, getCircle, addMessageReply, toggleMessageLike, toggleReplyLike, groupAgentPostsByDigest } from '@/lib/circles';
+import { listCircles, joinCircle, postGroupMessage, getCircle, addMessageReply, toggleMessageLike, toggleReplyLike, groupAgentPostsByDigest, updateGroupMessage, updateMessageReply } from '@/lib/circles';
+import { AddJobDialog } from '@/components/circles/AddJobDialog';
 import { API_BASE_URL } from '@/lib/aws-config';
 import { profilePath } from '@/lib/profileSlug';
 import { markdownToPlainText } from '@/lib/markdown';
@@ -177,6 +178,12 @@ function GroupDetail({ group: initialGroup, onBack }: { group: Circle; onBack: (
   // Agent circles are broadcast channels: no top-level posting, but replies and
   // likes on the agent's digests stay enabled.
   const isAgentCircle = !!group.agentConfig?.enabled;
+  // Moderators (circle owners + platform organisers/admins) can pin comments and
+  // hand-add entries to an agent circle. The API enforces this too — these flags
+  // only decide whether the controls are worth showing.
+  const isPlatformAdmin = user?.role === 'organiser' || user?.role === 'admin';
+  const canModerate = !!(isOwner || isPlatformAdmin);
+  const isJobsCircle = group.agentConfig?.type === 'aws-jobs';
 
   // Fetch owner details from backend
   const { data: ownerDetails = [] } = useQuery({
@@ -389,15 +396,21 @@ function GroupDetail({ group: initialGroup, onBack }: { group: Circle; onBack: (
     }
   };
 
-  // Human-authored messages only. Agent posts are rendered separately as
-  // collapsible digest groups, so keep them out of the pinned/regular lists.
-  const pinnedMessages = group.messages.filter(m => m.isPinned && !m.userId?.startsWith('agent-'));
+  // Pinned posts head the feed whoever wrote them, so a moderator pinning an
+  // agent-posted job lifts it out of its collapsed digest to the top. Newest
+  // first, since the list now mixes authors and array order means nothing.
+  const pinnedMessages = group.messages
+    .filter(m => m.isPinned)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  // Unpinned human posts. Agent posts render separately as collapsible digests.
   const regularMessages = group.messages.filter(m => !m.isPinned && !m.userId?.startsWith('agent-'));
 
   // Agent digests grouped by run, newest first. Only the latest is expanded
-  // by default; older ones collapse to a single header line.
-  const agentDigests = Array.from(groupAgentPostsByDigest(group.messages).entries())
-    .sort((a, b) => new Date(b[1][0].createdAt).getTime() - new Date(a[1][0].createdAt).getTime());
+  // by default; older ones collapse to a single header line. Pinned agent posts
+  // are left out here so they don't appear twice.
+  const agentDigests = Array.from(
+    groupAgentPostsByDigest(group.messages.filter(m => !m.isPinned)).entries()
+  ).sort((a, b) => new Date(b[1][0].createdAt).getTime() - new Date(a[1][0].createdAt).getTime());
 
   // Show a limited window of digests, with a "show older" cutoff so the list
   // stays manageable as months of history pile up.
@@ -491,6 +504,7 @@ function GroupDetail({ group: initialGroup, onBack }: { group: Circle; onBack: (
                   setReplyContent={setReplyContent}
                   onSendReply={handleSendReply}
                   isOwner={isOwner}
+                  canModerate={canModerate}
                   currentUserId={user?.id}
                   currentUser={user}
                   messageRefs={messageRefs}
@@ -510,6 +524,7 @@ function GroupDetail({ group: initialGroup, onBack }: { group: Circle; onBack: (
                   setReplyContent={setReplyContent}
                   onSendReply={handleSendReply}
                   isOwner={isOwner}
+                  canModerate={canModerate}
                   currentUserId={user?.id}
                   currentUser={user}
                   messageRefs={messageRefs}
@@ -544,6 +559,20 @@ function GroupDetail({ group: initialGroup, onBack }: { group: Circle; onBack: (
               <Crown className="h-3 w-3" />
               Group Owner
             </Badge>
+          )}
+          {/* The agent handles the routine feed; moderators fill the gaps with
+              roles it missed or community referrals. */}
+          {isJobsCircle && canModerate && user && (
+            <div className="ml-auto">
+              <AddJobDialog
+                groupId={group.id}
+                user={user}
+                onPosted={async () => {
+                  await queryClient.invalidateQueries({ queryKey: ['circle', group.id] });
+                  await queryClient.refetchQueries({ queryKey: ['circle', group.id] });
+                }}
+              />
+            </div>
           )}
         </div>
         
@@ -613,7 +642,7 @@ function GroupDetail({ group: initialGroup, onBack }: { group: Circle; onBack: (
             <CardContent className="space-y-6">
               {/* New Message Form - hidden for agent (broadcast) circles */}
               {isAgentCircle ? (
-                <div className="p-4 rounded-lg bg-muted/50 text-center flex flex-col items-center gap-1">
+                <div className="p-4 rounded-lg bg-muted/50 text-center flex flex-col items-center gap-2">
                   <div className="flex items-center gap-2 text-sm font-medium">
                     <Bot className="h-4 w-4 text-primary" />
                     Run by an AI agent
@@ -672,8 +701,8 @@ function GroupDetail({ group: initialGroup, onBack }: { group: Circle; onBack: (
                         replyContent={replyContent}
                         setReplyContent={setReplyContent}
                         onSendReply={handleSendReply}
-                        isPinned
                         isOwner={isOwner}
+                        canModerate={canModerate}
                         currentUserId={user?.id}
                         currentUser={user}
                         messageRefs={messageRefs}
@@ -713,6 +742,7 @@ function GroupDetail({ group: initialGroup, onBack }: { group: Circle; onBack: (
                           setReplyContent={setReplyContent}
                           onSendReply={handleSendReply}
                           isOwner={isOwner}
+                          canModerate={canModerate}
                           currentUserId={user?.id}
                           currentUser={user}
                           messageRefs={messageRefs}
@@ -967,8 +997,8 @@ function MessageCard({
   replyContent,
   setReplyContent,
   onSendReply,
-  isPinned = false,
   isOwner = false,
+  canModerate = false,
   currentUserId,
   currentUser,
   messageRefs
@@ -982,8 +1012,9 @@ function MessageCard({
   replyContent: string;
   setReplyContent: (content: string) => void;
   onSendReply: (messageId: string) => void;
-  isPinned?: boolean;
   isOwner?: boolean;
+  /** Circle owner or platform organiser/admin: may pin and unpin. */
+  canModerate?: boolean;
   currentUserId?: string;
   currentUser?: any;
   messageRefs: React.MutableRefObject<{ [key: string]: HTMLDivElement | null }>;
@@ -991,6 +1022,46 @@ function MessageCard({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const canDelete = isOwner || message.userId === currentUserId;
+  // Read pinned state off the message itself so the badge, the card styling and
+  // the toggle can never disagree with each other.
+  const isPinned = !!message.isPinned;
+  const [pinning, setPinning] = useState(false);
+
+  const refreshCircle = async () => {
+    await queryClient.invalidateQueries({ queryKey: ['circle', groupId] });
+    await queryClient.refetchQueries({ queryKey: ['circle', groupId] });
+  };
+
+  const handleTogglePin = async () => {
+    setPinning(true);
+    try {
+      await updateGroupMessage(groupId, message.id, { isPinned: !isPinned });
+      await refreshCircle();
+      toast.success(isPinned ? 'Unpinned' : 'Pinned to the top of the circle');
+    } catch (error) {
+      console.error('Error toggling pin:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to update pin');
+    } finally {
+      setPinning(false);
+    }
+  };
+
+  const handleToggleReplyPin = async (replyId: string, nextPinned: boolean) => {
+    try {
+      await updateMessageReply(groupId, message.id, replyId, { isPinned: nextPinned });
+      await refreshCircle();
+      toast.success(nextPinned ? 'Comment pinned' : 'Comment unpinned');
+    } catch (error) {
+      console.error('Error toggling reply pin:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to update pin');
+    }
+  };
+
+  // Pinned comments lead the thread; everything else stays chronological.
+  const sortedReplies = message.replies.slice().sort((a, b) => {
+    if (!!a.isPinned !== !!b.isPinned) return a.isPinned ? -1 : 1;
+    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+  });
 
   const handleDelete = () => {
     if (confirm('Are you sure you want to delete this message?')) {
@@ -1048,19 +1119,39 @@ function MessageCard({
                   Agent
                 </Badge>
               )}
+              {message.isJobPost && (
+                <Badge variant="outline" className="gap-1 h-5 px-1.5 text-xs shrink-0">
+                  <Briefcase className="h-3 w-3" />
+                  Job
+                </Badge>
+              )}
               <span className="text-sm text-muted-foreground whitespace-nowrap shrink-0">
                 · {format(parseISO(message.createdAt), 'MMM d, yyyy')}
               </span>
               {isPinned && <Pin className="h-3 w-3 text-primary shrink-0" />}
-              {canDelete && (
-                <button 
-                  onClick={handleDelete}
-                  className="ml-auto text-muted-foreground hover:text-destructive shrink-0"
-                  title="Delete message"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              )}
+              <div className="ml-auto flex items-center gap-3 shrink-0">
+                {canModerate && (
+                  <button
+                    onClick={handleTogglePin}
+                    disabled={pinning}
+                    className={`transition-colors disabled:opacity-50 ${isPinned ? 'text-primary hover:text-muted-foreground' : 'text-muted-foreground hover:text-primary'}`}
+                    title={isPinned ? 'Unpin this post' : 'Pin this post to the top'}
+                    aria-label={isPinned ? 'Unpin this post' : 'Pin this post to the top'}
+                  >
+                    {isPinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
+                  </button>
+                )}
+                {canDelete && (
+                  <button 
+                    onClick={handleDelete}
+                    className="text-muted-foreground hover:text-destructive"
+                    title="Delete message"
+                    aria-label="Delete message"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
             </div>
             <RichText
               content={message.content}
@@ -1170,9 +1261,10 @@ function MessageCard({
                   exit={{ opacity: 0, height: 0 }}
                   className="mt-4 pl-4 border-l-2 border-muted space-y-3"
                 >
-                  {message.replies.map((reply) => {
+                  {sortedReplies.map((reply) => {
                     const canDeleteReply = isOwner || reply.userId === currentUserId;
                     const isReplyLiked = reply.likedBy?.includes(currentUserId || '');
+                    const isReplyPinned = !!reply.isPinned;
                     
                     const handleReplyLike = async () => {
                       if (!currentUserId) {
@@ -1207,15 +1299,34 @@ function MessageCard({
                               {reply.userName}
                             </Link>
                             <span className="text-muted-foreground whitespace-nowrap shrink-0">· {format(parseISO(reply.createdAt), 'MMM d')}</span>
-                            {canDeleteReply && (
-                              <button 
-                                onClick={() => handleDeleteReply(reply.id)}
-                                className="ml-auto text-muted-foreground hover:text-destructive shrink-0"
-                                title="Delete reply"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </button>
+                            {isReplyPinned && (
+                              <span className="flex items-center gap-1 text-xs text-primary shrink-0">
+                                <Pin className="h-3 w-3" />
+                                Pinned
+                              </span>
                             )}
+                            <div className="ml-auto flex items-center gap-2 shrink-0">
+                              {canModerate && (
+                                <button
+                                  onClick={() => handleToggleReplyPin(reply.id, !isReplyPinned)}
+                                  className={`transition-colors ${isReplyPinned ? 'text-primary hover:text-muted-foreground' : 'text-muted-foreground hover:text-primary'}`}
+                                  title={isReplyPinned ? 'Unpin this comment' : 'Pin this comment to the top of the thread'}
+                                  aria-label={isReplyPinned ? 'Unpin this comment' : 'Pin this comment to the top of the thread'}
+                                >
+                                  {isReplyPinned ? <PinOff className="h-3 w-3" /> : <Pin className="h-3 w-3" />}
+                                </button>
+                              )}
+                              {canDeleteReply && (
+                                <button 
+                                  onClick={() => handleDeleteReply(reply.id)}
+                                  className="text-muted-foreground hover:text-destructive"
+                                  title="Delete reply"
+                                  aria-label="Delete reply"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              )}
+                            </div>
                           </div>
                           <RichText content={reply.content} variant="compact" className="mt-0.5" />
                           <div className="flex items-center gap-3 mt-1">

@@ -1,4 +1,31 @@
+import { fetchAuthSession } from 'aws-amplify/auth';
 import { API_BASE_URL } from './aws-config';
+
+// Moderator-only routes (pin/unpin, hand-adding entries to an agent circle)
+// identify the caller from this header rather than a body field, so it must be
+// attached to those requests. Returns just the content-type when signed out.
+async function authHeaders(): Promise<Record<string, string>> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  try {
+    const session = await fetchAuthSession();
+    const token = session.tokens?.idToken?.toString();
+    if (token) headers.Authorization = `Bearer ${token}`;
+  } catch {
+    // Signed out or session unavailable — let the API reject it.
+  }
+  return headers;
+}
+
+// Surface the API's reason (e.g. a 403 explaining a moderator-only action)
+// instead of a generic failure string.
+async function errorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const data = await response.json();
+    return data.error || data.message || fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 export interface AgentConfig {
   enabled: boolean;
@@ -52,6 +79,7 @@ export interface GroupMessage {
   isPinned?: boolean;
   digestRunId?: string; // Groups posts from same agent run
   isDigestLead?: boolean; // First/summary post of a digest run
+  isJobPost?: boolean; // Hand-added job listing (vs. one the agent scraped)
 }
 
 export interface GroupReply {
@@ -64,6 +92,7 @@ export interface GroupReply {
   createdAt: string;
   likes: number;
   likedBy: string[];
+  isPinned?: boolean; // Pinned by a moderator; sorts to the top of the thread
 }
 
 // List all circles or filter by level
@@ -162,27 +191,28 @@ export async function postGroupMessage(groupId: string, message: {
   userAvatar: string;
   content: string;
   isPinned?: boolean;
+  isJobPost?: boolean;
 }): Promise<{ group: Circle; message: GroupMessage }> {
   const response = await fetch(`${API_BASE_URL}/circles/${groupId}/messages`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await authHeaders(),
     body: JSON.stringify(message)
   });
-  if (!response.ok) throw new Error('Failed to post message');
+  if (!response.ok) throw new Error(await errorMessage(response, 'Failed to post message'));
   return await response.json();
 }
 
-// Update a message
+// Update a message. Pinning is moderator-only and enforced server-side.
 export async function updateGroupMessage(groupId: string, messageId: string, updates: {
   content?: string;
   isPinned?: boolean;
 }): Promise<Circle> {
   const response = await fetch(`${API_BASE_URL}/circles/${groupId}/messages/${messageId}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await authHeaders(),
     body: JSON.stringify(updates)
   });
-  if (!response.ok) throw new Error('Failed to update message');
+  if (!response.ok) throw new Error(await errorMessage(response, 'Failed to update message'));
   const data = await response.json();
   return data.group;
 }
@@ -224,14 +254,17 @@ export async function addMessageReply(groupId: string, messageId: string, reply:
   return await response.json();
 }
 
-// Update a reply
-export async function updateMessageReply(groupId: string, messageId: string, replyId: string, content: string): Promise<Circle> {
+// Update a reply. Pinning is moderator-only and enforced server-side.
+export async function updateMessageReply(groupId: string, messageId: string, replyId: string, updates: {
+  content?: string;
+  isPinned?: boolean;
+}): Promise<Circle> {
   const response = await fetch(`${API_BASE_URL}/circles/${groupId}/messages/${messageId}/replies/${replyId}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content })
+    headers: await authHeaders(),
+    body: JSON.stringify(updates)
   });
-  if (!response.ok) throw new Error('Failed to update reply');
+  if (!response.ok) throw new Error(await errorMessage(response, 'Failed to update reply'));
   const data = await response.json();
   return data.group;
 }

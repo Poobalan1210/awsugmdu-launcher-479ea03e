@@ -22,6 +22,9 @@ build/
 *.temp
 prompts_used_to_create_frontent.txt
 
+# Badge renderer (tools/badge-renderer) is COMMITTED, including its out/
+# artifacts — see tools/badge-renderer/.gitignore for the local-only exclusions.
+
 # Terraform
 infrastructure/terraform/.terraform/
 infrastructure/terraform/.terraform.lock.hcl

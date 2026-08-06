@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200"
+     role="img" aria-label="AWS Certified badge">
+  <title>AWS Certified</title>
+  <desc>Earned an AWS certification</desc>
+  <circle cx="100" cy="100" r="96" fill="#FF9900"/>
+  <circle cx="100" cy="100" r="88" fill="#1a1a2e"/>
+  <circle cx="100" cy="100" r="80" fill="none" stroke="#FF9900" stroke-width="2" stroke-dasharray="8 4"/>
+  <text x="100" y="90" text-anchor="middle" dominant-baseline="middle" font-size="48">&#128220;</text>
+  <text x="100" y="118" text-anchor="middle" font-size="13" font-weight="bold" fill="#FFFFFF">AWS Certified</text>
+  <text x="100" y="172" text-anchor="middle" font-size="9" fill="#FF9900" letter-spacing="1">AWS UG MADURAI</text>
+</svg>

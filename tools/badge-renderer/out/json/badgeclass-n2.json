@@ -1,0 +1,42 @@
+{
+  "@context": "https://w3id.org/openbadges/v2",
+  "id": "https://www.awsugmdu.in/ob2/badges/n2.json",
+  "type": "BadgeClass",
+  "name": "AWS User Group Speaker",
+  "description": "Delivered a session at an AWS User Group Madurai event.",
+  "image": "https://www.awsugmdu.in/ob2/badge-images/n2.svg",
+  "criteria": {
+    "id": "https://www.awsugmdu.in/ob2/badges/n2.json/criteria",
+    "narrative": "Deliver at least one session at an AWSUGMDU event"
+  },
+  "issuer": "https://www.awsugmdu.in/ob2/issuer.json",
+  "alignment": [
+    {
+      "type": "AlignmentObject",
+      "targetName": "Public Speaking",
+      "targetUrl": "https://www.awsugmdu.in/skills/public-speaking",
+      "targetFramework": "AWSUGMDU Skill Graph"
+    },
+    {
+      "type": "AlignmentObject",
+      "targetName": "Community",
+      "targetUrl": "https://www.awsugmdu.in/skills/community",
+      "targetFramework": "AWSUGMDU Skill Graph"
+    },
+    {
+      "type": "AlignmentObject",
+      "targetName": "AWS",
+      "targetUrl": "https://www.awsugmdu.in/skills/aws",
+      "targetFramework": "AWSUGMDU Skill Graph"
+    }
+  ],
+  "tags": [
+    "AWS",
+    "Cloud",
+    "Community",
+    "AWSUGMDU",
+    "Public Speaking",
+    "Community",
+    "AWS"
+  ]
+}

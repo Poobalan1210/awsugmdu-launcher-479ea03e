@@ -1,0 +1,25 @@
+{
+  "@context": "https://w3id.org/openbadges/v2",
+  "id": "https://www.awsugmdu.in/ob2/assertions/n2-9f3c1a7e-4b21-4d0a-9c88-2e5f7a10bd44.json",
+  "type": "Assertion",
+  "recipient": {
+    "type": "email",
+    "hashed": true,
+    "salt": "awsugmdu-9f3c1a7e",
+    "identity": "sha256$65cd99530b6c2c4a8dd041666b91019d846b044556184975cd2e1bd93509efe1"
+  },
+  "badge": "https://www.awsugmdu.in/ob2/badges/n2.json",
+  "verification": {
+    "type": "HostedBadge"
+  },
+  "issuedOn": "2026-08-06T00:00:00.000Z",
+  "evidence": [
+    {
+      "type": "Evidence",
+      "id": "https://www.awsugmdu.in/u/logesh-tamil-9c21",
+      "name": "லோகேஷ்'s AWS UG Madurai Profile",
+      "description": "View லோகேஷ்'s full profile and achievements."
+    }
+  ],
+  "narrative": "லோகேஷ் earned the \"AWS User Group Speaker\" badge from AWS User Group Madurai for: Deliver at least one session at an AWSUGMDU event"
+}

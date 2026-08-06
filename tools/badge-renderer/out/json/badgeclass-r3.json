@@ -1,0 +1,42 @@
+{
+  "@context": "https://w3id.org/openbadges/v2",
+  "id": "https://www.awsugmdu.in/ob2/badges/r3.json",
+  "type": "BadgeClass",
+  "name": "AWS User Group Volunteer",
+  "description": "Volunteered to run AWS User Group Madurai events.",
+  "image": "https://www.awsugmdu.in/ob2/badge-images/r3.svg",
+  "criteria": {
+    "id": "https://www.awsugmdu.in/ob2/badges/r3.json/criteria",
+    "narrative": "Volunteer at an AWSUGMDU event"
+  },
+  "issuer": "https://www.awsugmdu.in/ob2/issuer.json",
+  "alignment": [
+    {
+      "type": "AlignmentObject",
+      "targetName": "Community",
+      "targetUrl": "https://www.awsugmdu.in/skills/community",
+      "targetFramework": "AWSUGMDU Skill Graph"
+    },
+    {
+      "type": "AlignmentObject",
+      "targetName": "Event Operations",
+      "targetUrl": "https://www.awsugmdu.in/skills/event-operations",
+      "targetFramework": "AWSUGMDU Skill Graph"
+    },
+    {
+      "type": "AlignmentObject",
+      "targetName": "AWS",
+      "targetUrl": "https://www.awsugmdu.in/skills/aws",
+      "targetFramework": "AWSUGMDU Skill Graph"
+    }
+  ],
+  "tags": [
+    "AWS",
+    "Cloud",
+    "Community",
+    "AWSUGMDU",
+    "Community",
+    "Event Operations",
+    "AWS"
+  ]
+}

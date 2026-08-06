@@ -1,0 +1,42 @@
+{
+  "@context": "https://w3id.org/openbadges/v2",
+  "id": "https://www.awsugmdu.in/ob2/badges/c1.json",
+  "type": "BadgeClass",
+  "name": "AWS User Group Madurai",
+  "description": "Member of the AWS User Group Madurai community.",
+  "image": "https://www.awsugmdu.in/ob2/badge-images/c1.svg",
+  "criteria": {
+    "id": "https://www.awsugmdu.in/ob2/badges/c1.json/criteria",
+    "narrative": "Join the AWS User Group Madurai community"
+  },
+  "issuer": "https://www.awsugmdu.in/ob2/issuer.json",
+  "alignment": [
+    {
+      "type": "AlignmentObject",
+      "targetName": "Community",
+      "targetUrl": "https://www.awsugmdu.in/skills/community",
+      "targetFramework": "AWSUGMDU Skill Graph"
+    },
+    {
+      "type": "AlignmentObject",
+      "targetName": "AWS",
+      "targetUrl": "https://www.awsugmdu.in/skills/aws",
+      "targetFramework": "AWSUGMDU Skill Graph"
+    },
+    {
+      "type": "AlignmentObject",
+      "targetName": "Cloud Computing",
+      "targetUrl": "https://www.awsugmdu.in/skills/cloud-computing",
+      "targetFramework": "AWSUGMDU Skill Graph"
+    }
+  ],
+  "tags": [
+    "AWS",
+    "Cloud",
+    "Community",
+    "AWSUGMDU",
+    "Community",
+    "AWS",
+    "Cloud Computing"
+  ]
+}

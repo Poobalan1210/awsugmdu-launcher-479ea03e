@@ -1,0 +1,10 @@
+{
+  "@context": "https://w3id.org/openbadges/v2",
+  "id": "https://www.awsugmdu.in/ob2/issuer.json",
+  "type": "Profile",
+  "name": "AWS User Group Madurai",
+  "url": "https://www.awsugmdu.in",
+  "email": "badges@awsugmdu.in",
+  "description": "AWS User Group Madurai is a community of cloud enthusiasts, developers, and architects who learn and grow together through events, sprints, and certifications.",
+  "image": "https://www.awsugmdu.in/logo.png"
+}

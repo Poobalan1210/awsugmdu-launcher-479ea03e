@@ -1,0 +1,35 @@
+{
+  "@context": "https://w3id.org/openbadges/v2",
+  "id": "https://www.awsugmdu.in/ob2/badges/r2.json",
+  "type": "BadgeClass",
+  "name": "AWS User Group Supporter",
+  "description": "Sustained support of AWS User Group Madurai programmes.",
+  "image": "https://www.awsugmdu.in/ob2/badge-images/r2.svg",
+  "criteria": {
+    "id": "https://www.awsugmdu.in/ob2/badges/r2.json/criteria",
+    "narrative": "Provide sustained support to AWSUGMDU programmes"
+  },
+  "issuer": "https://www.awsugmdu.in/ob2/issuer.json",
+  "alignment": [
+    {
+      "type": "AlignmentObject",
+      "targetName": "Community",
+      "targetUrl": "https://www.awsugmdu.in/skills/community",
+      "targetFramework": "AWSUGMDU Skill Graph"
+    },
+    {
+      "type": "AlignmentObject",
+      "targetName": "AWS",
+      "targetUrl": "https://www.awsugmdu.in/skills/aws",
+      "targetFramework": "AWSUGMDU Skill Graph"
+    }
+  ],
+  "tags": [
+    "AWS",
+    "Cloud",
+    "Community",
+    "AWSUGMDU",
+    "Community",
+    "AWS"
+  ]
+}

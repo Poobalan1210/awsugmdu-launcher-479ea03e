@@ -1,0 +1,35 @@
+{
+  "@context": "https://w3id.org/openbadges/v2",
+  "id": "https://www.awsugmdu.in/ob2/badges/b7.json",
+  "type": "BadgeClass",
+  "name": "Speaker Star",
+  "description": "Delivered 3 sessions to the community.",
+  "image": "https://www.awsugmdu.in/ob2/badge-images/b7.svg",
+  "criteria": {
+    "id": "https://www.awsugmdu.in/ob2/badges/b7.json/criteria",
+    "narrative": "Deliver 3 speaker sessions"
+  },
+  "issuer": "https://www.awsugmdu.in/ob2/issuer.json",
+  "alignment": [
+    {
+      "type": "AlignmentObject",
+      "targetName": "Public Speaking",
+      "targetUrl": "https://www.awsugmdu.in/skills/public-speaking",
+      "targetFramework": "AWSUGMDU Skill Graph"
+    },
+    {
+      "type": "AlignmentObject",
+      "targetName": "Technical Communication",
+      "targetUrl": "https://www.awsugmdu.in/skills/technical-communication",
+      "targetFramework": "AWSUGMDU Skill Graph"
+    }
+  ],
+  "tags": [
+    "AWS",
+    "Cloud",
+    "Community",
+    "AWSUGMDU",
+    "Public Speaking",
+    "Technical Communication"
+  ]
+}

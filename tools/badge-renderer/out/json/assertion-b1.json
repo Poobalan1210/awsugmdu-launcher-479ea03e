@@ -1,0 +1,25 @@
+{
+  "@context": "https://w3id.org/openbadges/v2",
+  "id": "https://www.awsugmdu.in/ob2/assertions/b1-9f3c1a7e-4b21-4d0a-9c88-2e5f7a10bd44.json",
+  "type": "Assertion",
+  "recipient": {
+    "type": "email",
+    "hashed": true,
+    "salt": "awsugmdu-9f3c1a7e",
+    "identity": "sha256$65cd99530b6c2c4a8dd041666b91019d846b044556184975cd2e1bd93509efe1"
+  },
+  "badge": "https://www.awsugmdu.in/ob2/badges/b1.json",
+  "verification": {
+    "type": "HostedBadge"
+  },
+  "issuedOn": "2026-08-06T00:00:00.000Z",
+  "evidence": [
+    {
+      "type": "Evidence",
+      "id": "https://www.awsugmdu.in/u/logesh-s-4f2a",
+      "name": "Logesh S's AWS UG Madurai Profile",
+      "description": "View Logesh S's full profile and achievements."
+    }
+  ],
+  "narrative": "Logesh S earned the \"Sprint Champion\" badge from AWS User Group Madurai for: Complete 5 skill sprints"
+}

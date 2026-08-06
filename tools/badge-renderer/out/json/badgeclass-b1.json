@@ -1,0 +1,42 @@
+{
+  "@context": "https://w3id.org/openbadges/v2",
+  "id": "https://www.awsugmdu.in/ob2/badges/b1.json",
+  "type": "BadgeClass",
+  "name": "Sprint Champion",
+  "description": "Completed 5 skill sprints.",
+  "image": "https://www.awsugmdu.in/ob2/badge-images/b1.svg",
+  "criteria": {
+    "id": "https://www.awsugmdu.in/ob2/badges/b1.json/criteria",
+    "narrative": "Complete 5 skill sprints"
+  },
+  "issuer": "https://www.awsugmdu.in/ob2/issuer.json",
+  "alignment": [
+    {
+      "type": "AlignmentObject",
+      "targetName": "Cloud Computing",
+      "targetUrl": "https://www.awsugmdu.in/skills/cloud-computing",
+      "targetFramework": "AWSUGMDU Skill Graph"
+    },
+    {
+      "type": "AlignmentObject",
+      "targetName": "AWS",
+      "targetUrl": "https://www.awsugmdu.in/skills/aws",
+      "targetFramework": "AWSUGMDU Skill Graph"
+    },
+    {
+      "type": "AlignmentObject",
+      "targetName": "Continuous Learning",
+      "targetUrl": "https://www.awsugmdu.in/skills/continuous-learning",
+      "targetFramework": "AWSUGMDU Skill Graph"
+    }
+  ],
+  "tags": [
+    "AWS",
+    "Cloud",
+    "Community",
+    "AWSUGMDU",
+    "Cloud Computing",
+    "AWS",
+    "Continuous Learning"
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "@context": "https://w3id.org/openbadges/v2",
+  "id": "https://www.awsugmdu.in/ob2/badges/b8.json",
+  "type": "BadgeClass",
+  "name": "Security Expert",
+  "description": "Completed the Security Sprint.",
+  "image": "https://www.awsugmdu.in/ob2/badge-images/b8.svg",
+  "criteria": {
+    "id": "https://www.awsugmdu.in/ob2/badges/b8.json/criteria",
+    "narrative": "Complete the Security Sprint"
+  },
+  "issuer": "https://www.awsugmdu.in/ob2/issuer.json",
+  "alignment": [
+    {
+      "type": "AlignmentObject",
+      "targetName": "Cloud Security",
+      "targetUrl": "https://www.awsugmdu.in/skills/cloud-security",
+      "targetFramework": "AWSUGMDU Skill Graph"
+    },
+    {
+      "type": "AlignmentObject",
+      "targetName": "IAM",
+      "targetUrl": "https://www.awsugmdu.in/skills/iam",
+      "targetFramework": "AWSUGMDU Skill Graph"
+    },
+    {
+      "type": "AlignmentObject",
+      "targetName": "AWS",
+      "targetUrl": "https://www.awsugmdu.in/skills/aws",
+      "targetFramework": "AWSUGMDU Skill Graph"
+    }
+  ],
+  "tags": [
+    "AWS",
+    "Cloud",
+    "Community",
+    "AWSUGMDU",
+    "Cloud Security",
+    "IAM",
+    "AWS"
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "name": "awsugmdu-badge-samples",
+  "private": true,
+  "type": "commonjs",
+  "description": "Local scratch: Open Badges v2 baking samples. Not part of the app build.",
+  "scripts": {
+    "build": "node build-badges.js",
+    "validate": "node validate.js"
+  },
+  "dependencies": {
+    "openbadges-bakery": "1.0.5"
+  }
+}

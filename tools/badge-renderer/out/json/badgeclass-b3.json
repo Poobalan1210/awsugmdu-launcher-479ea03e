@@ -1,0 +1,35 @@
+{
+  "@context": "https://w3id.org/openbadges/v2",
+  "id": "https://www.awsugmdu.in/ob2/badges/b3.json",
+  "type": "BadgeClass",
+  "name": "AWS Certified",
+  "description": "Holds a verified AWS certification.",
+  "image": "https://www.awsugmdu.in/ob2/badge-images/b3.svg",
+  "criteria": {
+    "id": "https://www.awsugmdu.in/ob2/badges/b3.json/criteria",
+    "narrative": "Earn at least 1 AWS certification"
+  },
+  "issuer": "https://www.awsugmdu.in/ob2/issuer.json",
+  "alignment": [
+    {
+      "type": "AlignmentObject",
+      "targetName": "AWS Certification",
+      "targetUrl": "https://www.awsugmdu.in/skills/aws-certification",
+      "targetFramework": "AWSUGMDU Skill Graph"
+    },
+    {
+      "type": "AlignmentObject",
+      "targetName": "Cloud Computing",
+      "targetUrl": "https://www.awsugmdu.in/skills/cloud-computing",
+      "targetFramework": "AWSUGMDU Skill Graph"
+    }
+  ],
+  "tags": [
+    "AWS",
+    "Cloud",
+    "Community",
+    "AWSUGMDU",
+    "AWS Certification",
+    "Cloud Computing"
+  ]
+}

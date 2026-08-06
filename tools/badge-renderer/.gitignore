@@ -1,0 +1,8 @@
+# Local build/tooling only. Everything else in this directory IS committed,
+# including out/ — those artifacts are the handover deliverable.
+node_modules/
+.venv/
+
+# Chrome writes these next to the SVG during rasterisation and they are removed
+# by build-badges.js, but guard against a crashed run leaving one behind.
+*.wrap.html

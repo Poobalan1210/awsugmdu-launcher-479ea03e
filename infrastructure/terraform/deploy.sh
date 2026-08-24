@@ -142,6 +142,7 @@ LAMBDA_FUNCTIONS=(
   "points-crud"
   "meetup-reminder"
   "stats-crud"
+  "hackathons-crud"
 )
 
 # ─── Header ───────────────────────────────────────────────────────────────────
@@ -164,6 +165,7 @@ echo ""
 EMAIL_SHARED_CONSUMERS=(
   "meetups-crud"
   "meetup-reminder"
+  "hackathons-crud"
 )
 
 if [ -f "lambda/shared/email.js" ]; then

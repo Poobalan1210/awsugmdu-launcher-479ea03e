@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Menu, X, User, LogOut, Shield, Activity, Rocket, GraduationCap, Cloud, Users, Sparkles, CalendarDays, Ghost } from 'lucide-react';
+import { Menu, X, User, LogOut, Shield, Activity, Rocket, GraduationCap, Cloud, Users, Sparkles, CalendarDays, Ghost, Trophy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import {
@@ -30,6 +30,7 @@ const primaryNavItems = [
 // Add new initiatives here instead of cluttering the top bar.
 const programItems = [
   { name: 'Builders Skill Sprint', path: '/skill-sprint', description: 'Monthly hands-on AWS challenges', icon: Rocket },
+  { name: 'Hackathons', path: '/hackathons', description: 'Build in teams with mentors and win prizes', icon: Trophy },
   { name: 'College Champs', path: '/college-champs', description: 'Student leaders driving campus initiatives', icon: GraduationCap },
   { name: 'Cloud Clubs', path: '/cloud-clubs', description: 'College cloud communities', icon: Cloud },
   { name: 'Circles', path: '/circles', description: 'Focused peer learning groups', icon: Users },

@@ -2,10 +2,14 @@
 
 import type { AgentConfig } from '@/lib/circles';
 
-export type UserRole = 'organiser' | 'speaker' | 'member' | 'admin';
+/**
+ * The single effective role resolved onto the signed-in User by AuthContext.
+ * Narrower than CommunityRole: only the roles the UI gates behaviour on.
+ */
+export type UserRole = 'organiser' | 'speaker' | 'member' | 'admin' | 'judge';
 
 // Extended roles for community management
-export type CommunityRole = 'member' | 'volunteer' | 'organiser' | 'champ' | 'cloud_club_captain' | 'speaker' | 'admin';
+export type CommunityRole = 'member' | 'volunteer' | 'organiser' | 'champ' | 'cloud_club_captain' | 'speaker' | 'mentor' | 'judge' | 'admin';
 
 export interface UserRoleAssignment {
   id: string;
@@ -47,6 +51,8 @@ export const communityRoles: { value: CommunityRole; label: string; description:
   { value: 'champ', label: 'Champ Lead', description: 'College champion leading student initiatives', color: 'bg-amber-500', icon: '🏆' },
   { value: 'cloud_club_captain', label: 'Cloud Club Captain', description: 'Leads college cloud clubs and student initiatives', color: 'bg-emerald-500', icon: '☁️' },
   { value: 'speaker', label: 'Speaker', description: 'Delivers sessions and talks at events', color: 'bg-rose-500', icon: '🎤' },
+  { value: 'mentor', label: 'Mentor', description: 'Guides hackathon teams and individual builders', color: 'bg-teal-500', icon: '🧭' },
+  { value: 'judge', label: 'Judge', description: 'Reviews hackathon submissions and awards points', color: 'bg-indigo-500', icon: '⚖️' },
   { value: 'organiser', label: 'Organiser', description: 'Organizes and manages community events with admin access', color: 'bg-purple-600', icon: '👑' },
   { value: 'admin', label: 'Admin', description: 'Full administrative access to the platform (legacy)', color: 'bg-red-600', icon: '⚙️' },
 ];
@@ -239,6 +245,203 @@ export interface Submission {
   reviewedAt?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Hackathons
+//
+// Standalone recurring program. Optionally linked to a Sprint (hackathon run as
+// part of a sprint) and to Meetups (kickoff / demo day / check-in sessions) via
+// Meetup.hackathonId, mirroring the existing sprintId/collegeId/cloudClubId
+// linkage convention.
+//
+// Teams, mentors and submissions live in their own DynamoDB tables rather than
+// nested on the hackathon item, to stay clear of the 400KB per-item ceiling
+// that already constrains Sprint.
+// ---------------------------------------------------------------------------
+
+export type HackathonStatus = 'draft' | 'upcoming' | 'registration' | 'active' | 'judging' | 'completed';
+
+/** How a builder gets onto a team. Configured per hackathon by an admin. */
+export type TeamJoinPolicy =
+  | 'invite_only'  // only the lead can invite
+  | 'request'      // anyone may request, lead approves or rejects
+  | 'open';        // anyone may join instantly while the team has room
+
+/** A person attached to a hackathon or team. Denormalised, matching SessionPerson. */
+export interface HackathonPerson {
+  userId?: string;
+  name: string;
+  email?: string;
+  photo?: string;
+  designation?: string;
+  company?: string;
+  linkedIn?: string;
+  /** Mentor-only: free-text areas of expertise shown to teams. */
+  expertise?: string[];
+}
+
+export type HackathonResourceType =
+  | 'doc' | 'video' | 'repo' | 'slides' | 'dataset' | 'workshop' | 'link';
+
+export interface HackathonResource {
+  id: string;
+  title: string;
+  description?: string;
+  type: HackathonResourceType;
+  url: string;
+  /** When true, only registered participants see this resource. */
+  registeredOnly?: boolean;
+  /** Optional grouping label, e.g. "Getting started", "AI/ML track". */
+  category?: string;
+  addedAt: string;
+  addedBy?: string;
+}
+
+export type TeamMemberRole = 'lead' | 'member';
+
+export interface TeamMember {
+  userId: string;
+  name: string;
+  email?: string;
+  avatar?: string;
+  role: TeamMemberRole;
+  joinedAt: string;
+}
+
+export type TeamInviteStatus = 'pending' | 'accepted' | 'declined' | 'expired';
+
+/** An invite sent by a team lead to an email address. Delivered via SES. */
+export interface TeamInvite {
+  id: string;
+  email: string;
+  /** Resolved if the invitee already has an account at invite time. */
+  userId?: string;
+  invitedBy: string;
+  invitedByName: string;
+  /** Single-use token embedded in the emailed accept link. */
+  token: string;
+  status: TeamInviteStatus;
+  invitedAt: string;
+  respondedAt?: string;
+  expiresAt: string;
+}
+
+export type JoinRequestStatus = 'pending' | 'approved' | 'rejected';
+
+/** A builder asking to join a team. The team lead approves or rejects. */
+export interface TeamJoinRequest {
+  id: string;
+  userId: string;
+  userName: string;
+  userEmail?: string;
+  userAvatar?: string;
+  message?: string;
+  status: JoinRequestStatus;
+  requestedAt: string;
+  respondedAt?: string;
+  respondedBy?: string;
+}
+
+export interface HackathonTeam {
+  id: string;
+  hackathonId: string;
+  name: string;
+  description?: string;
+  /** Shareable code used for direct joins, independent of email invites. */
+  joinCode: string;
+  leadUserId: string;
+  members: TeamMember[];
+  invites: TeamInvite[];
+  joinRequests: TeamJoinRequest[];
+  /** Mentors assigned to this team, drawn from the hackathon mentor pool. */
+  mentors: HackathonPerson[];
+  projectName?: string;
+  /** Track or problem statement the team picked, when the hackathon defines them. */
+  track?: string;
+  lookingForMembers?: boolean;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export type HackathonSubmissionKind = 'team' | 'individual';
+
+export interface HackathonSubmission {
+  id: string;
+  hackathonId: string;
+  kind: HackathonSubmissionKind;
+  /** Set when kind is 'team'. */
+  teamId?: string;
+  teamName?: string;
+  /** The user who submitted (team lead for team submissions). */
+  userId: string;
+  userName: string;
+  userAvatar?: string;
+  projectName?: string;
+  track?: string;
+  /** Values keyed by SubmissionField.id, same contract as Submission.customFields. */
+  customFields?: Record<string, any>;
+  supportingDocuments?: string[];
+  submittedAt: string;
+  updatedAt?: string;
+  points: number;
+  status: 'pending' | 'approved' | 'rejected';
+  feedback?: string;
+  reviewedBy?: string;
+  reviewerName?: string;
+  reviewedAt?: string;
+  /**
+   * Ledger of points actually credited to profiles for this submission, so a
+   * revised decision reverses exactly what was granted and re-approving the same
+   * amount can't double-credit. Maintained server-side.
+   */
+  awardedPoints?: number;
+  awardedTo?: string[];
+}
+
+export interface HackathonTeamConfig {
+  minSize: number;
+  maxSize: number;
+  joinPolicy: TeamJoinPolicy;
+  /** Allow solo participants to submit without forming a team. */
+  allowIndividuals: boolean;
+  /** Let participants request a mentor from the pool. */
+  allowMentorRequests: boolean;
+}
+
+export interface Hackathon {
+  id: string;
+  title: string;
+  theme?: string;
+  description: string;
+  richDescription?: string;
+  /** Problem statements or tracks participants pick from. */
+  tracks?: string[];
+  rules?: string;
+  prizes?: string;
+  startDate: string;
+  endDate: string;
+  /** Team formation and registration close here. Defaults to startDate. */
+  registrationDeadline?: string;
+  /** Submissions close here. Defaults to endDate. */
+  submissionDeadline?: string;
+  status: HackathonStatus;
+  bannerImage?: string;
+  /** Optional link to the parent sprint this hackathon runs under. */
+  sprintId?: string;
+  teamConfig: HackathonTeamConfig;
+  mentors: HackathonPerson[];
+  resources: HackathonResource[];
+  /** Admin-built dynamic submission form, same contract as Sprint.submissionFormConfig. */
+  submissionFormConfig?: SubmissionField[];
+  registeredUsers: string[];
+  /** Mentors assigned directly to solo participants, keyed by userId. */
+  individualMentors?: Record<string, HackathonPerson>;
+  participants: number;
+  teamCount?: number;
+  submissionCount?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export type SpotlightType = 'project' | 'blog' | 'video' | 'other';
 export type SpotlightStatus = 'pending' | 'approved' | 'rejected';
 
@@ -299,7 +502,7 @@ export interface AgendaItem {
   speakerId?: string;
 }
 
-export type MeetupType = 'virtual' | 'in-person' | 'hybrid' | 'skill-sprint' | 'circles' | 'college-champ' | 'cloud-club';
+export type MeetupType = 'virtual' | 'in-person' | 'hybrid' | 'skill-sprint' | 'circles' | 'college-champ' | 'cloud-club' | 'hackathon';
 
 export interface Meetup {
   id: string;
@@ -326,6 +529,7 @@ export interface Meetup {
   sprintId?: string; // Link to sprint if type is 'skill-sprint'
   collegeId?: string; // Link to college if type is 'college-champ'
   cloudClubId?: string; // Link to cloud club if type is 'cloud-club'
+  hackathonId?: string; // Link to hackathon if type is 'hackathon'
   sessionPoints?: number; // Total points awarded to college for this session
   speakerPoints?: number;
   volunteerPoints?: number;

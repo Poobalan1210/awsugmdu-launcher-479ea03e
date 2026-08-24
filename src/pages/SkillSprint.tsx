@@ -18,11 +18,12 @@ import {
   Video, Send, ThumbsUp, Clock, ExternalLink,
   ChevronRight, ChevronDown, Linkedin, User,
   CheckCircle, Image, FileText, PlayCircle, Link2, Youtube,
-  Upload, X, Share2
+  Upload, X, Share2, Trophy
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Link, useParams } from 'react-router-dom';
-import { mockForumPosts, Sprint, Session, Meetup, User as UserType } from '@/data/mockData';
+import { mockForumPosts, Sprint, Session, Meetup, Hackathon, User as UserType } from '@/data/mockData';
+import { getHackathonsBySprint } from '@/lib/hackathons';
 import { getSprints, getSprint, registerForSprint, registerForSession, submitWork } from '@/lib/sprints';
 import { profilePath } from '@/lib/profileSlug';
 import { getMeetupsBySprint, registerForMeetup } from '@/lib/meetups';
@@ -1335,6 +1336,7 @@ function SprintDetail({ sprint: initialSprint, onBack, defaultTab = 'sessions' }
   const [sprint, setSprint] = useState<Sprint>(initialSprint);
   const [meetupSessions, setMeetupSessions] = useState<Meetup[]>([]);
   const [loadingMeetups, setLoadingMeetups] = useState(true);
+  const [linkedHackathons, setLinkedHackathons] = useState<Hackathon[]>([]);
   const isRegistered = user && sprint.registeredUsers && Array.isArray(sprint.registeredUsers) && sprint.registeredUsers.includes(user.id);
 
   // Refresh sprint data
@@ -1366,6 +1368,13 @@ function SprintDetail({ sprint: initialSprint, onBack, defaultTab = 'sessions' }
     setSprint(initialSprint);
     fetchMeetupSessions();
   }, [initialSprint]);
+
+  // Surface any hackathon running under this sprint
+  useEffect(() => {
+    getHackathonsBySprint(sprint.id)
+      .then(list => setLinkedHackathons(list.filter(h => h.status !== 'draft')))
+      .catch(() => setLinkedHackathons([]));
+  }, [sprint.id]);
 
   // Refresh sprint on mount to get latest data
   useEffect(() => {
@@ -1428,6 +1437,36 @@ function SprintDetail({ sprint: initialSprint, onBack, defaultTab = 'sessions' }
         onOpenChange={setJoinDialogOpen}
         onSuccess={refreshSprint}
       />
+
+      {/* Hackathons running under this sprint */}
+      {linkedHackathons.length > 0 && (
+        <div className="space-y-3">
+          {linkedHackathons.map((hackathon) => (
+            <Link key={hackathon.id} to={`/hackathons/${hackathon.id}`} className="block group">
+              <Card className="glass-card border-primary/30 transition-all group-hover:border-primary/60">
+                <CardContent className="p-5 flex flex-wrap items-center justify-between gap-4">
+                  <div className="space-y-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="outline" className="gap-1 text-[10px] border-primary/30 text-primary">
+                        <Trophy className="h-3 w-3" />
+                        Hackathon
+                      </Badge>
+                      <h3 className="font-semibold">{hackathon.title}</h3>
+                    </div>
+                    <p className="text-sm text-muted-foreground line-clamp-1">
+                      {hackathon.description}
+                    </p>
+                  </div>
+                  <Button variant="outline" size="sm" className="gap-2 shrink-0">
+                    Form a team
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </CardContent>
+              </Card>
+            </Link>
+          ))}
+        </div>
+      )}
 
       <Tabs defaultValue={defaultTab} className="space-y-6">
         <TabsList className="grid w-full grid-cols-3 max-w-lg">

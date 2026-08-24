@@ -51,13 +51,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       const communityRoleValues = (communityRoles as any[]).map(r => r.role);
       
-      // Determine role: organiser emails or community role assignments get priority
+      // Determine role: organiser emails or community role assignments get priority.
+      // `role` is single-valued, so the order here is the precedence order —
+      // broader access wins, since an organiser can already do everything a
+      // judge can.
       let role = profile.role || 'member';
       
       if (isOrganiserEmail(email) || communityRoleValues.includes('organiser')) {
         role = 'organiser';
       } else if (communityRoleValues.includes('admin')) {
         role = 'admin';
+      } else if (communityRoleValues.includes('judge')) {
+        // Without this, assigning the judge role in the members tab would have no
+        // effect: it would never reach user.role and the UI could not gate on it.
+        role = 'judge';
       }
       
       // Transform DynamoDB profile to User interface

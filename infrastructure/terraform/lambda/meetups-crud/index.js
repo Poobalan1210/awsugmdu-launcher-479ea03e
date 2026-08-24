@@ -190,6 +190,7 @@ async function listMeetups(event) {
   const status = queryParams.status; // 'draft', 'upcoming', 'completed'
   const sprintId = queryParams.sprintId; // Filter by sprint
   const certificationGroupId = queryParams.certificationGroupId; // Filter by certification group
+  const hackathonId = queryParams.hackathonId; // Filter by hackathon
 
   // Organisers receive full speaker-invitation details (tokens, invited emails,
   // pending/declined entries). Public callers get a sanitized view.
@@ -249,6 +250,15 @@ async function listMeetups(event) {
       TableName: MEETUPS_TABLE
     }));
     meetups = result.Items || [];
+  }
+
+  // Hackathon linkage is filtered in memory rather than via a GSI. A meetup's
+  // `type` already carries its program (college-champ, skill-sprint, ...), so
+  // hackathonId is an independent optional link that any type can set — which
+  // means it can't be the partition key of a type-specific index. Meetup counts
+  // are low enough that filtering here is cheaper than a new GSI.
+  if (hackathonId) {
+    meetups = meetups.filter(m => m.hackathonId === hackathonId);
   }
 
   // Sort by date (newest first)
@@ -331,6 +341,7 @@ async function createMeetup(event) {
     certificationGroupId,
     collegeId,
     cloudClubId,
+    hackathonId,
     sessionPoints,
     speakerPoints,
     volunteerPoints,
@@ -436,6 +447,9 @@ async function createMeetup(event) {
     ...(type === 'circles' && certificationGroupId ? { certificationGroupId } : {}),
     ...(type === 'college-champ' && collegeId ? { collegeId } : {}),
     ...(type === 'cloud-club' && cloudClubId ? { cloudClubId } : {}),
+    // Deliberately NOT gated on type: a college-champ or cloud-club event can
+    // also be part of a hackathon, and `type` only holds one value.
+    ...(hackathonId ? { hackathonId } : {}),
     ...((type === 'college-champ' || type === 'cloud-club') && sessionPoints ? { sessionPoints: parseInt(sessionPoints) || 0 } : {}),
     speakerPoints: speakerPoints ? parseInt(speakerPoints) : 0,
     volunteerPoints: volunteerPoints ? parseInt(volunteerPoints) : 0,
@@ -595,7 +609,7 @@ async function updateMeetup(id, event) {
   // - value provided  -> set it
   // - explicit null    -> remove the attribute
   // - undefined        -> leave unchanged
-  const linkageFields = ['sprintId', 'certificationGroupId', 'collegeId', 'cloudClubId'];
+  const linkageFields = ['sprintId', 'certificationGroupId', 'collegeId', 'cloudClubId', 'hackathonId'];
   linkageFields.forEach(field => {
     if (body[field] === null) {
       expressionAttributeNames[`#${field}`] = field;

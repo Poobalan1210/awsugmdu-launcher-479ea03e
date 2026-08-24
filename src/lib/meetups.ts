@@ -23,6 +23,11 @@ export interface CreateMeetupData {
   certificationGroupId?: string | null;
   collegeId?: string | null;
   cloudClubId?: string | null;
+  /**
+   * Optional hackathon link. Independent of `type`, so a college-champ or
+   * cloud-club event can also be part of a hackathon.
+   */
+  hackathonId?: string | null;
   endDate?: string;
   sessionPoints?: number;
   speakerPoints?: number;
@@ -146,6 +151,17 @@ export async function getMeetupsBySprint(sprintId: string): Promise<Meetup[]> {
     return response.meetups || [];
   } catch (error) {
     console.error('Error fetching sprint meetups:', error);
+    return [];
+  }
+}
+
+/** Sessions and events attached to a hackathon (kickoff, check-ins, demo day). */
+export async function getMeetupsByHackathon(hackathonId: string): Promise<Meetup[]> {
+  try {
+    const response = await callApi<MeetupsResponse>(`/meetups?hackathonId=${hackathonId}`);
+    return response.meetups || [];
+  } catch (error) {
+    console.error('Error fetching hackathon meetups:', error);
     return [];
   }
 }

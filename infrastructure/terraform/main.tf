@@ -2309,6 +2309,10 @@ resource "aws_api_gateway_deployment" "api" {
       aws_api_gateway_integration.certification_groups_id_get_lambda.id,
       aws_api_gateway_integration.certification_groups_id_messages_post_lambda.id,
       aws_lambda_function.certifications_crud.source_code_hash,
+      # Hackathons (teams, mentors, resources, submissions) behind a greedy proxy
+      aws_api_gateway_integration.hackathons_any_lambda.id,
+      aws_api_gateway_integration.hackathons_proxy_any_lambda.id,
+      aws_lambda_function.hackathons_crud.source_code_hash,
     ]))
   }
 
@@ -2527,6 +2531,9 @@ resource "aws_api_gateway_deployment" "api" {
     # Kironomics
     aws_api_gateway_integration.kironomics_any_lambda,
     aws_api_gateway_integration.kironomics_proxy_any_lambda,
+    # Hackathons
+    aws_api_gateway_integration.hackathons_any_lambda,
+    aws_api_gateway_integration.hackathons_proxy_any_lambda,
   ]
 
   rest_api_id = aws_api_gateway_rest_api.api.id

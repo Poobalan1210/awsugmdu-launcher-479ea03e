@@ -1,6 +1,6 @@
 import { callApi } from './api';
 
-export type CommunityRole = 'member' | 'volunteer' | 'organiser' | 'champ' | 'cloud_club_captain' | 'speaker' | 'admin';
+export type CommunityRole = 'member' | 'volunteer' | 'organiser' | 'champ' | 'cloud_club_captain' | 'speaker' | 'mentor' | 'judge' | 'admin';
 
 export interface UserRoleAssignment {
   id: string;

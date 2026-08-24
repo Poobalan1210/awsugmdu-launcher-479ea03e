@@ -13,6 +13,7 @@ import Profile from "./pages/Profile";
 import BadgePublic from "./pages/BadgePublic";
 import BadgeVerify from "./pages/BadgeVerify";
 import SkillSprint from "./pages/SkillSprint";
+import Hackathons from "./pages/Hackathons";
 import CollegeChamps from "./pages/CollegeChamps";
 import CloudClubs from "./pages/CloudClubs";
 import CommunitySpotlight from "./pages/CommunitySpotlight";
@@ -91,6 +92,17 @@ const App = () => (
             <Route path="/skill-sprint/:sprintId" element={
               <ProtectedRoute>
                 <SkillSprint />
+              </ProtectedRoute>
+            } />
+            <Route path="/hackathons" element={
+              <ProtectedRoute>
+                <Hackathons />
+              </ProtectedRoute>
+            } />
+            {/* Team invite emails link here with ?invite={token}&team={teamId} */}
+            <Route path="/hackathons/:hackathonId" element={
+              <ProtectedRoute>
+                <Hackathons />
               </ProtectedRoute>
             } />
             <Route path="/college-champs" element={

@@ -629,6 +629,8 @@ export default function Profile() {
                                     role === 'champ' ? 'bg-amber-500/10 text-amber-600 border-amber-500/30 hover:bg-amber-500/20' :
                                       role === 'volunteer' ? 'bg-blue-500/10 text-blue-600 border-blue-500/30 hover:bg-blue-500/20' :
                                         role === 'cloud_club_captain' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/20' :
+                                          role === 'mentor' ? 'bg-teal-500/10 text-teal-600 border-teal-500/30 hover:bg-teal-500/20' :
+                                            role === 'judge' ? 'bg-indigo-500/10 text-indigo-600 border-indigo-500/30 hover:bg-indigo-500/20' :
                                           ''
                                 } text-sm font-medium`}
                             >

@@ -31,9 +31,9 @@ import {
   Upload, X, UserPlus, Check, ChevronDown, ChevronUp, GraduationCap,
   Trophy, ListTodo, ClipboardCheck, Target, Shield, UserCog, Medal, Github, ShoppingBag, Loader2, Cloud,
   Star, Quote, Heart, Zap, CheckSquare, Square, List, Hash, Type, Code2, Sparkles, Image as ImageIcon,
-  MoreHorizontal
+  MoreHorizontal, Swords
 } from 'lucide-react';
-import { mockSprints, mockMeetups, Submission, Sprint, Session, User as UserType, predefinedTasks, mockColleges, getTaskById, communityRoles, mockUserRoles, CommunityRole, UserRoleAssignment, PointActivity, mockPointActivities, Meetup, MeetupType, mockBadges, Badge as BadgeType, BadgeAward, mockBadgeAwards, BadgeCriteriaType, criteriaTypeLabels, BadgeCriteria, mockUsers, SubmissionField } from '@/data/mockData';
+import { mockSprints, mockMeetups, Submission, Sprint, Session, User as UserType, predefinedTasks, mockColleges, getTaskById, communityRoles, mockUserRoles, CommunityRole, UserRoleAssignment, PointActivity, mockPointActivities, Meetup, MeetupType, Hackathon, mockBadges, Badge as BadgeType, BadgeAward, mockBadgeAwards, BadgeCriteriaType, criteriaTypeLabels, BadgeCriteria, mockUsers, SubmissionField } from '@/data/mockData';
 import { createMeetup, updateMeetup, publishMeetup, getMeetups, CreateMeetupData, UpdateMeetupData, deleteMeetup, endMeetup, inviteSpeaker, getActiveSpeakers } from '@/lib/meetups';
 import { getSpotlightSubmissions, reviewSpotlight, deleteSpotlight } from '@/lib/spotlight';
 import { SpotlightSubmission, SpotlightType } from '@/data/mockData';
@@ -54,6 +54,11 @@ import AchievementsManagement from '@/components/admin/AchievementsManagement';
 import CirclesManagement from '@/components/admin/CirclesManagement';
 import SprintsTab from '@/components/admin/tabs/SprintsTab';
 import AWSEventsTab from '@/components/admin/tabs/AWSEventsTab';
+import HackathonsTab from '@/components/admin/tabs/HackathonsTab';
+import { getHackathons } from '@/lib/hackathons';
+
+/** Sentinel for the "no hackathon" option; Radix Select forbids empty values. */
+const NO_HACKATHON = '__no_hackathon__';
 import { SessionPerson, SessionPeopleManager, userToSessionPerson, userToMeetupPerson, UserSelect, UserMultiSelect, MeetupPeopleManager } from '@/components/admin/shared/AdminShared';
 import { TaskSubmissionsPanel } from '@/components/college-champs/TaskSubmissionsPanel';
 import { CloudClubTaskSubmissionsPanel } from '@/components/cloud-clubs/TaskSubmissionsPanel';
@@ -494,6 +499,7 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
   const [certificationGroups, setCertificationGroups] = useState<Circle[]>([]);
   const [colleges, setColleges] = useState<College[]>([]);
   const [cloudClubs, setCloudClubs] = useState<any[]>([]);
+  const [hackathons, setHackathons] = useState<Hackathon[]>([]);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -501,7 +507,7 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
     date: '',
     time: '',
     duration: '',
-    type: 'virtual' as 'virtual' | 'in-person' | 'skill-sprint' | 'circles' | 'college-champ' | 'cloud-club',
+    type: 'virtual' as MeetupType,
     location: '',
     meetingLink: '',
     meetupUrl: '',
@@ -511,6 +517,7 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
     certificationGroupId: '',
     collegeId: '',
     cloudClubId: '',
+    hackathonId: '',
     sessionPoints: '',
     speakerPoints: '100',
     volunteerPoints: '75',
@@ -535,6 +542,7 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
       loadCertificationGroups();
       loadColleges();
       loadCloudClubs();
+      loadHackathons();
     }
   }, [open]);
 
@@ -544,6 +552,17 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
       setSprints(allSprints);
     } catch (error) {
       console.error('Error loading sprints:', error);
+    }
+  };
+
+  const loadHackathons = async () => {
+    try {
+      setHackathons(await getHackathons());
+    } catch (error) {
+      // Surfaced rather than swallowed: an empty dropdown is indistinguishable
+      // from a failed fetch, which makes a missing backend look like a UI bug.
+      console.error('Error loading hackathons:', error);
+      toast.error('Could not load hackathons. Is the hackathons API deployed?');
     }
   };
 
@@ -629,6 +648,8 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
         certificationGroupId: (formData.type === 'circles' && formData.certificationGroupId) ? formData.certificationGroupId : undefined,
         collegeId: (formData.type === 'college-champ' && formData.collegeId) ? formData.collegeId : undefined,
         cloudClubId: (formData.type === 'cloud-club' && formData.cloudClubId) ? formData.cloudClubId : undefined,
+        // Not gated on type — any event can also belong to a hackathon.
+        hackathonId: formData.hackathonId || undefined,
         sessionPoints: ((formData.type === 'college-champ' || formData.type === 'cloud-club') && formData.sessionPoints) ? parseInt(formData.sessionPoints) : undefined,
         endDate: formData.endDate || undefined
       };
@@ -656,6 +677,7 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
         certificationGroupId: '',
         collegeId: '',
         cloudClubId: '',
+        hackathonId: '',
         sessionPoints: '',
         speakerPoints: '100',
         volunteerPoints: '75',
@@ -703,7 +725,7 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
             <Label>Event Type *</Label>
             <Select
               value={formData.type}
-              onValueChange={(value: 'virtual' | 'in-person' | 'skill-sprint' | 'circles' | 'college-champ' | 'cloud-club') =>
+              onValueChange={(value: MeetupType) =>
                 setFormData({
                   ...formData,
                   type: value,
@@ -722,6 +744,7 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
                 <SelectItem value="circles">Circles Session</SelectItem>
                 <SelectItem value="college-champ">College Champ Session</SelectItem>
                 <SelectItem value="cloud-club">Cloud Club Session</SelectItem>
+                <SelectItem value="hackathon">Hackathon Event</SelectItem>
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
@@ -729,9 +752,45 @@ function CreateMeetupDialog({ onSuccess, allUsers = [] }: { onSuccess?: () => vo
               {formData.type === 'circles' && 'This session will be part of the circles program'}
               {formData.type === 'college-champ' && 'This session will be part of the college champ program'}
               {formData.type === 'cloud-club' && 'This session will be part of the cloud club program'}
+              {formData.type === 'hackathon' && 'A standalone hackathon event such as a kickoff or demo day'}
               {formData.type === 'virtual' && 'A virtual community meetup event'}
               {formData.type === 'in-person' && 'An in-person community meetup event'}
             </p>
+          </div>
+
+          {/* Hackathon linkage — intentionally available for every event type so a
+              college champ or cloud club event can also belong to a hackathon. */}
+          <div className="space-y-2">
+            <Label>Part of a hackathon (optional)</Label>
+            <Select
+              value={formData.hackathonId || NO_HACKATHON}
+              onValueChange={(value) =>
+                setFormData({ ...formData, hackathonId: value === NO_HACKATHON ? '' : value })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Not part of a hackathon" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_HACKATHON}>Not part of a hackathon</SelectItem>
+                {hackathons.map((hackathon) => (
+                  <SelectItem key={hackathon.id} value={hackathon.id}>
+                    {hackathon.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {hackathons.length === 0 ? (
+              <p className="text-xs text-amber-600">
+                No hackathons found. Create one in the Hackathons tab first, then it will
+                appear here.
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Links this event to a hackathon. It shows up on the hackathon page and works
+                alongside the event type above.
+              </p>
+            )}
           </div>
 
           {/* Sprint Selection - Only show if type is skill-sprint */}
@@ -1162,6 +1221,7 @@ function EditMeetupDialog({
   const [certificationGroups, setCertificationGroups] = useState<Circle[]>([]);
   const [colleges, setColleges] = useState<College[]>([]);
   const [cloudClubs, setCloudClubs] = useState<any[]>([]);
+  const [hackathons, setHackathons] = useState<Hackathon[]>([]);
   const [formData, setFormData] = useState({
     title: meetup.title,
     description: meetup.description,
@@ -1179,6 +1239,7 @@ function EditMeetupDialog({
     certificationGroupId: (meetup as any).certificationGroupId || '',
     collegeId: meetup.collegeId || '',
     cloudClubId: meetup.cloudClubId || '',
+    hackathonId: meetup.hackathonId || '',
     sessionPoints: meetup.sessionPoints?.toString() || '',
     speakerPoints: meetup.speakerPoints?.toString() || '100',
     volunteerPoints: meetup.volunteerPoints?.toString() || '75',
@@ -1223,6 +1284,11 @@ function EditMeetupDialog({
         setCloudClubs(await getAllCloudClubs());
       } catch (error) {
         console.error('Error loading cloud clubs:', error);
+      }
+      try {
+        setHackathons(await getHackathons());
+      } catch (error) {
+        console.error('Error loading hackathons:', error);
       }
     })();
   }, [open]);
@@ -1272,6 +1338,8 @@ function EditMeetupDialog({
         volunteers: peopleData.volunteers,
         // Linkage fields: send the value for the matching type, null otherwise
         // so the backend removes any stale linkage when the type changes.
+        // Not gated on type — any event can also belong to a hackathon.
+        hackathonId: formData.hackathonId || null,
         sprintId: formData.type === 'skill-sprint' ? (formData.sprintId || null) : null,
         certificationGroupId: formData.type === 'circles' ? (formData.certificationGroupId || null) : null,
         collegeId: formData.type === 'college-champ' ? (formData.collegeId || null) : null,
@@ -1380,8 +1448,35 @@ function EditMeetupDialog({
                   <SelectItem value="circles">Circles Session</SelectItem>
                   <SelectItem value="college-champ">College Champ Session</SelectItem>
                   <SelectItem value="cloud-club">Cloud Club Session</SelectItem>
+                  <SelectItem value="hackathon">Hackathon Event</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Part of a hackathon (optional)</Label>
+              <Select
+                value={formData.hackathonId || NO_HACKATHON}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, hackathonId: value === NO_HACKATHON ? '' : value })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Not part of a hackathon" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_HACKATHON}>Not part of a hackathon</SelectItem>
+                  {hackathons.map((hackathon) => (
+                    <SelectItem key={hackathon.id} value={hackathon.id}>
+                      {hackathon.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {hackathons.length === 0 && (
+                <p className="text-xs text-amber-600">
+                  No hackathons found. Create one in the Hackathons tab first.
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <Label>Duration</Label>
@@ -6959,6 +7054,9 @@ function SpotlightManagementTab({
 export default function Admin() {
   const { user: authUser, refreshUser } = useAuth();
   const [activeTab, setActiveTab] = useState('sprints');
+  // Judges only have the Hackathons tab, so don't drop them on Sprints. Runs as
+  // an effect because authUser resolves asynchronously after first render.
+  const [judgeTabApplied, setJudgeTabApplied] = useState(false);
   const [meetupCount, setMeetupCount] = useState(0);
   const [allUsers, setAllUsers] = useState<UserType[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
@@ -6969,6 +7067,9 @@ export default function Admin() {
   
   const isAdmin = authUser?.role === 'organiser' || authUser?.role === 'admin';
   const isSpeaker = authUser?.role === 'speaker';
+  // Judges get the Hackathons tab in review-only mode: they score submissions
+  // but cannot create, edit or delete hackathons.
+  const isJudge = authUser?.role === 'judge';
 
   // Derived submission stats
   const allSubmissions = sprints.flatMap(s => 
@@ -7069,8 +7170,16 @@ export default function Admin() {
     }
   }, [isAdmin, activeTab]);
 
+  // A judge has no Sprints access, so land them on the only tab they can use.
+  useEffect(() => {
+    if (isJudge && !isAdmin && !judgeTabApplied) {
+      setActiveTab('hackathons');
+      setJudgeTabApplied(true);
+    }
+  }, [isJudge, isAdmin, judgeTabApplied]);
 
-  if (!isAdmin && !isSpeaker) {
+
+  if (!isAdmin && !isSpeaker && !isJudge) {
     return (
       <div className="min-h-screen flex flex-col">
         <Header />
@@ -7130,16 +7239,21 @@ export default function Admin() {
           </div>
 
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="mb-6 flex-wrap">
-              <TabsTrigger value="sprints" className="gap-2">
-                <Rocket className="h-4 w-4" />
-                Sprints
-                {pendingSubmissions.length > 0 && (
-                  <Badge variant="destructive" className="ml-1 h-5 w-5 p-0 flex items-center justify-center">
-                    {pendingSubmissions.length}
-                  </Badge>
-                )}
-              </TabsTrigger>
+            {/* h-auto + justify-start: the base TabsList is a fixed-height,
+                centre-aligned inline-flex, so with this many tabs the wrapped
+                row rendered outside the bar. */}
+            <TabsList className="mb-6 flex-wrap justify-start h-auto gap-1">
+              {(isAdmin || isSpeaker) && (
+                <TabsTrigger value="sprints" className="gap-2">
+                  <Rocket className="h-4 w-4" />
+                  Sprints
+                  {pendingSubmissions.length > 0 && (
+                    <Badge variant="destructive" className="ml-1 h-5 w-5 p-0 flex items-center justify-center">
+                      {pendingSubmissions.length}
+                    </Badge>
+                  )}
+                </TabsTrigger>
+              )}
               {isAdmin && (
                 <>
                   <TabsTrigger value="meetups" className="gap-2">
@@ -7189,6 +7303,12 @@ export default function Admin() {
                   </TabsTrigger>
                 </>
               )}
+              {(isAdmin || isJudge) && (
+                <TabsTrigger value="hackathons" className="gap-2">
+                  <Swords className="h-4 w-4" />
+                  Hackathons
+                </TabsTrigger>
+              )}
             </TabsList>
 
             <TabsContent value="sprints" className="space-y-6">
@@ -7198,6 +7318,12 @@ export default function Admin() {
             <TabsContent value="aws-events" className="space-y-6">
               <AWSEventsTab />
             </TabsContent>
+
+            {(isAdmin || isJudge) && (
+              <TabsContent value="hackathons" className="space-y-6">
+                <HackathonsTab canManage={isAdmin} />
+              </TabsContent>
+            )}
 
             {isAdmin && (
               <>

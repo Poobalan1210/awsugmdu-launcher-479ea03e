@@ -32,6 +32,7 @@ import {
 } from '@/lib/sprints';
 import { uploadFileToS3 } from '@/lib/s3Upload';
 import { SessionPerson, SessionPeopleManager } from '@/components/admin/shared/AdminShared';
+import { SubmissionFormBuilder } from '@/components/shared/SubmissionFormBuilder';
 
 interface SprintsTabProps {
   isAdmin: boolean;
@@ -389,19 +390,6 @@ function ViewParticipantsDialog({ sprint }: { sprint: Sprint }) {
 }
 
 function SprintFormContent({ formData, setFormData, submissionFields, setSubmissionFields }: any) {
-  const addField = () => {
-    const id = `field-${Date.now()}`;
-    setSubmissionFields([...submissionFields, { id, label: '', type: 'text', placeholder: '', required: false }]);
-  };
-
-  const removeField = (id: string) => {
-    setSubmissionFields(submissionFields.filter((f: any) => f.id !== id));
-  };
-
-  const updateField = (id: string, updates: any) => {
-    setSubmissionFields(submissionFields.map((f: any) => f.id === id ? { ...f, ...updates } : f));
-  };
-
   const currentYear = new Date().getFullYear();
   const years = [currentYear - 1, currentYear, currentYear + 1];
   const months = [
@@ -443,59 +431,10 @@ function SprintFormContent({ formData, setFormData, submissionFields, setSubmiss
         <Label>Starter Code Repo URL</Label>
         <Input value={formData.githubRepo} onChange={e => setFormData({ ...formData, githubRepo: e.target.value })} placeholder="https://github.com/your-org/starter-repo" />
       </div>
-      <div className="space-y-4">
-        <div className="flex justify-between items-center"><Label>Submission Form Configuration</Label><Button type="button" variant="outline" size="sm" onClick={addField}><Plus className="h-4 w-4 mr-2" />Add Field</Button></div>
-        {submissionFields.map((field: any) => (
-          <div key={field.id} className="p-4 border rounded-lg space-y-3 bg-muted/20">
-            <div className="flex justify-between gap-2">
-              <Input className="flex-1" value={field.label} onChange={e => updateField(field.id, { label: e.target.value })} placeholder="Field Label (e.g., Blog URL)" />
-              <select
-                className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                value={field.type}
-                onChange={e => updateField(field.id, { type: e.target.value })}
-              >
-                <option value="text">Text</option>
-                <option value="textarea">Textarea</option>
-                <option value="radio">Radio</option>
-                <option value="select">Select</option>
-                <option value="checkbox">Checkbox</option>
-                <option value="file">File</option>
-              </select>
-              <Button type="button" variant="ghost" size="icon" onClick={() => removeField(field.id)}><Trash2 className="h-4 w-4" /></Button>
-            </div>
-            {(field.type === 'text' || field.type === 'textarea' || field.type === 'select') && (
-              <Input
-                value={field.placeholder || ''}
-                onChange={e => updateField(field.id, { placeholder: e.target.value })}
-                placeholder="Placeholder text (optional)"
-              />
-            )}
-            {(field.type === 'radio' || field.type === 'select') && (
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Options (comma-separated)</Label>
-                <Input
-                  value={field.optionsRaw !== undefined ? field.optionsRaw : (field.options || []).join(', ')}
-                  onChange={e => updateField(field.id, {
-                    optionsRaw: e.target.value,
-                    options: e.target.value.split(',').map((s: string) => s.trim()).filter(Boolean)
-                  })}
-                  placeholder="e.g., Option A, Option B, Option C"
-                />
-              </div>
-            )}
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id={`required-${field.id}`}
-                className="h-4 w-4 rounded border-gray-300"
-                checked={!!field.required}
-                onChange={e => updateField(field.id, { required: e.target.checked })}
-              />
-              <Label htmlFor={`required-${field.id}`} className="text-sm font-normal cursor-pointer">Required</Label>
-            </div>
-          </div>
-        ))}
-      </div>
+      <SubmissionFormBuilder
+        fields={submissionFields}
+        onChange={setSubmissionFields}
+      />
     </div>
   );
 }

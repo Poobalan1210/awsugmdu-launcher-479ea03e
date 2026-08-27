@@ -298,13 +298,37 @@ export interface HackathonResource {
 
 export type TeamMemberRole = 'lead' | 'member';
 
-export interface TeamMember {
+/**
+ * Self-declared experience level. An enum rather than free text so team browsing
+ * can show a team's experience spread and builders can filter on it.
+ */
+export type MemberExperienceLevel = 'beginner' | 'intermediate' | 'advanced';
+
+/**
+ * What a builder tells the team about themselves when joining.
+ *
+ * Captured per hackathon rather than pulled from the user profile: what someone
+ * wants to work on is event-specific, and profile fields go stale. Prefilled
+ * from the profile where possible so the form starts half-answered.
+ */
+export interface MemberProfile {
+  experienceLevel?: MemberExperienceLevel;
+  /** Chosen from Hackathon.skillOptions, with free entry allowed. */
+  skills?: string[];
+  /** One-line note, e.g. "happy to do frontend, want to learn Bedrock". */
+  note?: string;
+}
+
+export interface TeamMember extends MemberProfile {
   userId: string;
   name: string;
   email?: string;
   avatar?: string;
   role: TeamMemberRole;
   joinedAt: string;
+  /** Denormalised from the user profile at join time, for display on rosters. */
+  designation?: string;
+  company?: string;
 }
 
 export type TeamInviteStatus = 'pending' | 'accepted' | 'declined' | 'expired';
@@ -327,8 +351,14 @@ export interface TeamInvite {
 
 export type JoinRequestStatus = 'pending' | 'approved' | 'rejected';
 
-/** A builder asking to join a team. The team lead approves or rejects. */
-export interface TeamJoinRequest {
+/**
+ * A builder asking to join a team. The team lead approves or rejects.
+ *
+ * Extends MemberProfile so the lead can judge fit from the request itself, and
+ * so the details carry straight onto the TeamMember record on approval without
+ * asking again.
+ */
+export interface TeamJoinRequest extends MemberProfile {
   id: string;
   userId: string;
   userName: string;
@@ -358,6 +388,11 @@ export interface HackathonTeam {
   /** Track or problem statement the team picked, when the hackathon defines them. */
   track?: string;
   lookingForMembers?: boolean;
+  /**
+   * Skills the lead is still looking for. This is what makes team browsing
+   * actionable — otherwise a reader has to infer gaps from the roster.
+   */
+  lookingForSkills?: string[];
   createdAt: string;
   updatedAt?: string;
 }
@@ -405,6 +440,12 @@ export interface HackathonTeamConfig {
   allowIndividuals: boolean;
   /** Let participants request a mentor from the pool. */
   allowMentorRequests: boolean;
+  /**
+   * Require experience level and at least one skill when joining a team.
+   * Off by default: making it mandatory adds friction at the moment someone is
+   * trying to join, and a form full of "n/a" is worse than an empty one.
+   */
+  requireMemberProfile?: boolean;
 }
 
 export interface Hackathon {
@@ -415,6 +456,13 @@ export interface Hackathon {
   richDescription?: string;
   /** Problem statements or tracks participants pick from. */
   tracks?: string[];
+  /**
+   * Skill vocabulary offered when joining a team, and in the browse filter.
+   * Admin-configurable per hackathon because a GenAI event and a serverless one
+   * need different options, and free text alone produces
+   * "React"/"react"/"ReactJS" that can't be filtered.
+   */
+  skillOptions?: string[];
   rules?: string;
   prizes?: string;
   startDate: string;
@@ -425,6 +473,15 @@ export interface Hackathon {
   submissionDeadline?: string;
   status: HackathonStatus;
   bannerImage?: string;
+  /**
+   * Where the conversation actually happens — a WhatsApp group or Discord invite
+   * link. The platform deliberately doesn't host chat: it's the durable place
+   * people find the link, not the place they talk.
+   *
+   * Withheld from unregistered callers server-side, since a group invite link
+   * shouldn't be public.
+   */
+  chatUrl?: string;
   /** Optional link to the parent sprint this hackathon runs under. */
   sprintId?: string;
   teamConfig: HackathonTeamConfig;

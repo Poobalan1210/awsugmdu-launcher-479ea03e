@@ -200,6 +200,17 @@ resource "aws_iam_role_policy" "lambda_hackathons" {
         Resource = [aws_dynamodb_table.meetups.arn]
       },
       {
+        # Sprints: a hackathon that runs under a sprint mirrors its participants
+        # into that sprint's registeredUsers. Read to re-derive the participant
+        # count, update to append. No delete, no write to any other attribute.
+        Effect = "Allow"
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:UpdateItem",
+        ]
+        Resource = [aws_dynamodb_table.sprints.arn]
+      },
+      {
         Effect = "Allow"
         Action = [
           "ses:SendEmail",
@@ -237,6 +248,7 @@ resource "aws_lambda_function" "hackathons_crud" {
       HACKATHON_SUBMISSIONS_TABLE_NAME = aws_dynamodb_table.hackathon_submissions.name
       USERS_TABLE_NAME                 = aws_dynamodb_table.users.name
       MEETUPS_TABLE_NAME               = aws_dynamodb_table.meetups.name
+      SPRINTS_TABLE_NAME               = aws_dynamodb_table.sprints.name
       SES_FROM_EMAIL                   = "info@awsugmdu.in"
       APP_URL                          = "https://www.awsugmdu.in"
       ADMIN_EMAILS                     = var.admin_emails

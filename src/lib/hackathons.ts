@@ -7,7 +7,10 @@ import {
   HackathonSubmission,
   HackathonTeam,
   HackathonTeamConfig,
+  MemberExperienceLevel,
+  MemberProfile,
   SubmissionField,
+  TeamMember,
 } from '@/data/mockData';
 
 // ---------------------------------------------------------------------------
@@ -20,6 +23,8 @@ export interface CreateHackathonData {
   description: string;
   richDescription?: string;
   tracks?: string[];
+  /** Skill vocabulary offered when joining a team, and in the browse filter. */
+  skillOptions?: string[];
   rules?: string;
   prizes?: string;
   startDate: string;
@@ -27,6 +32,8 @@ export interface CreateHackathonData {
   registrationDeadline?: string;
   submissionDeadline?: string;
   bannerImage?: string;
+  /** WhatsApp / Discord invite link for the event conversation. */
+  chatUrl?: string;
   sprintId?: string;
   teamConfig?: Partial<HackathonTeamConfig>;
   submissionFormConfig?: SubmissionField[];
@@ -37,12 +44,14 @@ export interface UpdateHackathonData extends Partial<CreateHackathonData> {
   mentors?: HackathonPerson[];
 }
 
-export interface CreateTeamData {
+export interface CreateTeamData extends MemberProfile {
   name: string;
   description?: string;
   projectName?: string;
   track?: string;
   lookingForMembers?: boolean;
+  /** Skills the team still needs, shown on the browse list. */
+  lookingForSkills?: string[];
   /** The creating user becomes the team lead. */
   userId: string;
   userName: string;
@@ -56,6 +65,7 @@ export interface UpdateTeamData {
   projectName?: string;
   track?: string;
   lookingForMembers?: boolean;
+  lookingForSkills?: string[];
 }
 
 export interface SubmitHackathonWorkData {
@@ -340,7 +350,7 @@ export interface JoinOutcome {
 /** Join with a share code, or file a request if the policy requires approval. */
 export async function joinTeamByCode(
   hackathonId: string,
-  data: {
+  data: MemberProfile & {
     joinCode: string;
     userId: string;
     userName: string;
@@ -418,7 +428,7 @@ export async function revokeInvite(
 export async function respondToInvite(
   hackathonId: string,
   teamId: string,
-  data: {
+  data: MemberProfile & {
     token: string;
     action: 'accept' | 'decline';
     userId: string;
@@ -444,7 +454,7 @@ export async function respondToInvite(
 export async function requestToJoinTeam(
   hackathonId: string,
   teamId: string,
-  data: {
+  data: MemberProfile & {
     userId: string;
     userName: string;
     userEmail?: string;
@@ -531,6 +541,96 @@ export async function deleteHackathonSubmission(
 // ---------------------------------------------------------------------------
 // Client-side helpers
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Experience + skills helpers
+// ---------------------------------------------------------------------------
+
+export const EXPERIENCE_LEVELS: MemberExperienceLevel[] = ['beginner', 'intermediate', 'advanced'];
+
+export const EXPERIENCE_LEVEL_LABELS: Record<MemberExperienceLevel, string> = {
+  beginner: 'Beginner — new to this',
+  intermediate: 'Intermediate — built a few things',
+  advanced: 'Advanced — work with this professionally',
+};
+
+/** Short form for chips and rosters, where the long label is too much. */
+export const EXPERIENCE_LEVEL_SHORT: Record<MemberExperienceLevel, string> = {
+  beginner: 'Beginner',
+  intermediate: 'Intermediate',
+  advanced: 'Advanced',
+};
+
+export const EXPERIENCE_LEVEL_STYLES: Record<MemberExperienceLevel, string> = {
+  beginner: 'bg-sky-500/10 text-sky-600 border-sky-500/20',
+  intermediate: 'bg-violet-500/10 text-violet-600 border-violet-500/20',
+  advanced: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20',
+};
+
+/**
+ * Distinct skills across a team, in first-seen order.
+ * De-duplicated case-insensitively so "React" and "react" collapse, matching
+ * how the API stores them.
+ */
+export function teamSkills(team: HackathonTeam): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+
+  for (const member of team.members || []) {
+    for (const skill of member.skills || []) {
+      const key = skill.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(skill);
+    }
+  }
+  return out;
+}
+
+/** Count of members at each experience level, for the team's experience spread. */
+export function teamExperienceSpread(team: HackathonTeam): Record<MemberExperienceLevel, number> {
+  const spread: Record<MemberExperienceLevel, number> = {
+    beginner: 0, intermediate: 0, advanced: 0,
+  };
+  for (const member of team.members || []) {
+    if (member.experienceLevel) spread[member.experienceLevel] += 1;
+  }
+  return spread;
+}
+
+/** Every skill mentioned anywhere in the hackathon, for the browse filter. */
+export function availableSkillFilters(hackathon: Hackathon, teams: HackathonTeam[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+
+  const add = (skill: string) => {
+    const key = skill.toLowerCase();
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    out.push(skill);
+  };
+
+  // Organiser-defined vocabulary first so the common options lead.
+  (hackathon.skillOptions || []).forEach(add);
+  teams.forEach(team => {
+    (team.lookingForSkills || []).forEach(add);
+    teamSkills(team).forEach(add);
+  });
+
+  return out;
+}
+
+/** Does this team have or want the given skill? Used by the browse filter. */
+export function teamMatchesSkill(team: HackathonTeam, skill: string): boolean {
+  const target = skill.toLowerCase();
+  if ((team.lookingForSkills || []).some(s => s.toLowerCase() === target)) return true;
+  return teamSkills(team).some(s => s.toLowerCase() === target);
+}
+
+/** Whether the member supplied anything worth displaying. */
+export function hasMemberProfile(member: Pick<TeamMember, 'experienceLevel' | 'skills' | 'note'>): boolean {
+  return !!member.experienceLevel || (member.skills || []).length > 0 || !!member.note;
+}
 
 /** The team the given user belongs to in this hackathon, if any. */
 export function findUserTeam(teams: HackathonTeam[], userId?: string): HackathonTeam | undefined {

@@ -46,6 +46,8 @@ const SUBMISSIONS_TABLE = process.env.HACKATHON_SUBMISSIONS_TABLE_NAME || 'awsug
 const USERS_TABLE = process.env.USERS_TABLE_NAME || 'awsug-users';
 // Only used to clear meetup.hackathonId when a hackathon is deleted.
 const MEETUPS_TABLE = process.env.MEETUPS_TABLE_NAME || 'awsug-meetups';
+// Used to mirror hackathon participants into the sprint the hackathon runs under.
+const SPRINTS_TABLE = process.env.SPRINTS_TABLE_NAME || 'awsug-sprints';
 
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '')
   .split(',')
@@ -456,7 +458,100 @@ function normalizeTeamConfig(input) {
     joinPolicy,
     allowIndividuals: cfg.allowIndividuals !== false,
     allowMentorRequests: cfg.allowMentorRequests !== false,
+    // Opt-in, unlike the others: defaults to false so joining stays frictionless.
+    requireMemberProfile: cfg.requireMemberProfile === true,
   };
+}
+
+// ----------------------------------------------------------------------------
+// Member profiles (experience level + skills)
+//
+// Captured on every join path so team browsing can show what a team already has
+// and what it still needs. Stored on the TeamMember (and on the join request, so
+// an approval carries the details across without asking again).
+// ----------------------------------------------------------------------------
+
+const EXPERIENCE_LEVELS = ['beginner', 'intermediate', 'advanced'];
+const MAX_SKILLS_PER_MEMBER = 12;
+const MAX_SKILL_LENGTH = 40;
+const MAX_NOTE_LENGTH = 280;
+
+/**
+ * Clean a client-supplied skill list: trim, drop empties, de-duplicate
+ * case-insensitively (so "React" and "react" collapse), and cap the count.
+ *
+ * Values are NOT restricted to hackathon.skillOptions — free entry is allowed by
+ * design — but they are length-capped so a skill chip can't hold an essay.
+ */
+function sanitizeSkills(input) {
+  const list = Array.isArray(input) ? input : (typeof input === 'string' ? input.split(',') : []);
+  const seen = new Set();
+  const out = [];
+
+  for (const raw of list) {
+    const skill = String(raw ?? '').trim().slice(0, MAX_SKILL_LENGTH);
+    if (!skill) continue;
+    const key = skill.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(skill);
+    if (out.length >= MAX_SKILLS_PER_MEMBER) break;
+  }
+
+  return out;
+}
+
+/** The hackathon-level skill vocabulary. Same cleaning, a larger cap. */
+function sanitizeSkillOptions(input) {
+  const list = Array.isArray(input) ? input : (typeof input === 'string' ? input.split(',') : []);
+  const seen = new Set();
+  const out = [];
+
+  for (const raw of list) {
+    const skill = String(raw ?? '').trim().slice(0, MAX_SKILL_LENGTH);
+    if (!skill) continue;
+    const key = skill.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(skill);
+    if (out.length >= 60) break;
+  }
+
+  return out;
+}
+
+/** Extract the self-declared profile fields from a request body. */
+function sanitizeMemberProfile(body = {}) {
+  const level = String(body.experienceLevel ?? '').trim().toLowerCase();
+  const skills = sanitizeSkills(body.skills);
+  const note = String(body.note ?? '').trim().slice(0, MAX_NOTE_LENGTH);
+
+  return {
+    experienceLevel: EXPERIENCE_LEVELS.includes(level) ? level : undefined,
+    skills: skills.length > 0 ? skills : undefined,
+    note: note || undefined,
+  };
+}
+
+/**
+ * Enforce the organiser's requireMemberProfile toggle. Returns an error response
+ * or null. Applies to every join path so it can't be bypassed by picking a
+ * different route onto the team.
+ */
+function memberProfileGate(config, profile) {
+  if (!config.requireMemberProfile) return null;
+
+  if (!profile.experienceLevel) {
+    return createResponse(400, {
+      error: 'This hackathon asks for your experience level before joining a team',
+    });
+  }
+  if (!profile.skills || profile.skills.length === 0) {
+    return createResponse(400, {
+      error: 'This hackathon asks for at least one skill before joining a team',
+    });
+  }
+  return null;
 }
 
 function deriveStatus(startDate, endDate, explicit) {
@@ -546,8 +641,12 @@ async function listHackathons(event) {
   // Newest first
   items.sort((a, b) => new Date(b.startDate || 0) - new Date(a.startDate || 0));
 
+  const admin = isAdminUser(user, userId);
   return createResponse(200, {
-    hackathons: items.map(h => ({ ...h, status: effectiveStatus(h) })),
+    hackathons: items.map(h => sanitizeHackathonForViewer(
+      { ...h, status: effectiveStatus(h) },
+      { userId, isAdmin: admin },
+    )),
   });
 }
 
@@ -567,12 +666,15 @@ async function getHackathonById(id, event) {
   const submissions = await fetchSubmissionsByHackathon(id);
 
   return createResponse(200, {
-    hackathon: {
-      ...hackathon,
-      status: effectiveStatus(hackathon),
-      teamCount: teams.length,
-      submissionCount: submissions.length,
-    },
+    hackathon: sanitizeHackathonForViewer(
+      {
+        ...hackathon,
+        status: effectiveStatus(hackathon),
+        teamCount: teams.length,
+        submissionCount: submissions.length,
+      },
+      { userId, isAdmin: isAdminUser(user, userId) },
+    ),
   });
 }
 
@@ -606,6 +708,8 @@ async function createHackathon(event) {
     description,
     richDescription: body.richDescription || undefined,
     tracks: Array.isArray(body.tracks) ? body.tracks : [],
+    // Skill vocabulary offered to joiners and in the browse filter.
+    skillOptions: sanitizeSkillOptions(body.skillOptions),
     rules: body.rules || undefined,
     prizes: body.prizes || undefined,
     startDate,
@@ -614,6 +718,7 @@ async function createHackathon(event) {
     submissionDeadline: body.submissionDeadline || undefined,
     status: deriveStatus(startDate, endDate, body.status),
     bannerImage: body.bannerImage || undefined,
+    chatUrl: isValidUrl(body.chatUrl) ? String(body.chatUrl).trim() : undefined,
     sprintId: body.sprintId || undefined,
     teamConfig: normalizeTeamConfig(body.teamConfig),
     mentors: (Array.isArray(body.mentors) ? body.mentors : [])
@@ -650,7 +755,8 @@ async function updateHackathon(id, event) {
   // Allow-list, mirroring the pattern in sprints-crud updateSprint. Anything
   // not listed here is ignored rather than silently written.
   const allowedFields = [
-    'title', 'theme', 'description', 'richDescription', 'tracks', 'rules', 'prizes',
+    'title', 'theme', 'description', 'richDescription', 'tracks', 'skillOptions',
+    'rules', 'prizes',
     'startDate', 'endDate', 'registrationDeadline', 'submissionDeadline', 'status',
     'bannerImage', 'sprintId', 'submissionFormConfig', 'mentors', 'resources',
   ];
@@ -675,6 +781,22 @@ async function updateHackathon(id, event) {
   // Re-derive ids/timestamps server-side rather than trusting the client copy.
   if (body.resources !== undefined) {
     values[':resources'] = normalizeResources(body.resources, userId);
+  }
+
+  // De-duplicated and length-capped, same treatment as member skills.
+  if (body.skillOptions !== undefined) {
+    values[':skillOptions'] = sanitizeSkillOptions(body.skillOptions);
+  }
+
+  // Validated rather than passed straight through, and clearable by sending ''.
+  if (body.chatUrl !== undefined) {
+    const trimmed = String(body.chatUrl || '').trim();
+    if (trimmed && !isValidUrl(trimmed)) {
+      return createResponse(400, { error: 'Chat link must be a valid http(s) URL' });
+    }
+    setExpressions.push('#chatUrl = :chatUrl');
+    names['#chatUrl'] = 'chatUrl';
+    values[':chatUrl'] = trimmed || null;
   }
 
   if (setExpressions.length === 0) {
@@ -775,6 +897,10 @@ async function registerForHackathon(id, event) {
 
   const registered = hackathon.registeredUsers || [];
   if (registered.includes(callerId)) {
+    // Still attempt the sprint mirror. Anyone who registered before the mirroring
+    // existed would otherwise never be added to the linked sprint, and this makes
+    // the endpoint self-healing rather than needing a one-off backfill script.
+    if (hackathon.sprintId) await mirrorRegistrationToSprint(hackathon.sprintId, callerId);
     return createResponse(200, { hackathon, alreadyRegistered: true });
   }
 
@@ -782,7 +908,11 @@ async function registerForHackathon(id, event) {
 
   const fresh = await fetchHackathon(id);
   return createResponse(200, {
-    hackathon: { ...fresh, status: effectiveStatus(fresh) },
+    // Now registered, so this response is where they first receive chatUrl.
+    hackathon: sanitizeHackathonForViewer(
+      { ...fresh, status: effectiveStatus(fresh) },
+      { userId: callerId, isAdmin: false },
+    ),
     message: 'Registered for hackathon',
   });
 }
@@ -934,6 +1064,42 @@ function mentorKey(mentor) {
   return mentor?.userId || normalizeEmail(mentor?.email) || null;
 }
 
+/** Drop a mentor's email while keeping everything a browser needs to display. */
+function stripMentorContact(mentor) {
+  if (!mentor) return mentor;
+  const { email, ...rest } = mentor;
+  return rest;
+}
+
+/**
+ * Project a hackathon down to what the caller may see.
+ *
+ * Three things here are not public:
+ *   - mentor emails in the pool (volunteers; contact belongs to their teams)
+ *   - individualMentors, which is a map of EVERY solo participant's assignment.
+ *     Returning it whole told each participant who mentors everyone else.
+ *   - chatUrl, since a WhatsApp/Discord invite link is effectively a password.
+ */
+function sanitizeHackathonForViewer(hackathon, { userId, isAdmin }) {
+  if (!hackathon) return hackathon;
+  if (isAdmin) return hackathon;
+
+  const registered = !!userId && (hackathon.registeredUsers || []).includes(userId);
+  const ownMentor = userId ? (hackathon.individualMentors || {})[userId] : undefined;
+
+  const next = {
+    ...hackathon,
+    mentors: (hackathon.mentors || []).map(stripMentorContact),
+    // Only the caller's own assignment, and without the email — mentors are
+    // reachable via LinkedIn, not by handing their inbox to participants.
+    individualMentors: ownMentor ? { [userId]: stripMentorContact(ownMentor) } : {},
+  };
+
+  if (!registered) delete next.chatUrl;
+
+  return next;
+}
+
 async function addMentor(id, event) {
   const ctx = await requireAdminOn(id, event);
   if (ctx.error) return ctx.error;
@@ -1068,6 +1234,22 @@ async function assignTeamMentor(hackathonId, teamId, event) {
   }
 
   const updated = await putTeam({ ...team, mentors: [...mentors, mentor] });
+
+  // Only the newly assigned mentor hears about this. Mentors already on the team
+  // don't need a mail every time a co-mentor is added.
+  await notifyTeamMentors(hackathon, updated, {
+    only: mentor,
+    heading: `You're mentoring ${updated.name}`,
+    subject: `You're mentoring "${updated.name}" — ${hackathon.title}`,
+    bodyHtml: `<p style="margin:0 0 16px;">You've been assigned as a mentor to <strong>${escapeBasic(updated.name)}</strong> for ${escapeBasic(hackathon.title)}.</p>`
+      + (updated.projectName
+        ? `<p style="margin:0 0 16px;">They're working on <strong>${escapeBasic(updated.projectName)}</strong>.</p>`
+        : '')
+      + ((updated.lookingForSkills || []).length > 0
+        ? `<p style="margin:0 0 16px;">Skills they're still looking for: ${escapeBasic(updated.lookingForSkills.join(', '))}</p>`
+        : ''),
+  });
+
   return createResponse(200, { team: updated });
 }
 
@@ -1114,11 +1296,32 @@ function sanitizeTeamForViewer(team, { userId, isAdmin }) {
 
   return {
     ...team,
+    // Mentors are volunteers, so their email never leaves the server for anyone
+    // but an organiser — not even to the team they mentor. LinkedIn is the
+    // contact route: it's a public profile by nature and the mentor controls who
+    // gets through. Organisers keep the email because they administer the pool,
+    // and mentorKey() falls back to it when a mentor has no userId.
+    mentors: (team.mentors || []).map(mentor => (
+      isAdmin ? mentor : stripMentorContact(mentor)
+    )),
     members: (team.members || []).map(member => (
       privileged || isMember
         ? member
-        // Names and avatars are public (team browsing shows them); emails aren't.
-        : { userId: member.userId, name: member.name, avatar: member.avatar, role: member.role, joinedAt: member.joinedAt }
+        // Emails are private. Everything else is deliberately public: skills and
+        // experience exist precisely so people browsing teams can judge fit, so
+        // stripping them here would defeat the feature.
+        : {
+          userId: member.userId,
+          name: member.name,
+          avatar: member.avatar,
+          role: member.role,
+          joinedAt: member.joinedAt,
+          designation: member.designation,
+          company: member.company,
+          experienceLevel: member.experienceLevel,
+          skills: member.skills,
+          note: member.note,
+        }
     )),
     // Leads and organisers see who's been invited, minus the token. Nobody else
     // sees the invite list at all.
@@ -1172,6 +1375,10 @@ async function createTeam(hackathonId, event) {
     return createResponse(400, { error: 'Team name is required' });
   }
 
+  const profile = sanitizeMemberProfile(body);
+  const profileGate = memberProfileGate(normalizeTeamConfig(hackathon.teamConfig), profile);
+  if (profileGate) return profileGate;
+
   const existing = await findExistingMembership(hackathonId, userId);
   if (existing) {
     return createResponse(409, {
@@ -1208,6 +1415,10 @@ async function createTeam(hackathonId, event) {
       avatar: body.userAvatar || user?.avatar || undefined,
       role: 'lead',
       joinedAt: timestamp,
+      // Denormalised from the profile so rosters can show context without a join.
+      designation: user?.designation || undefined,
+      company: user?.company || undefined,
+      ...profile,
     })],
     invites: [],
     joinRequests: [],
@@ -1215,6 +1426,7 @@ async function createTeam(hackathonId, event) {
     projectName: body.projectName || undefined,
     track: body.track || undefined,
     lookingForMembers: body.lookingForMembers !== false,
+    lookingForSkills: sanitizeSkills(body.lookingForSkills),
     createdAt: timestamp,
     updatedAt: timestamp,
   });
@@ -1250,6 +1462,9 @@ async function updateTeam(hackathonId, teamId, event) {
     lookingForMembers: body.lookingForMembers !== undefined
       ? body.lookingForMembers === true
       : team.lookingForMembers,
+    lookingForSkills: body.lookingForSkills !== undefined
+      ? sanitizeSkills(body.lookingForSkills)
+      : team.lookingForSkills,
   });
 
   return createResponse(200, { team: updated });
@@ -1309,6 +1524,10 @@ async function joinTeamByCode(hackathonId, event) {
     });
   }
 
+  const profile = sanitizeMemberProfile(body);
+  const profileGate = memberProfileGate(config, profile);
+  if (profileGate) return profileGate;
+
   const team = await fetchTeamByJoinCode(hackathonId, joinCode);
   if (!team) return createResponse(404, { error: 'No team matches that join code' });
 
@@ -1338,11 +1557,15 @@ async function joinTeamByCode(hackathonId, event) {
     avatar: body.userAvatar || user?.avatar || undefined,
     role: 'member',
     joinedAt: nowIso(),
+    designation: user?.designation || undefined,
+    company: user?.company || undefined,
+    ...profile,
   });
 
   const updated = await putTeam({ ...team, members: [...(team.members || []), member] });
   await ensureRegistered(hackathon, userId);
   await discardStaleSoloSubmission(hackathonId, userId);
+  await notifyMemberJoined(hackathon, updated, member);
 
   // `joined` lets the client tell an instant join apart from a filed request —
   // both return 200 with a team, and the messages differ.
@@ -1364,6 +1587,7 @@ async function joinTeamByCode(hackathonId, event) {
 async function registerParticipant(hackathonId, userId) {
   if (!userId) return;
 
+  let added = true;
   try {
     await docClient.send(new UpdateCommand({
       TableName: HACKATHONS_TABLE,
@@ -1382,20 +1606,85 @@ async function registerParticipant(hackathonId, userId) {
   } catch (error) {
     // Already registered — the condition failing is the expected no-op here.
     if (error.name !== 'ConditionalCheckFailedException') throw error;
-    return;
+    added = false;
   }
 
-  // participants is a denormalised count, so re-derive it from the stored array
-  // rather than incrementing a second racy counter.
   const fresh = await fetchHackathon(hackathonId);
   if (!fresh) return;
 
-  await docClient.send(new UpdateCommand({
-    TableName: HACKATHONS_TABLE,
-    Key: { id: hackathonId },
-    UpdateExpression: 'SET participants = :p',
-    ExpressionAttributeValues: { ':p': (fresh.registeredUsers || []).length },
-  }));
+  if (added) {
+    // participants is a denormalised count, so re-derive it from the stored array
+    // rather than incrementing a second racy counter.
+    await docClient.send(new UpdateCommand({
+      TableName: HACKATHONS_TABLE,
+      Key: { id: hackathonId },
+      UpdateExpression: 'SET participants = :p',
+      ExpressionAttributeValues: { ':p': (fresh.registeredUsers || []).length },
+    }));
+  }
+
+  // A hackathon running under a sprint means its participants are sprint
+  // participants too, so mirror them across. Deliberately attempted even when
+  // the hackathon add was a no-op, so people who registered before this existed
+  // get backfilled the next time they touch the hackathon. The sprint write is
+  // itself conditional, so a repeat is harmless.
+  if (fresh.sprintId) {
+    await mirrorRegistrationToSprint(fresh.sprintId, userId);
+  }
+}
+
+/**
+ * Add a hackathon participant to the sprint the hackathon belongs to.
+ *
+ * Uses a conditional list_append on registeredUsers rather than a
+ * read-modify-write of the sprint item. That matters here: a sprint item also
+ * holds sessions[] and submissions[] in the same record, so rewriting it wholesale
+ * risks clobbering a submission landing at the same moment.
+ *
+ * Never throws — a failure here must not fail the hackathon registration.
+ */
+async function mirrorRegistrationToSprint(sprintId, userId) {
+  try {
+    await docClient.send(new UpdateCommand({
+      TableName: SPRINTS_TABLE,
+      Key: { id: sprintId },
+      UpdateExpression:
+        'SET registeredUsers = list_append(if_not_exists(registeredUsers, :empty), :entry), updatedAt = :u',
+      ConditionExpression:
+        'attribute_exists(id) AND (attribute_not_exists(registeredUsers) OR NOT contains(registeredUsers, :userId))',
+      ExpressionAttributeValues: {
+        ':entry': [userId],
+        ':empty': [],
+        ':userId': userId,
+        ':u': nowIso(),
+      },
+    }));
+  } catch (error) {
+    // Already in the sprint, or the sprint no longer exists. Both are no-ops.
+    if (error.name !== 'ConditionalCheckFailedException') {
+      console.error(`Failed to mirror registration to sprint ${sprintId}:`, error.message);
+    }
+    return;
+  }
+
+  // Keep the sprint's denormalised count in step with the array.
+  try {
+    const sprint = await docClient.send(new GetCommand({
+      TableName: SPRINTS_TABLE,
+      Key: { id: sprintId },
+    }));
+    if (!sprint.Item) return;
+
+    await docClient.send(new UpdateCommand({
+      TableName: SPRINTS_TABLE,
+      Key: { id: sprintId },
+      UpdateExpression: 'SET participants = :p',
+      ExpressionAttributeValues: { ':p': (sprint.Item.registeredUsers || []).length },
+    }));
+    console.log(`Mirrored ${userId} into sprint ${sprintId}`);
+  } catch (error) {
+    console.error(`Failed to update sprint ${sprintId} participant count:`, error.message);
+  }
 }
 
 async function ensureRegistered(hackathon, userId) {
@@ -1429,11 +1718,20 @@ async function removeMemberOrLeave(hackathonId, teamId, event) {
   }
 
   const remaining = members.filter(m => m.userId !== targetUserId);
+  const departing = members.find(m => m.userId === targetUserId);
+
+  // Only needed for the mentor mail (hackathon title + chat link), so skip the
+  // extra read entirely when the team has no mentors to notify.
+  const hackathon = (team.mentors || []).length > 0
+    ? await fetchHackathon(hackathonId)
+    : null;
 
   // The lead leaving either promotes the next member or disbands the team.
   if (team.leadUserId === targetUserId) {
     if (remaining.length === 0) {
       await docClient.send(new DeleteCommand({ TableName: TEAMS_TABLE, Key: { id: teamId } }));
+      // Roster is empty by definition here, so the mail carries no member list.
+      await notifyMemberLeft(hackathon, { ...team, members: [] }, departing, { disbanded: true });
       return createResponse(200, { message: 'You left and the team was disbanded', id: teamId });
     }
 
@@ -1445,15 +1743,17 @@ async function removeMemberOrLeave(hackathonId, teamId, event) {
         m.userId === promoted.userId ? { ...m, role: 'lead' } : m
       )),
     });
+    await notifyMemberLeft(hackathon, updated, departing, { newLeadName: promoted.name });
     return createResponse(200, {
-      team: updated,
+      team: sanitizeTeamForViewer(updated, { userId: callerId, isAdmin: isAdminUser(user, callerId) }),
       message: `You left the team. ${promoted.name} is now the lead.`,
     });
   }
 
   const updated = await putTeam({ ...team, members: remaining });
+  await notifyMemberLeft(hackathon, updated, departing);
   return createResponse(200, {
-    team: updated,
+    team: sanitizeTeamForViewer(updated, { userId: callerId, isAdmin: isAdminUser(user, callerId) }),
     message: isSelf ? 'You left the team' : 'Member removed',
   });
 }
@@ -1563,6 +1863,7 @@ async function inviteToTeam(hackathonId, teamId, event) {
           <p style="margin:0 0 16px;">
             Accept below to join the team. This invite expires in ${INVITE_TTL_DAYS} days.
           </p>
+          ${chatLinkHtml(hackathon)}
         `,
         cta: { label: 'View invite', url: link },
         footerNote: 'If you were not expecting this invite, you can safely ignore this email.',
@@ -1580,6 +1881,139 @@ async function inviteToTeam(hackathonId, teamId, event) {
 
   const updated = await putTeam({ ...team, invites });
   return createResponse(200, { team: updated, invited, skipped });
+}
+
+/**
+ * Chat link paragraph for team emails.
+ *
+ * Joining is the moment the link is actually useful, so it rides along with the
+ * invite and the approval rather than making people go hunting for it.
+ */
+function chatLinkHtml(hackathon) {
+  if (!hackathon?.chatUrl) return '';
+  return `<p style="margin:0 0 16px;">Team chat for this hackathon: <a href="${escapeBasic(hackathon.chatUrl)}">${escapeBasic(hackathon.chatUrl)}</a></p>`;
+}
+
+/**
+ * The team's current roster as a short list.
+ *
+ * Included in every mentor email so each one is self-contained — a mentor should
+ * never have to reconstruct who's on the team from a sequence of notifications.
+ */
+function rosterHtml(team) {
+  const members = team?.members || [];
+  if (members.length === 0) return '';
+
+  const rows = members.map(m => {
+    const detail = [
+      m.experienceLevel || null,
+      (m.skills || []).length > 0 ? m.skills.join(', ') : null,
+    ].filter(Boolean).join(' · ');
+
+    return `<li>${escapeBasic(m.name)}${m.role === 'lead' ? ' <em>(lead)</em>' : ''}${
+      detail ? ` — ${escapeBasic(detail)}` : ''
+    }</li>`;
+  }).join('');
+
+  return `<p style="margin:0 0 8px;"><strong>Team now (${members.length}):</strong></p>`
+    + `<ul style="margin:0 0 16px; padding-left:20px; color:#3a3a3a;">${rows}</ul>`;
+}
+
+/**
+ * Email a team's mentors about something that changed on their team.
+ *
+ * Deliberately limited to roster changes and assignment. Activity churn (project
+ * renames, join requests, skill edits) is not sent: a mentor has no action to
+ * take on those, and burying the useful mail in noise is how people learn to
+ * filter the sender.
+ *
+ * Never throws — a mail failure must not fail the join or removal that caused it.
+ * Pass `only` to target a single mentor instead of the whole team.
+ */
+async function notifyTeamMentors(hackathon, team, { heading, subject, bodyHtml, only }) {
+  const recipients = (only ? [only] : (team?.mentors || []))
+    .filter(Boolean)
+    .map(m => normalizeEmail(m.email))
+    .filter(Boolean);
+
+  // De-duplicate in case the same person is attached twice.
+  const unique = [...new Set(recipients)];
+  if (unique.length === 0) return;
+
+  // sendEmail returns { ok } rather than throwing, but the surrounding render can
+  // still fail. Swallowing it here is the point: none of these callers should
+  // return a 500 to someone who successfully joined or left a team.
+  try {
+    const html = renderEmail({
+      heading,
+      bodyHtml: `${bodyHtml}${rosterHtml(team)}${chatLinkHtml(hackathon)}`,
+      cta: { label: 'Open hackathon', url: `${APP_URL}/hackathons/${hackathon?.id || ''}` },
+    });
+
+    await Promise.all(unique.map(async to => {
+      const result = await sendEmail({ to, subject, html });
+      if (!result.ok) console.error(`Mentor notification to ${to} failed:`, result.error);
+    }));
+  } catch (error) {
+    console.error('Mentor notification failed:', error.message);
+  }
+}
+
+/**
+ * Tell a team's mentors that someone joined.
+ *
+ * `team` must be the post-change team so the roster in the mail is accurate.
+ */
+async function notifyMemberJoined(hackathon, team, member) {
+  const detail = [
+    member?.designation,
+    member?.company,
+  ].filter(Boolean).join(' at ');
+
+  await notifyTeamMentors(hackathon, team, {
+    heading: `${member?.name || 'A new member'} joined ${team.name}`,
+    subject: `${member?.name || 'A new member'} joined "${team.name}" — ${hackathon?.title || 'hackathon'}`,
+    bodyHtml: `<p style="margin:0 0 16px;"><strong>${escapeBasic(member?.name || 'A new member')}</strong>`
+      + `${detail ? ` (${escapeBasic(detail)})` : ''} just joined <strong>${escapeBasic(team.name)}</strong>,`
+      + ` a team you're mentoring.</p>`
+      + (member?.experienceLevel
+        ? `<p style="margin:0 0 16px;">Experience level: ${escapeBasic(member.experienceLevel)}</p>`
+        : '')
+      + ((member?.skills || []).length > 0
+        ? `<p style="margin:0 0 16px;">Skills: ${escapeBasic(member.skills.join(', '))}</p>`
+        : ''),
+  });
+}
+
+/**
+ * Tell a team's mentors that someone left, was removed, or that the team is gone.
+ *
+ * The disband case is the one that matters most: without this nobody tells the
+ * mentor their team no longer exists.
+ */
+async function notifyMemberLeft(hackathon, team, member, { disbanded = false, newLeadName = null } = {}) {
+  const who = member?.name || 'A member';
+
+  if (disbanded) {
+    await notifyTeamMentors(hackathon, team, {
+      heading: `${team.name} has disbanded`,
+      subject: `"${team.name}" has disbanded — ${hackathon?.title || 'hackathon'}`,
+      bodyHtml: `<p style="margin:0 0 16px;"><strong>${escapeBasic(team.name)}</strong>, a team you were mentoring for `
+        + `${escapeBasic(hackathon?.title || 'this hackathon')}, has disbanded after its last member left.</p>`
+        + `<p style="margin:0 0 16px;">Nothing to action — you're no longer mentoring this team.</p>`,
+    });
+    return;
+  }
+
+  await notifyTeamMentors(hackathon, team, {
+    heading: `${who} left ${team.name}`,
+    subject: `${who} left "${team.name}" — ${hackathon?.title || 'hackathon'}`,
+    bodyHtml: `<p style="margin:0 0 16px;"><strong>${escapeBasic(who)}</strong> is no longer on `
+      + `<strong>${escapeBasic(team.name)}</strong>, a team you're mentoring.</p>`
+      + (newLeadName
+        ? `<p style="margin:0 0 16px;"><strong>${escapeBasic(newLeadName)}</strong> is now the team lead.</p>`
+        : ''),
+  });
 }
 
 /** Minimal escaping for values interpolated into email HTML. */
@@ -1695,6 +2129,12 @@ async function respondToInvite(hackathonId, teamId, event) {
     avatar: user?.avatar || body.userAvatar || undefined,
     role: 'member',
     joinedAt: nowIso(),
+    designation: user?.designation || undefined,
+    company: user?.company || undefined,
+    // Accepted from the accept-invite call when supplied, but deliberately NOT
+    // gated by requireMemberProfile: the lead invited this person directly, and
+    // blocking a one-click emailed link on a form would be a dead end.
+    ...sanitizeMemberProfile(body),
   });
 
   const updated = await putTeam({
@@ -1705,6 +2145,7 @@ async function respondToInvite(hackathonId, teamId, event) {
 
   await ensureRegistered(hackathon, userId);
   await discardStaleSoloSubmission(hackathonId, userId);
+  await notifyMemberJoined(hackathon, updated, member);
 
   return createResponse(200, {
     team: sanitizeTeamForViewer(updated, { userId, isAdmin: false }),
@@ -1724,6 +2165,8 @@ async function fileJoinRequest(team, { userId, user, body }) {
     return createResponse(409, { error: 'You already have a pending request for this team' });
   }
 
+  const profile = sanitizeMemberProfile(body);
+
   joinRequests.push(compact({
     id: genId('req'),
     userId,
@@ -1733,6 +2176,9 @@ async function fileJoinRequest(team, { userId, user, body }) {
     message: body.message || undefined,
     status: 'pending',
     requestedAt: nowIso(),
+    // Kept on the request so the lead can judge fit, and so approval can copy
+    // these onto the member without asking the applicant again.
+    ...profile,
   }));
 
   const updated = await putTeam({ ...team, joinRequests });
@@ -1752,6 +2198,12 @@ async function fileJoinRequest(team, { userId, user, body }) {
             <strong>${escapeBasic(requesterName)}</strong> has asked to join your team
             <strong>${escapeBasic(team.name)}</strong>.
           </p>
+          ${profile.experienceLevel || profile.skills ? `<p style="margin:0 0 16px; color:#555;">${
+            [
+              profile.experienceLevel ? `Experience: ${escapeBasic(profile.experienceLevel)}` : '',
+              profile.skills ? `Skills: ${escapeBasic(profile.skills.join(', '))}` : '',
+            ].filter(Boolean).join('<br>')
+          }</p>` : ''}
           ${body.message ? `<p style="margin:0 0 16px; padding:12px 16px; background:#f4f5f7; border-radius:8px;">${escapeBasic(body.message)}</p>` : ''}
           <p style="margin:0 0 16px;">Open the hackathon page to approve or reject the request.</p>
         `,
@@ -1788,6 +2240,11 @@ async function requestToJoinTeam(hackathonId, teamId, event) {
     return createResponse(403, { error: 'This hackathon is invite-only' });
   }
 
+  const body = parseBody(event);
+  const profile = sanitizeMemberProfile(body);
+  const profileGate = memberProfileGate(config, profile);
+  if (profileGate) return profileGate;
+
   const existing = await findExistingMembership(hackathonId, userId);
   if (existing) {
     return createResponse(409, { error: `You are already on team "${existing.name}"` });
@@ -1801,15 +2258,19 @@ async function requestToJoinTeam(hackathonId, teamId, event) {
   if (config.joinPolicy === 'open') {
     const member = compact({
       userId,
-      name: parseBody(event).userName || user?.name || 'Unknown',
-      email: normalizeEmail(parseBody(event).userEmail || user?.email) || undefined,
-      avatar: parseBody(event).userAvatar || user?.avatar || undefined,
+      name: body.userName || user?.name || 'Unknown',
+      email: normalizeEmail(body.userEmail || user?.email) || undefined,
+      avatar: body.userAvatar || user?.avatar || undefined,
       role: 'member',
       joinedAt: nowIso(),
+      designation: user?.designation || undefined,
+      company: user?.company || undefined,
+      ...profile,
     });
     const updated = await putTeam({ ...team, members: [...(team.members || []), member] });
     await ensureRegistered(hackathon, userId);
     await discardStaleSoloSubmission(hackathonId, userId);
+    await notifyMemberJoined(hackathon, updated, member);
     return createResponse(200, {
       team: sanitizeTeamForViewer(updated, { userId, isAdmin: false }),
       joined: true,
@@ -1817,7 +2278,9 @@ async function requestToJoinTeam(hackathonId, teamId, event) {
     });
   }
 
-  return fileJoinRequest(team, { userId, user, body: parseBody(event) });
+  // Deliberately no mentor mail here: a filed request is the lead's decision to
+  // make, and the mentor has no part in it.
+  return fileJoinRequest(team, { userId, user, body });
 }
 
 async function respondToJoinRequest(hackathonId, teamId, requestId, event) {
@@ -1857,6 +2320,7 @@ async function respondToJoinRequest(hackathonId, teamId, requestId, event) {
   };
 
   let members = team.members || [];
+  let addedMember = null;
 
   if (approve) {
     const config = normalizeTeamConfig(hackathon.teamConfig);
@@ -1872,14 +2336,19 @@ async function respondToJoinRequest(hackathonId, teamId, requestId, event) {
       });
     }
 
-    members = [...members, compact({
+    addedMember = compact({
       userId: request.userId,
       name: request.userName,
       email: request.userEmail || undefined,
       avatar: request.userAvatar || undefined,
       role: 'member',
       joinedAt: timestamp,
-    })];
+      // Carried across from the request, so the applicant isn't asked twice.
+      experienceLevel: request.experienceLevel || undefined,
+      skills: request.skills || undefined,
+      note: request.note || undefined,
+    });
+    members = [...members, addedMember];
   }
 
   const updated = await putTeam({ ...team, members, joinRequests });
@@ -1893,7 +2362,7 @@ async function respondToJoinRequest(hackathonId, teamId, requestId, event) {
       html: renderEmail({
         heading: approve ? `Welcome to ${team.name}` : `Request not accepted`,
         bodyHtml: approve
-          ? `<p style="margin:0 0 16px;">Your request to join <strong>${escapeBasic(team.name)}</strong> for <strong>${escapeBasic(hackathon.title)}</strong> was approved.</p>`
+          ? `<p style="margin:0 0 16px;">Your request to join <strong>${escapeBasic(team.name)}</strong> for <strong>${escapeBasic(hackathon.title)}</strong> was approved.</p>${chatLinkHtml(hackathon)}`
           : `<p style="margin:0 0 16px;">Your request to join <strong>${escapeBasic(team.name)}</strong> was not accepted. You can still join another team or take part on your own.</p>`,
         cta: { label: 'Open hackathon', url: `${APP_URL}/hackathons/${hackathonId}` },
       }),
@@ -1903,10 +2372,11 @@ async function respondToJoinRequest(hackathonId, teamId, requestId, event) {
   if (approve) {
     await ensureRegistered(hackathon, request.userId);
     await discardStaleSoloSubmission(hackathonId, request.userId);
+    await notifyMemberJoined(hackathon, updated, addedMember);
   }
 
   return createResponse(200, {
-    team: updated,
+    team: sanitizeTeamForViewer(updated, { userId, isAdmin: isAdminUser(user, userId) }),
     message: approve ? `${request.userName} added to the team` : 'Request rejected',
   });
 }

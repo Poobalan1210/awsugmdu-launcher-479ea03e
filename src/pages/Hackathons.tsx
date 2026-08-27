@@ -6,7 +6,8 @@ import { toast } from 'sonner';
 import {
   Trophy, Users, Calendar, Clock, ChevronLeft, ChevronDown, Rocket, Send,
   BookOpen, ExternalLink, Copy, Crown, Mail, UserPlus, LogOut, Loader2,
-  CheckCircle, XCircle, Lightbulb, Gift, ScrollText, Link2, Info, Search, User,
+  CheckCircle, XCircle, Lightbulb, Gift, ScrollText, Link2, Info, Search, User, X,
+  MessageCircle,
 } from 'lucide-react';
 
 import { Header } from '@/components/layout/Header';
@@ -29,6 +30,7 @@ import {
 
 import {
   Hackathon, HackathonStatus, HackathonSubmission, HackathonTeam, Meetup,
+  MemberExperienceLevel, MemberProfile, TeamJoinPolicy, TeamMember,
 } from '@/data/mockData';
 import { getMeetupsByHackathon } from '@/lib/meetups';
 import {
@@ -38,8 +40,11 @@ import {
   requestToJoinTeam, respondToJoinRequest, submitHackathonWork,
   findUserTeam, isTeamLead, isSubmissionOpen, isRegistrationOpen,
   TEAM_JOIN_POLICY_SUMMARY,
+  EXPERIENCE_LEVELS, EXPERIENCE_LEVEL_LABELS, EXPERIENCE_LEVEL_SHORT, EXPERIENCE_LEVEL_STYLES,
+  teamSkills, teamExperienceSpread, availableSkillFilters, teamMatchesSkill, hasMemberProfile,
 } from '@/lib/hackathons';
 import { uploadFileToS3 } from '@/lib/s3Upload';
+import { normalizeUrl } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   DynamicSubmissionFields, validateSubmissionFields,
@@ -185,6 +190,194 @@ function HackathonListView() {
 }
 
 // ---------------------------------------------------------------------------
+// Skills + experience capture
+// ---------------------------------------------------------------------------
+
+/**
+ * Skill picker: toggle chips from the organiser's vocabulary, plus free entry.
+ *
+ * Options come from hackathon.skillOptions so each event can offer a relevant
+ * vocabulary, while free entry stops the list from being a straitjacket. Values
+ * are de-duplicated case-insensitively here as well as server-side.
+ */
+function SkillPicker({ options, value, onChange, idPrefix, placeholder }: {
+  options: string[];
+  value: string[];
+  onChange: (next: string[]) => void;
+  idPrefix: string;
+  placeholder?: string;
+}) {
+  const [draft, setDraft] = useState('');
+
+  const has = (skill: string) => value.some(s => s.toLowerCase() === skill.toLowerCase());
+
+  const toggle = (skill: string) => {
+    onChange(has(skill) ? value.filter(s => s.toLowerCase() !== skill.toLowerCase()) : [...value, skill]);
+  };
+
+  const addDraft = () => {
+    const skill = draft.trim();
+    if (!skill) return;
+    if (!has(skill)) onChange([...value, skill]);
+    setDraft('');
+  };
+
+  // Anything typed in that isn't part of the offered vocabulary.
+  const custom = value.filter(s => !options.some(o => o.toLowerCase() === s.toLowerCase()));
+
+  return (
+    <div className="space-y-2">
+      {options.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {options.map(option => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => toggle(option)}
+              aria-pressed={has(option)}
+              className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                has(option)
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-border bg-background hover:border-primary/40 hover:bg-primary/5'
+              }`}
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {custom.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {custom.map(skill => (
+            <Badge key={skill} variant="secondary" className="gap-1 pr-1">
+              {skill}
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-4 w-4 hover:bg-destructive/10 hover:text-destructive"
+                onClick={() => toggle(skill)}
+                aria-label={`Remove ${skill}`}
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            </Badge>
+          ))}
+        </div>
+      )}
+
+      <div className="flex gap-2">
+        <Input
+          id={`${idPrefix}-skill-input`}
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onKeyDown={e => {
+            // Enter adds a skill rather than submitting the surrounding form.
+            if (e.key === 'Enter' || e.key === ',') {
+              e.preventDefault();
+              addDraft();
+            }
+          }}
+          placeholder={placeholder || 'Add another skill and press Enter'}
+          aria-label="Add a skill"
+        />
+        <Button type="button" variant="outline" onClick={addDraft} disabled={!draft.trim()} className="shrink-0">
+          Add
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** The profile fields a builder fills in when joining a team. */
+interface ProfileFormState {
+  experienceLevel: MemberExperienceLevel | '';
+  skills: string[];
+  note: string;
+}
+
+const emptyProfileForm = (): ProfileFormState => ({ experienceLevel: '', skills: [], note: '' });
+
+/** Strip the form down to the API payload shape. */
+const profilePayload = (form: ProfileFormState): MemberProfile => ({
+  experienceLevel: form.experienceLevel || undefined,
+  skills: form.skills.length > 0 ? form.skills : undefined,
+  note: form.note.trim() || undefined,
+});
+
+/**
+ * Shared across Create Team, Join by Code and Request to Join, so a builder is
+ * asked the same questions however they get onto a team.
+ */
+function MemberProfileFields({ hackathon, form, onChange, idPrefix, forceOptional = false }: {
+  hackathon: Hackathon;
+  form: ProfileFormState;
+  onChange: (next: ProfileFormState) => void;
+  idPrefix: string;
+  /** Invite acceptance is never blocked on these, whatever the hackathon says. */
+  forceOptional?: boolean;
+}) {
+  const required = !forceOptional && hackathon.teamConfig?.requireMemberProfile === true;
+
+  return (
+    <div className="space-y-4 rounded-lg border p-3 bg-muted/20">
+      <div className="space-y-1">
+        <Label className="text-sm">
+          About you {required
+            ? <span className="text-destructive">*</span>
+            : <span className="text-muted-foreground text-xs">(optional)</span>}
+        </Label>
+        <p className="text-xs text-muted-foreground">
+          Shown on the team so others can see what the team has and what it still needs.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor={`${idPrefix}-exp`} className="text-xs">Experience level</Label>
+        <Select
+          value={form.experienceLevel}
+          onValueChange={v => onChange({ ...form, experienceLevel: v as MemberExperienceLevel })}
+        >
+          <SelectTrigger id={`${idPrefix}-exp`}>
+            <SelectValue placeholder="How much have you done before?" />
+          </SelectTrigger>
+          <SelectContent>
+            {EXPERIENCE_LEVELS.map(level => (
+              <SelectItem key={level} value={level}>{EXPERIENCE_LEVEL_LABELS[level]}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-2">
+        <Label className="text-xs">Skills you bring</Label>
+        <SkillPicker
+          options={hackathon.skillOptions || []}
+          value={form.skills}
+          onChange={skills => onChange({ ...form, skills })}
+          idPrefix={idPrefix}
+          placeholder={(hackathon.skillOptions || []).length > 0
+            ? 'Something else? Type it and press Enter'
+            : 'e.g., React, Lambda, DynamoDB'}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor={`${idPrefix}-note`} className="text-xs">Anything else</Label>
+        <Input
+          id={`${idPrefix}-note`}
+          value={form.note}
+          onChange={e => onChange({ ...form, note: e.target.value })}
+          maxLength={280}
+          placeholder="e.g., happy to do frontend, keen to learn Bedrock"
+        />
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Team dialogs
 // ---------------------------------------------------------------------------
 
@@ -193,6 +386,8 @@ function CreateTeamDialog({ hackathon, onCreated }: { hackathon: Hackathon; onCr
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ name: '', description: '', projectName: '', track: '' });
+  const [profile, setProfile] = useState<ProfileFormState>(emptyProfileForm());
+  const [lookingForSkills, setLookingForSkills] = useState<string[]>([]);
 
   const tracks = hackathon.tracks || [];
 
@@ -208,14 +403,18 @@ function CreateTeamDialog({ hackathon, onCreated }: { hackathon: Hackathon; onCr
         description: form.description.trim() || undefined,
         projectName: form.projectName.trim() || undefined,
         track: form.track || undefined,
+        lookingForSkills: lookingForSkills.length > 0 ? lookingForSkills : undefined,
         userId: user.id,
         userName: user.name,
         userEmail: user.email,
         userAvatar: user.avatar,
+        ...profilePayload(profile),
       });
       toast.success('Team created — you are the lead');
       setOpen(false);
       setForm({ name: '', description: '', projectName: '', track: '' });
+      setProfile(emptyProfileForm());
+      setLookingForSkills([]);
       onCreated();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to create team');
@@ -279,6 +478,31 @@ function CreateTeamDialog({ hackathon, onCreated }: { hackathon: Hackathon; onCr
               placeholder="Helps others decide whether to ask to join"
             />
           </div>
+
+          <MemberProfileFields
+            hackathon={hackathon}
+            form={profile}
+            onChange={setProfile}
+            idPrefix="create-team"
+          />
+
+          {/* The lead states the gaps, so browsers don't have to infer them. */}
+          <div className="space-y-2 rounded-lg border p-3 bg-muted/20">
+            <div className="space-y-1">
+              <Label className="text-sm">Looking for</Label>
+              <p className="text-xs text-muted-foreground">
+                Skills your team still needs. Shown prominently to anyone browsing teams.
+              </p>
+            </div>
+            <SkillPicker
+              options={hackathon.skillOptions || []}
+              value={lookingForSkills}
+              onChange={setLookingForSkills}
+              idPrefix="create-team-needs"
+              placeholder="e.g., frontend, Bedrock"
+            />
+          </div>
+
           <div className="flex gap-2 pt-2 border-t">
             <Button type="submit" disabled={saving} className="flex-1">
               {saving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Creating…</> : 'Create team'}
@@ -296,6 +520,7 @@ function JoinByCodeDialog({ hackathon, onJoined }: { hackathon: Hackathon; onJoi
   const [open, setOpen] = useState(false);
   const [code, setCode] = useState('');
   const [saving, setSaving] = useState(false);
+  const [profile, setProfile] = useState<ProfileFormState>(emptyProfileForm());
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -309,6 +534,7 @@ function JoinByCodeDialog({ hackathon, onJoined }: { hackathon: Hackathon; onJoi
         userName: user.name,
         userEmail: user.email,
         userAvatar: user.avatar,
+        ...profilePayload(profile),
       });
 
       // Under the 'request' policy a valid code files a request rather than
@@ -320,6 +546,7 @@ function JoinByCodeDialog({ hackathon, onJoined }: { hackathon: Hackathon; onJoi
 
       setOpen(false);
       setCode('');
+      setProfile(emptyProfileForm());
       onJoined();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not join that team');
@@ -347,6 +574,14 @@ function JoinByCodeDialog({ hackathon, onJoined }: { hackathon: Hackathon; onJoi
             className="text-center text-lg font-mono tracking-widest"
             aria-label="Team join code"
           />
+
+          <MemberProfileFields
+            hackathon={hackathon}
+            form={profile}
+            onChange={setProfile}
+            idPrefix="join-code"
+          />
+
           <Button type="submit" className="w-full" disabled={saving || code.length < 6}>
             {saving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Joining…</> : 'Join team'}
           </Button>
@@ -442,8 +677,10 @@ function InvitePanel({ hackathon, team, onChanged }: {
           </Label>
           {pending.map(invite => (
             <div key={invite.id} className="flex items-center justify-between gap-2 rounded-md bg-muted/40 px-3 py-2">
-              <span className="text-sm truncate">{invite.email}</span>
-              <Button variant="ghost" size="sm" onClick={() => handleRevoke(invite.id)}>
+              {/* min-w-0 is required for truncate to work on a flex child, or a
+                  long email address overflows the row on narrow screens. */}
+              <span className="text-sm truncate min-w-0">{invite.email}</span>
+              <Button variant="ghost" size="sm" className="shrink-0" onClick={() => handleRevoke(invite.id)}>
                 Revoke
               </Button>
             </div>
@@ -500,6 +737,25 @@ function JoinRequestsPanel({ hackathon, team, onChanged }: {
               )}
             </div>
           </div>
+          {/* Experience and skills, so the lead can judge fit without asking. */}
+          {(request.experienceLevel || (request.skills || []).length > 0) && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {request.experienceLevel && (
+                <Badge
+                  variant="outline"
+                  className={`text-[10px] ${EXPERIENCE_LEVEL_STYLES[request.experienceLevel]}`}
+                >
+                  {EXPERIENCE_LEVEL_SHORT[request.experienceLevel]}
+                </Badge>
+              )}
+              {(request.skills || []).map(skill => (
+                <Badge key={skill} variant="secondary" className="text-[10px]">{skill}</Badge>
+              ))}
+            </div>
+          )}
+          {request.note && (
+            <p className="text-xs text-muted-foreground italic">{request.note}</p>
+          )}
           {request.message && (
             <p className="text-sm text-muted-foreground bg-muted/40 rounded-md p-2">{request.message}</p>
           )}
@@ -535,6 +791,28 @@ function MyTeamPanel({ hackathon, team, onChanged }: {
   const lead = isTeamLead(team, user?.id);
   const [savingProject, setSavingProject] = useState(false);
   const [projectName, setProjectName] = useState(team.projectName || '');
+  const [needs, setNeeds] = useState<string[]>(team.lookingForSkills || []);
+  const [savingNeeds, setSavingNeeds] = useState(false);
+
+  // Re-sync when the team is refetched, so a save elsewhere isn't overwritten by
+  // stale local state.
+  useEffect(() => {
+    setNeeds(team.lookingForSkills || []);
+    setProjectName(team.projectName || '');
+  }, [team.lookingForSkills, team.projectName]);
+
+  const handleSaveNeeds = async () => {
+    setSavingNeeds(true);
+    try {
+      await updateTeam(hackathon.id, team.id, { lookingForSkills: needs });
+      toast.success('Updated what your team is looking for');
+      onChanged();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save');
+    } finally {
+      setSavingNeeds(false);
+    }
+  };
 
   const handleCopyCode = () => {
     navigator.clipboard.writeText(team.joinCode)
@@ -628,19 +906,54 @@ function MyTeamPanel({ hackathon, team, onChanged }: {
           <Label className="text-xs uppercase tracking-wide text-muted-foreground">Members</Label>
           <div className="space-y-2">
             {team.members.map(member => (
-              <div key={member.userId} className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 min-w-0">
-                  <Avatar className="h-7 w-7">
+              <div key={member.userId} className="flex items-start justify-between gap-2">
+                <div className="flex items-start gap-2 min-w-0">
+                  <Avatar className="h-7 w-7 mt-0.5">
                     <AvatarImage src={member.avatar} />
                     <AvatarFallback className="text-[10px]">{member.name.charAt(0)}</AvatarFallback>
                   </Avatar>
-                  <span className="text-sm truncate">{member.name}</span>
-                  {member.role === 'lead' && (
-                    <Badge variant="outline" className="text-[10px] shrink-0">Lead</Badge>
-                  )}
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-sm truncate">{member.name}</span>
+                      {member.role === 'lead' && (
+                        <Badge variant="outline" className="text-[10px] shrink-0">Lead</Badge>
+                      )}
+                      {member.experienceLevel && (
+                        <Badge
+                          variant="outline"
+                          className={`text-[10px] shrink-0 ${EXPERIENCE_LEVEL_STYLES[member.experienceLevel]}`}
+                        >
+                          {EXPERIENCE_LEVEL_SHORT[member.experienceLevel]}
+                        </Badge>
+                      )}
+                    </div>
+
+                    {(member.designation || member.company) && (
+                      <p className="text-xs text-muted-foreground truncate">
+                        {[member.designation, member.company].filter(Boolean).join(' · ')}
+                      </p>
+                    )}
+
+                    {(member.skills || []).length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {member.skills.map(skill => (
+                          <Badge key={skill} variant="secondary" className="text-[10px]">{skill}</Badge>
+                        ))}
+                      </div>
+                    )}
+
+                    {member.note && (
+                      <p className="text-xs text-muted-foreground italic">{member.note}</p>
+                    )}
+                  </div>
                 </div>
                 {lead && member.userId !== user?.id && (
-                  <Button variant="ghost" size="sm" onClick={() => handleRemove(member.userId, member.name)}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => handleRemove(member.userId, member.name)}
+                  >
                     Remove
                   </Button>
                 )}
@@ -654,18 +967,34 @@ function MyTeamPanel({ hackathon, team, onChanged }: {
             <Label className="text-xs uppercase tracking-wide text-muted-foreground">Mentors</Label>
             <div className="space-y-2">
               {team.mentors.map(mentor => (
-                <div key={mentor.userId || mentor.name} className="flex items-center gap-2">
-                  <Avatar className="h-7 w-7">
+                <div key={mentor.userId || mentor.name} className="flex items-start gap-2">
+                  <Avatar className="h-7 w-7 mt-0.5">
                     <AvatarImage src={mentor.photo} />
                     <AvatarFallback className="text-[10px]">{mentor.name.charAt(0)}</AvatarFallback>
                   </Avatar>
-                  <div className="min-w-0">
+                  <div className="min-w-0 space-y-1">
                     <p className="text-sm truncate">{mentor.name}</p>
                     {(mentor.designation || mentor.company) && (
                       <p className="text-xs text-muted-foreground truncate">
                         {[mentor.designation, mentor.company].filter(Boolean).join(' · ')}
                       </p>
                     )}
+                    {/* LinkedIn only. Mentor emails are never surfaced to
+                        participants — the API withholds them too, so this isn't
+                        the only gate. */}
+                    <div className="flex flex-wrap items-center gap-3">
+                      {mentor.linkedIn && (
+                        <a
+                          href={normalizeUrl(mentor.linkedIn)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs text-primary hover:underline shrink-0"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                          LinkedIn
+                        </a>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -688,6 +1017,23 @@ function MyTeamPanel({ hackathon, team, onChanged }: {
                   {savingProject ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save'}
                 </Button>
               </div>
+            </div>
+
+            <div className="space-y-2 pt-3 border-t">
+              <Label>Looking for</Label>
+              <p className="text-xs text-muted-foreground">
+                Skills you still need. Shown to anyone browsing teams, and used by the skill filter.
+              </p>
+              <SkillPicker
+                options={hackathon.skillOptions || []}
+                value={needs}
+                onChange={setNeeds}
+                idPrefix="my-team-needs"
+                placeholder="e.g., frontend, Bedrock"
+              />
+              <Button variant="outline" size="sm" onClick={handleSaveNeeds} disabled={savingNeeds}>
+                {savingNeeds ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save'}
+              </Button>
             </div>
 
             <div className="pt-3 border-t">
@@ -715,22 +1061,48 @@ function MyTeamPanel({ hackathon, team, onChanged }: {
   );
 }
 
-function BrowseTeams({ hackathon, teams, myTeam, onChanged }: {
+/**
+ * Asking to join a specific team.
+ *
+ * Deliberately a dialog opened by the button rather than a form sitting beside
+ * the list: attached to the action, so the details can't be silently skipped,
+ * and unambiguous about which team it applies to. It also shows what that team
+ * is looking for, so the applicant knows what to highlight.
+ */
+function JoinTeamDialog({ hackathon, team, policy, initialProfile, onProfileChange, onDone }: {
   hackathon: Hackathon;
-  teams: HackathonTeam[];
-  myTeam?: HackathonTeam;
-  onChanged: () => void;
+  team: HackathonTeam;
+  policy: TeamJoinPolicy;
+  initialProfile: ProfileFormState;
+  onProfileChange: (next: ProfileFormState) => void;
+  onDone: () => void;
 }) {
   const { user } = useAuth();
-  const [requesting, setRequesting] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [profile, setProfile] = useState<ProfileFormState>(initialProfile);
   const [note, setNote] = useState('');
 
-  const policy = hackathon.teamConfig?.joinPolicy ?? 'request';
-  const maxSize = hackathon.teamConfig?.maxSize ?? 4;
+  // Carry over whatever they entered last time the dialog was used.
+  useEffect(() => {
+    if (open) setProfile(initialProfile);
+  }, [open, initialProfile]);
 
-  const handleRequest = async (team: HackathonTeam) => {
+  const instant = policy === 'open';
+  const needs = team.lookingForSkills || [];
+  const required = hackathon.teamConfig?.requireMemberProfile === true;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
     if (!user) { toast.error('Sign in first'); return; }
-    setRequesting(team.id);
+
+    // Mirrors the API guard so the failure is caught before a round trip.
+    if (required && (!profile.experienceLevel || profile.skills.length === 0)) {
+      toast.error('This hackathon asks for your experience level and at least one skill');
+      return;
+    }
+
+    setSaving(true);
     try {
       const result = await requestToJoinTeam(hackathon.id, team.id, {
         userId: user.id,
@@ -738,21 +1110,182 @@ function BrowseTeams({ hackathon, teams, myTeam, onChanged }: {
         userEmail: user.email,
         userAvatar: user.avatar,
         message: note.trim() || undefined,
+        ...profilePayload(profile),
       });
       // Reported by the API rather than inferred from the local policy copy.
       toast.success(result.message || (result.joined
         ? `Joined ${team.name}`
         : 'Request sent to the team lead'));
+
+      onProfileChange(profile);
+      setOpen(false);
       setNote('');
-      onChanged();
+      onDone();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to send request');
     } finally {
-      setRequesting(null);
+      setSaving(false);
     }
   };
 
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm">{instant ? 'Join' : 'Ask to join'}</Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{instant ? `Join ${team.name}` : `Ask to join ${team.name}`}</DialogTitle>
+          <DialogDescription>
+            {instant
+              ? 'You\'ll be added to the team straight away.'
+              : 'The team lead will see this and can approve or reject it.'}
+          </DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {/* What this team wants, so the applicant can speak to it. */}
+          {needs.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-primary/20 bg-primary/5 px-2.5 py-2">
+              <Search className="h-3 w-3 text-primary shrink-0" />
+              <span className="text-xs font-medium text-primary">This team is looking for:</span>
+              {needs.map(skill => (
+                <Badge key={skill} variant="outline" className="text-[10px] border-primary/30 text-primary">
+                  {skill}
+                </Badge>
+              ))}
+            </div>
+          )}
+
+          <MemberProfileFields
+            hackathon={hackathon}
+            form={profile}
+            onChange={setProfile}
+            idPrefix={`join-${team.id}`}
+          />
+
+          {!instant && (
+            <div className="space-y-2">
+              <Label htmlFor={`note-${team.id}`}>Message to the team lead</Label>
+              <Textarea
+                id={`note-${team.id}`}
+                value={note}
+                onChange={e => setNote(e.target.value)}
+                rows={3}
+                placeholder="Tell the lead what you'd bring to the team"
+              />
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-2 border-t">
+            <Button type="submit" disabled={saving} className="flex-1">
+              {saving
+                ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{instant ? 'Joining…' : 'Sending…'}</>
+                : (instant ? 'Join team' : 'Send request')}
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * Accepting an emailed invite.
+ *
+ * Same reasoning as JoinTeamDialog: accepting is the one moment this person is
+ * guaranteed to be present, so it's where the details get asked for. The fields
+ * stay optional here even when the hackathon requires them elsewhere — the lead
+ * invited this person directly, so a hard block on a one-click email link would
+ * be a dead end.
+ */
+function AcceptInviteDialog({ hackathon, teamName, needs, busy, onAccept }: {
+  hackathon: Hackathon;
+  teamName?: string;
+  needs: string[];
+  busy: boolean;
+  onAccept: (profile: ProfileFormState) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [profile, setProfile] = useState<ProfileFormState>(emptyProfileForm());
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setOpen(false);
+    onAccept(profile);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button disabled={busy} className="gap-2">
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+          Accept
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Join {teamName || 'the team'}</DialogTitle>
+          <DialogDescription>
+            Accepting adds you to the team and registers you for this hackathon.
+            Tell the team what you bring so they know how to work with you.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {needs.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-primary/20 bg-primary/5 px-2.5 py-2">
+              <Search className="h-3 w-3 text-primary shrink-0" />
+              <span className="text-xs font-medium text-primary">This team is looking for:</span>
+              {needs.map(skill => (
+                <Badge key={skill} variant="outline" className="text-[10px] border-primary/30 text-primary">
+                  {skill}
+                </Badge>
+              ))}
+            </div>
+          )}
+
+          <MemberProfileFields
+            hackathon={hackathon}
+            form={profile}
+            onChange={setProfile}
+            idPrefix="accept-invite"
+            forceOptional
+          />
+
+          <div className="flex gap-2 pt-2 border-t">
+            <Button type="submit" className="flex-1 gap-2">
+              <CheckCircle className="h-4 w-4" />Accept and join
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function BrowseTeams({ hackathon, teams, myTeam, onChanged }: {
+  hackathon: Hackathon;
+  teams: HackathonTeam[];
+  myTeam?: HackathonTeam;
+  onChanged: () => void;
+}) {
+  const { user } = useAuth();
+  const [skillFilter, setSkillFilter] = useState<string | null>(null);
+  // Remembered between dialogs so asking to join a second team doesn't mean
+  // retyping the same details.
+  const [lastProfile, setLastProfile] = useState<ProfileFormState>(emptyProfileForm());
+
+  const policy = hackathon.teamConfig?.joinPolicy ?? 'request';
+  const maxSize = hackathon.teamConfig?.maxSize ?? 4;
+
   const others = teams.filter(t => t.id !== myTeam?.id);
+  const filterOptions = availableSkillFilters(hackathon, others);
+  const visible = skillFilter
+    ? others.filter(team => teamMatchesSkill(team, skillFilter))
+    : others;
 
   if (others.length === 0) {
     return (
@@ -764,10 +1297,54 @@ function BrowseTeams({ hackathon, teams, myTeam, onChanged }: {
 
   return (
     <div className="space-y-3">
-      {others.map(team => {
+      {/* Skill filter: the point of collecting skills is being able to find the
+          team that needs what you have. */}
+      {filterOptions.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs text-muted-foreground mr-1">Filter by skill:</span>
+          <button
+            type="button"
+            onClick={() => setSkillFilter(null)}
+            aria-pressed={skillFilter === null}
+            className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
+              skillFilter === null
+                ? 'border-primary bg-primary text-primary-foreground'
+                : 'border-border bg-background hover:border-primary/40'
+            }`}
+          >
+            All
+          </button>
+          {filterOptions.map(skill => (
+            <button
+              key={skill}
+              type="button"
+              onClick={() => setSkillFilter(skillFilter === skill ? null : skill)}
+              aria-pressed={skillFilter === skill}
+              className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                skillFilter === skill
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-border bg-background hover:border-primary/40 hover:bg-primary/5'
+              }`}
+            >
+              {skill}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {skillFilter && visible.length === 0 && (
+        <p className="text-sm text-muted-foreground text-center py-6 border border-dashed rounded-lg">
+          No teams have or want "{skillFilter}".
+        </p>
+      )}
+      {visible.map(team => {
         const full = team.members.length >= maxSize;
         const alreadyRequested = (team.joinRequests || [])
           .some(r => r.userId === user?.id && r.status === 'pending');
+        const skills = teamSkills(team);
+        const spread = teamExperienceSpread(team);
+        const spreadTotal = spread.beginner + spread.intermediate + spread.advanced;
+        const needs = team.lookingForSkills || [];
 
         return (
           <Card key={team.id} className="glass-card">
@@ -791,46 +1368,84 @@ function BrowseTeams({ hackathon, teams, myTeam, onChanged }: {
                 </div>
 
                 {!myTeam && !full && policy !== 'invite_only' && (
-                  <Button
-                    size="sm"
-                    variant={alreadyRequested ? 'outline' : 'default'}
-                    disabled={requesting === team.id || alreadyRequested}
-                    onClick={() => handleRequest(team)}
-                  >
-                    {requesting === team.id ? <Loader2 className="h-4 w-4 animate-spin" />
-                      : alreadyRequested ? 'Requested'
-                        : policy === 'open' ? 'Join' : 'Ask to join'}
-                  </Button>
+                  alreadyRequested ? (
+                    <Button size="sm" variant="outline" disabled>Requested</Button>
+                  ) : (
+                    <JoinTeamDialog
+                      hackathon={hackathon}
+                      team={team}
+                      policy={policy}
+                      initialProfile={lastProfile}
+                      onProfileChange={setLastProfile}
+                      onDone={onChanged}
+                    />
+                  )
                 )}
               </div>
 
-              <div className="flex flex-wrap gap-1.5">
-                {team.members.map(member => (
-                  <Avatar key={member.userId} className="h-6 w-6" title={member.name}>
-                    <AvatarImage src={member.avatar} />
-                    <AvatarFallback className="text-[9px]">{member.name.charAt(0)}</AvatarFallback>
-                  </Avatar>
-                ))}
+              {/* What the team is missing — the most actionable line on the card,
+                  so it gets its own emphasis rather than being buried. */}
+              {needs.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-primary/20 bg-primary/5 px-2.5 py-1.5">
+                  <Search className="h-3 w-3 text-primary shrink-0" />
+                  <span className="text-xs font-medium text-primary">Looking for:</span>
+                  {needs.map(skill => (
+                    <Badge key={skill} variant="outline" className="text-[10px] border-primary/30 text-primary">
+                      {skill}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+
+              {skills.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-xs text-muted-foreground">Team skills:</span>
+                  {skills.slice(0, 8).map(skill => (
+                    <Badge key={skill} variant="secondary" className="text-[10px]">{skill}</Badge>
+                  ))}
+                  {skills.length > 8 && (
+                    <span className="text-xs text-muted-foreground">+{skills.length - 8} more</span>
+                  )}
+                </div>
+              )}
+
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap gap-1.5">
+                  {team.members.map(member => (
+                    <Avatar
+                      key={member.userId}
+                      className="h-6 w-6"
+                      title={[
+                        member.name,
+                        member.experienceLevel ? EXPERIENCE_LEVEL_SHORT[member.experienceLevel] : null,
+                        (member.skills || []).join(', ') || null,
+                      ].filter(Boolean).join(' — ')}
+                    >
+                      <AvatarImage src={member.avatar} />
+                      <AvatarFallback className="text-[9px]">{member.name.charAt(0)}</AvatarFallback>
+                    </Avatar>
+                  ))}
+                </div>
+
+                {spreadTotal > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {EXPERIENCE_LEVELS.filter(level => spread[level] > 0).map(level => (
+                      <Badge
+                        key={level}
+                        variant="outline"
+                        className={`text-[10px] ${EXPERIENCE_LEVEL_STYLES[level]}`}
+                      >
+                        {spread[level]} {EXPERIENCE_LEVEL_SHORT[level].toLowerCase()}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
         );
       })}
 
-      {!myTeam && policy === 'request' && (
-        <div className="space-y-2 pt-2">
-          <Label htmlFor="join-note" className="text-xs text-muted-foreground">
-            Optional note sent with your next join request
-          </Label>
-          <Textarea
-            id="join-note"
-            value={note}
-            onChange={e => setNote(e.target.value)}
-            rows={2}
-            placeholder="Tell the lead what you'd bring to the team"
-          />
-        </div>
-      )}
     </div>
   );
 }
@@ -1136,7 +1751,7 @@ function HackathonDetailView({ hackathonId }: { hackathonId: string }) {
     setSearchParams(next, { replace: true });
   };
 
-  const handleInvite = async (action: 'accept' | 'decline') => {
+  const handleInvite = async (action: 'accept' | 'decline', profile?: ProfileFormState) => {
     if (!inviteToken || !inviteTeamId) return;
 
     // Invites deliberately go to people who may not have an account yet, so this
@@ -1157,6 +1772,7 @@ function HackathonDetailView({ hackathonId }: { hackathonId: string }) {
         userName: user.name,
         userEmail: user.email,
         userAvatar: user.avatar,
+        ...(profile ? profilePayload(profile) : {}),
       });
       toast.success(result.message);
       clearInviteParams();
@@ -1233,10 +1849,13 @@ function HackathonDetailView({ hackathonId }: { hackathonId: string }) {
                 </p>
               </div>
               <div className="flex gap-2">
-                <Button disabled={respondingInvite} onClick={() => handleInvite('accept')} className="gap-2">
-                  {respondingInvite ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
-                  Accept
-                </Button>
+                <AcceptInviteDialog
+                  hackathon={hackathon}
+                  teamName={inviteTeam?.name}
+                  needs={inviteTeam?.lookingForSkills || []}
+                  busy={respondingInvite}
+                  onAccept={profile => handleInvite('accept', profile)}
+                />
                 <Button variant="outline" disabled={respondingInvite} onClick={() => handleInvite('decline')}>
                   Decline
                 </Button>
@@ -1270,16 +1889,29 @@ function HackathonDetailView({ hackathonId }: { hackathonId: string }) {
                 <p className="text-muted-foreground max-w-3xl">{hackathon.description}</p>
               </div>
 
-              {!isRegistered ? (
-                <Button onClick={handleRegister} disabled={registering} className="gap-2 shrink-0">
-                  {registering ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
-                  Register
-                </Button>
-              ) : (
-                <Badge className="gap-1.5 shrink-0 bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
-                  <CheckCircle className="h-3.5 w-3.5" />Registered
-                </Badge>
-              )}
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                {/* Only present in the API response once registered — a group
+                    invite link is effectively a password. */}
+                {isRegistered && hackathon.chatUrl && (
+                  <Button asChild variant="outline" className="gap-2">
+                    <a href={normalizeUrl(hackathon.chatUrl)} target="_blank" rel="noopener noreferrer">
+                      <MessageCircle className="h-4 w-4" />
+                      Join the chat
+                    </a>
+                  </Button>
+                )}
+
+                {!isRegistered ? (
+                  <Button onClick={handleRegister} disabled={registering} className="gap-2">
+                    {registering ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
+                    Register
+                  </Button>
+                ) : (
+                  <Badge className="gap-1.5 bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
+                    <CheckCircle className="h-3.5 w-3.5" />Registered
+                  </Badge>
+                )}
+              </div>
             </div>
 
             <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted-foreground pt-2 border-t">
@@ -1310,7 +1942,10 @@ function HackathonDetailView({ hackathonId }: { hackathonId: string }) {
 
         {/* Tabs */}
         <Tabs defaultValue="overview" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4 max-w-2xl">
+          {/* 2x2 on phones: four labelled tabs across a 375px screen clips the
+              text, since TabsTrigger is whitespace-nowrap. h-auto because the
+              base TabsList is a fixed height and would clip the second row. */}
+          <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 h-auto max-w-2xl">
             <TabsTrigger value="overview" className="gap-1.5">
               <Info className="h-3.5 w-3.5" />Overview
             </TabsTrigger>
@@ -1442,6 +2077,19 @@ function HackathonDetailView({ hackathonId }: { hackathonId: string }) {
                             {[mentor.designation, mentor.company].filter(Boolean).join(' · ')}
                           </p>
                         )}
+                        {/* Pool is a "meet the mentors" list, so no email here —
+                            the API withholds it. LinkedIn is public anyway. */}
+                        {mentor.linkedIn && (
+                          <a
+                            href={normalizeUrl(mentor.linkedIn)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                            LinkedIn
+                          </a>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -1460,11 +2108,23 @@ function HackathonDetailView({ hackathonId }: { hackathonId: string }) {
                     <AvatarImage src={individualMentor.photo} />
                     <AvatarFallback>{individualMentor.name.charAt(0)}</AvatarFallback>
                   </Avatar>
-                  <div>
+                  <div className="min-w-0">
                     <p className="font-medium">{individualMentor.name}</p>
-                    {individualMentor.email && (
-                      <a href={`mailto:${individualMentor.email}`} className="text-sm text-primary hover:underline">
-                        {individualMentor.email}
+                    {(individualMentor.designation || individualMentor.company) && (
+                      <p className="text-xs text-muted-foreground truncate">
+                        {[individualMentor.designation, individualMentor.company].filter(Boolean).join(' · ')}
+                      </p>
+                    )}
+                    {/* LinkedIn only, same rule as everywhere else. */}
+                    {individualMentor.linkedIn && (
+                      <a
+                        href={normalizeUrl(individualMentor.linkedIn)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                        LinkedIn
                       </a>
                     )}
                   </div>

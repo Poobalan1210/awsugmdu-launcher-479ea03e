@@ -34,6 +34,7 @@ import {
   addHackathonMentor, removeHackathonMentor, removeIndividualMentor,
   assignTeamMentor, removeTeamMentor,
   DEFAULT_TEAM_CONFIG, TEAM_JOIN_POLICY_LABELS,
+  EXPERIENCE_LEVEL_SHORT, EXPERIENCE_LEVEL_STYLES,
   type CreateHackathonData,
 } from '@/lib/hackathons';
 import { getSprints } from '@/lib/sprints';
@@ -113,6 +114,8 @@ interface HackathonFormState {
   theme: string;
   description: string;
   tracks: string;
+  /** Comma-separated in the form, split into an array on save. */
+  skillOptions: string;
   rules: string;
   prizes: string;
   startDate: string;
@@ -120,6 +123,7 @@ interface HackathonFormState {
   registrationDeadline: string;
   submissionDeadline: string;
   bannerImage: string;
+  chatUrl: string;
   sprintId: string;
   status: HackathonStatus;
   minSize: string;
@@ -127,6 +131,7 @@ interface HackathonFormState {
   joinPolicy: 'invite_only' | 'request' | 'open';
   allowIndividuals: boolean;
   allowMentorRequests: boolean;
+  requireMemberProfile: boolean;
 }
 
 const emptyForm = (): HackathonFormState => ({
@@ -134,6 +139,7 @@ const emptyForm = (): HackathonFormState => ({
   theme: '',
   description: '',
   tracks: '',
+  skillOptions: '',
   rules: '',
   prizes: '',
   startDate: '',
@@ -141,6 +147,7 @@ const emptyForm = (): HackathonFormState => ({
   registrationDeadline: '',
   submissionDeadline: '',
   bannerImage: '',
+  chatUrl: '',
   sprintId: '',
   status: 'draft',
   minSize: String(DEFAULT_TEAM_CONFIG.minSize),
@@ -148,6 +155,7 @@ const emptyForm = (): HackathonFormState => ({
   joinPolicy: DEFAULT_TEAM_CONFIG.joinPolicy,
   allowIndividuals: DEFAULT_TEAM_CONFIG.allowIndividuals,
   allowMentorRequests: DEFAULT_TEAM_CONFIG.allowMentorRequests,
+  requireMemberProfile: false,
 });
 
 const formFromHackathon = (h: Hackathon): HackathonFormState => ({
@@ -155,6 +163,7 @@ const formFromHackathon = (h: Hackathon): HackathonFormState => ({
   theme: h.theme || '',
   description: h.description,
   tracks: (h.tracks || []).join(', '),
+  skillOptions: (h.skillOptions || []).join(', '),
   rules: h.rules || '',
   prizes: h.prizes || '',
   startDate: h.startDate || '',
@@ -162,6 +171,7 @@ const formFromHackathon = (h: Hackathon): HackathonFormState => ({
   registrationDeadline: h.registrationDeadline || '',
   submissionDeadline: h.submissionDeadline || '',
   bannerImage: h.bannerImage || '',
+  chatUrl: h.chatUrl || '',
   sprintId: h.sprintId || '',
   status: h.status,
   minSize: String(h.teamConfig?.minSize ?? DEFAULT_TEAM_CONFIG.minSize),
@@ -169,6 +179,7 @@ const formFromHackathon = (h: Hackathon): HackathonFormState => ({
   joinPolicy: h.teamConfig?.joinPolicy ?? DEFAULT_TEAM_CONFIG.joinPolicy,
   allowIndividuals: h.teamConfig?.allowIndividuals ?? true,
   allowMentorRequests: h.teamConfig?.allowMentorRequests ?? true,
+  requireMemberProfile: h.teamConfig?.requireMemberProfile === true,
 });
 
 const NO_SPRINT = '__none__';
@@ -184,6 +195,7 @@ function buildPayload(
     theme: form.theme.trim() || undefined,
     description: form.description.trim(),
     tracks: form.tracks.split(',').map(t => t.trim()).filter(Boolean),
+    skillOptions: form.skillOptions.split(',').map(s => s.trim()).filter(Boolean),
     rules: form.rules.trim() || undefined,
     prizes: form.prizes.trim() || undefined,
     startDate: form.startDate,
@@ -191,6 +203,8 @@ function buildPayload(
     registrationDeadline: form.registrationDeadline || undefined,
     submissionDeadline: form.submissionDeadline || undefined,
     bannerImage: form.bannerImage.trim() || undefined,
+    // Sent even when blank so clearing the field removes the link.
+    chatUrl: form.chatUrl.trim(),
     sprintId: form.sprintId && form.sprintId !== NO_SPRINT ? form.sprintId : undefined,
     status: form.status,
     teamConfig: {
@@ -199,6 +213,7 @@ function buildPayload(
       joinPolicy: form.joinPolicy,
       allowIndividuals: form.allowIndividuals,
       allowMentorRequests: form.allowMentorRequests,
+      requireMemberProfile: form.requireMemberProfile,
     },
     submissionFormConfig: fields,
   };
@@ -307,6 +322,21 @@ function HackathonFormFields({ form, setForm, fields, setFields, sprints, resour
         />
       </div>
 
+      <div className="space-y-2">
+        <Label htmlFor="hk-skills">Skill options</Label>
+        <Input
+          id="hk-skills"
+          value={form.skillOptions}
+          onChange={e => update('skillOptions', e.target.value)}
+          placeholder="Comma-separated, e.g., React, Lambda, DynamoDB, Bedrock, Design"
+        />
+        <p className="text-xs text-muted-foreground">
+          Offered as one-tap choices when someone joins a team, and as the filter on the
+          teams list. Builders can still type their own, so this is a starting point rather
+          than a restriction — worth tailoring to each hackathon's theme.
+        </p>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="hk-rules">Rules</Label>
@@ -321,6 +351,21 @@ function HackathonFormFields({ form, setForm, fields, setFields, sprints, resour
       <div className="space-y-2">
         <Label htmlFor="hk-banner">Banner image URL</Label>
         <Input id="hk-banner" value={form.bannerImage} onChange={e => update('bannerImage', e.target.value)} placeholder="https://..." />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="hk-chat">Chat link</Label>
+        <Input
+          id="hk-chat"
+          value={form.chatUrl}
+          onChange={e => update('chatUrl', e.target.value)}
+          placeholder="https://chat.whatsapp.com/... or a Discord invite"
+        />
+        <p className="text-xs text-muted-foreground">
+          Where teams and mentors actually talk. Shown as a "Join the chat" button to
+          registered participants only, and included in team invite and approval emails.
+          Left deliberately external — people answer questions where they already are.
+        </p>
       </div>
 
       {/* Team rules */}
@@ -384,6 +429,26 @@ function HackathonFormFields({ form, setForm, fields, setFields, sprints, resour
             Let team leads pick a mentor from the pool themselves
           </Label>
         </div>
+
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="hk-require-profile"
+              className="h-4 w-4 rounded border-gray-300"
+              checked={form.requireMemberProfile}
+              onChange={e => update('requireMemberProfile', e.target.checked)}
+            />
+            <Label htmlFor="hk-require-profile" className="text-sm font-normal cursor-pointer">
+              Require experience level and at least one skill to join a team
+            </Label>
+          </div>
+          <p className="text-xs text-muted-foreground pl-6">
+            Off by default. Turning it on adds friction at the moment someone is trying to
+            join, and tends to produce placeholder answers — leave it off unless you really
+            need the data for every participant.
+          </p>
+        </div>
       </div>
 
       {resources && setResources && (
@@ -444,7 +509,7 @@ function CreateHackathonDialog({ sprints, onSaved }: { sprints: Sprint[]; onSave
       <DialogTrigger asChild>
         <Button className="gap-2"><Plus className="h-4 w-4" />Create Hackathon</Button>
       </DialogTrigger>
-      <DialogContent className="max-w-3xl overflow-y-auto max-h-[90vh]">
+      <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle>Create hackathon</DialogTitle>
           <DialogDescription>
@@ -514,7 +579,7 @@ function EditHackathonDialog({ hackathon, sprints, onSaved }: {
       <DialogTrigger asChild>
         <Button variant="outline" size="sm" className="gap-2"><Edit className="h-4 w-4" />Edit</Button>
       </DialogTrigger>
-      <DialogContent className="max-w-3xl overflow-y-auto max-h-[90vh]">
+      <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle>Edit hackathon</DialogTitle>
           <DialogDescription>{hackathon.title}</DialogDescription>
@@ -1041,20 +1106,42 @@ function TeamsPanel({ hackathon, teams, allUsers, canManage = true, onChanged }:
                 <Label className="text-xs uppercase tracking-wide text-muted-foreground">Members</Label>
                 <div className="space-y-1">
                   {team.members.map(member => (
-                    <div key={member.userId} className="flex items-center gap-2 text-sm">
-                      <Avatar className="h-6 w-6">
+                    <div key={member.userId} className="flex items-start gap-2 text-sm">
+                      <Avatar className="h-6 w-6 mt-0.5">
                         <AvatarImage src={member.avatar} />
                         <AvatarFallback className="text-[10px]">{member.name.charAt(0)}</AvatarFallback>
                       </Avatar>
-                      <span>{member.name}</span>
-                      {member.role === 'lead' && (
-                        <Badge variant="outline" className="gap-1 text-[10px]">
-                          <Crown className="h-3 w-3" />Lead
-                        </Badge>
-                      )}
-                      {member.email && (
-                        <span className="text-xs text-muted-foreground truncate">{member.email}</span>
-                      )}
+                      <div className="min-w-0 space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span>{member.name}</span>
+                          {member.role === 'lead' && (
+                            <Badge variant="outline" className="gap-1 text-[10px]">
+                              <Crown className="h-3 w-3" />Lead
+                            </Badge>
+                          )}
+                          {member.experienceLevel && (
+                            <Badge
+                              variant="outline"
+                              className={`text-[10px] ${EXPERIENCE_LEVEL_STYLES[member.experienceLevel]}`}
+                            >
+                              {EXPERIENCE_LEVEL_SHORT[member.experienceLevel]}
+                            </Badge>
+                          )}
+                          {member.email && (
+                            <span className="text-xs text-muted-foreground truncate">{member.email}</span>
+                          )}
+                        </div>
+                        {(member.skills || []).length > 0 && (
+                          <div className="flex flex-wrap gap-1">
+                            {member.skills.map(skill => (
+                              <Badge key={skill} variant="secondary" className="text-[10px]">{skill}</Badge>
+                            ))}
+                          </div>
+                        )}
+                        {member.note && (
+                          <p className="text-xs text-muted-foreground italic">{member.note}</p>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1489,7 +1576,9 @@ function HackathonCard({ hackathon, sprints, allUsers, canManage, onChanged }: {
               </div>
             ) : (
               <Tabs defaultValue="submissions" className="space-y-4">
-                <TabsList className={`grid w-full ${canManage ? 'grid-cols-4' : 'grid-cols-2'}`}>
+                {/* Nested inside a card, so even tighter than the page tabs:
+                    two per row on phones, full width from sm up. */}
+                <TabsList className={`grid w-full h-auto grid-cols-2 ${canManage ? 'sm:grid-cols-4' : 'sm:grid-cols-2'}`}>
                   <TabsTrigger value="submissions" className="gap-1.5">
                     <Send className="h-3.5 w-3.5" />Submissions
                   </TabsTrigger>

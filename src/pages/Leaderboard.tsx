@@ -56,9 +56,10 @@ const Leaderboard = () => {
         .map((user, index) => ({ ...user, rank: index + 1 }))
     : [];
 
+  // Search is name-only on purpose: emails are never exposed on the public
+  // leaderboard, so matching on them would allow address enumeration.
   const filteredUsers = rankedUsers.filter(user =>
-    user.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    user.email?.toLowerCase().includes(searchQuery.toLowerCase())
+    user.name?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
@@ -86,7 +87,7 @@ const Leaderboard = () => {
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search by name or email..."
+                  placeholder="Search by name..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-10"
@@ -146,7 +147,6 @@ const Leaderboard = () => {
                           </Avatar>
                           <div className="flex-1 min-w-0">
                             <p className="font-semibold text-lg truncate">{user.name}</p>
-                            <p className="text-sm text-muted-foreground truncate">{user.email}</p>
                             <p className="text-xs text-muted-foreground mt-1">
                               {user.badges?.length || 0} badges earned
                             </p>

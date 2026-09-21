@@ -23,7 +23,7 @@ export function HeroSection() {
     isStatic?: boolean;
   }[] = [
     { label: 'Meetup Members', value: MEETUP_MEMBER_COUNT, icon: UsersRound, isStatic: true },
-    { label: 'Active Members', value: stats?.memberCount ?? 0, icon: Users },
+    { label: 'Active Platform Users', value: stats?.memberCount ?? 0, icon: Users },
     { label: 'Meetups Hosted', value: MEETUPS_HOSTED_COUNT, icon: CalendarCheck, isStatic: true },
     { label: 'Events in 2026', value: stats?.meetupCount ?? 0, icon: Calendar },
     { label: 'Best UG Nominations', value: BEST_UG_NOMINATIONS, icon: Trophy, isStatic: true },

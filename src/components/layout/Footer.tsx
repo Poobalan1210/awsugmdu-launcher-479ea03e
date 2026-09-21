@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Github, Twitter, Linkedin, Youtube } from 'lucide-react';
+import { Github, Instagram, Linkedin, Youtube } from 'lucide-react';
 import logo from '@/assets/logo.png';
 export function Footer() {
   return <footer className="border-t border-border bg-card">
@@ -15,16 +15,40 @@ export function Footer() {
             Building a community of cloud enthusiasts, sharing knowledge, and helping each other grow in the AWS ecosystem.
           </p>
           <div className="flex gap-4 mt-6">
-            <a href="#" className="text-muted-foreground hover:text-primary transition-colors">
-              <Twitter className="h-5 w-5" />
+            <a
+              href="https://www.instagram.com/awsugmdu/"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="AWS User Group Madurai on Instagram"
+              className="text-muted-foreground hover:text-primary transition-colors"
+            >
+              <Instagram className="h-5 w-5" />
             </a>
-            <a href="#" className="text-muted-foreground hover:text-primary transition-colors">
+            <a
+              href="https://www.linkedin.com/in/awsugmdu/"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="AWS User Group Madurai on LinkedIn"
+              className="text-muted-foreground hover:text-primary transition-colors"
+            >
               <Linkedin className="h-5 w-5" />
             </a>
-            <a href="#" className="text-muted-foreground hover:text-primary transition-colors">
+            <a
+              href="https://www.youtube.com/@awsugmdu"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="AWS User Group Madurai on YouTube"
+              className="text-muted-foreground hover:text-primary transition-colors"
+            >
               <Youtube className="h-5 w-5" />
             </a>
-            <a href="#" className="text-muted-foreground hover:text-primary transition-colors">
+            <a
+              href="https://github.com/awsugmdu"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="AWS User Group Madurai on GitHub"
+              className="text-muted-foreground hover:text-primary transition-colors"
+            >
               <Github className="h-5 w-5" />
             </a>
           </div>

@@ -18,16 +18,17 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   GraduationCap, Clock, Trophy, Terminal, Copy, Check, ExternalLink, Github,
   ShieldAlert, Loader2, LogIn, Sparkles, GitCommit, CircleCheck, CircleDashed,
-  KeyRound, AlertTriangle, ArrowRight,
+  KeyRound, AlertTriangle, ArrowRight, FolderGit2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import {
-  BASE_REWARD_BLURB, COMPLETION_AWARD_CREDITS, ENTRY_DEADLINE_IST_LABEL, LESSONS,
-  MAX_CREDITS, PLATFORM_LABEL, REWARD_TIERS, detectPlatform, getCampaignLeaderboard,
-  getMyCampaign, getValidatedCount, joinCampaign, mintSetupCode, rotateKironomicsKey,
-  setupCommand, slotsRemaining, tierForPosition, timeLeftToDeadline,
-  type Platform,
+  BASE_REWARD_BLURB, COMPLETION_AWARD_CREDITS, ENTRY_DEADLINE_IST_LABEL, KIRO_ARTIFACTS,
+  LESSONS, MAX_CREDITS, PLATFORM_LABEL, REWARD_TIERS, artifactGaps, detectPlatform,
+  getCampaignLeaderboard, getMyCampaign, getValidatedCount, joinCampaign,
+  lessonsWithEvidence, mintSetupCode, rotateKironomicsKey, setLessons, setupCommand,
+  slotsRemaining, tierForPosition, timeLeftToDeadline,
+  type Platform, type RepoStats,
 } from '@/lib/campaign';
 
 const fadeUp = {
@@ -209,6 +210,97 @@ function SetupSection({
   );
 }
 
+/**
+ * What we can see in the committed .kiro/ folder. Fully automatic — derived by
+ * the sweep from the public repo, nothing for the participant to fill in.
+ *
+ * No lesson numbers here on purpose: Kiro has not published which feature maps
+ * to which lesson, so as a gap list this stays true regardless.
+ */
+function ArtifactGaps({ repo }: { repo?: RepoStats | null }) {
+  const { found, missing } = artifactGaps(repo?.artifacts);
+  const hasRepo = Boolean(repo?.fullName);
+
+  return (
+    <Card className="glass-card">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          <FolderGit2 className="h-4 w-4 text-primary" />
+          What Kiro will find in your repo
+        </CardTitle>
+        <CardDescription className="text-xs">
+          Read automatically from your committed <span className="font-mono">.kiro/</span> folder
+          every few hours. Reviewers score what is in there, so anything missing is
+          unclaimed credit.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {!hasRepo ? (
+          <p className="text-sm text-muted-foreground">
+            Run the setup command below and this fills in on its own.
+          </p>
+        ) : (
+          <>
+            <div className="flex items-center gap-3">
+              <Progress
+                value={(found.length / KIRO_ARTIFACTS.length) * 100}
+                className="h-2 flex-1"
+              />
+              <span className="text-xs text-muted-foreground tabular-nums shrink-0">
+                {found.length}/{KIRO_ARTIFACTS.length}
+              </span>
+            </div>
+
+            <div className="grid gap-2 sm:grid-cols-2">
+              {KIRO_ARTIFACTS.map((a) => {
+                const present = Boolean(repo?.artifacts?.[a.key]);
+                return (
+                  <div
+                    key={a.key}
+                    className={`rounded-lg border p-2.5 ${
+                      present
+                        ? 'border-green-600/30 bg-green-600/5'
+                        : 'border-border/60 bg-muted/30'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      {present
+                        ? <CircleCheck className="h-4 w-4 text-green-600 shrink-0" />
+                        : <CircleDashed className="h-4 w-4 text-muted-foreground shrink-0" />}
+                      <span className="text-sm font-medium truncate">{a.label}</span>
+                    </div>
+                    {!present && (
+                      <p className="text-xs text-muted-foreground mt-1 leading-snug">{a.hint}</p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {missing.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                Missing {missing.length}: {missing.map((m) => m.label).join(', ')}. Each one you
+                add and commit is more of the rubric covered.
+              </p>
+            )}
+            {repo?.hasKiroFolder === false && (
+              <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>No .kiro folder in your repo</AlertTitle>
+                <AlertDescription className="text-sm">
+                  Kiro requires it committed. Check <span className="font-mono">.gitignore</span>{' '}
+                  does not contain a bare <span className="font-mono">.kiro</span> line — that is
+                  the most common way a finished entry scores zero.
+                </AlertDescription>
+              </Alert>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function ChecklistRow({
   done, title, detail, action,
 }: {
@@ -242,6 +334,7 @@ export default function KiroUniversity() {
   const [minting, setMinting] = useState(false);
   const [rotating, setRotating] = useState(false);
   const [rotatedKey, setRotatedKey] = useState('');
+  const [savingLessons, setSavingLessons] = useState(false);
 
   const { data: me, refetch: refetchMe } = useQuery({
     queryKey: ['campaign-me', user?.id],
@@ -289,6 +382,43 @@ export default function KiroUniversity() {
     } finally {
       setMinting(false);
     }
+  };
+
+  // Lessons we have file evidence for that are not ticked yet. The mapping from
+  // artifact to lesson number is still provisional, so this offers rather than
+  // asserts — the participant confirms with one click.
+  const evidenceToApply = useMemo(() => {
+    const already = new Set(me?.lessonsRecorded ?? []);
+    return lessonsWithEvidence(me?.repo?.artifacts).filter((id) => !already.has(id));
+  }, [me?.lessonsRecorded, me?.repo?.artifacts]);
+
+  const saveLessons = async (next: Set<string>) => {
+    setSavingLessons(true);
+    try {
+      await setLessons([...next]);
+      await refetchMe();
+    } catch {
+      toast.error('Could not save that — try again');
+    } finally {
+      setSavingLessons(false);
+    }
+  };
+
+  const applyDetected = async () => {
+    const next = new Set([...(me?.lessonsRecorded ?? []), ...evidenceToApply]);
+    await saveLessons(next);
+  };
+
+  const toggleLesson = async (id: string, next: boolean) => {
+    // Send only what was ticked here. The backend unions this with the manifest
+    // in their repo, so unticking cannot silently erase a manifest entry —
+    // it will reappear on the next sweep, which is the honest behaviour.
+    const current = new Set(me?.lessonsRecorded ?? []);
+    next ? current.add(id) : current.delete(id);
+    // Sends the complete desired set. The server treats anything the repo
+    // manifest claims but this omits as a deliberate removal, so unticking
+    // sticks instead of reappearing on the next sweep.
+    await saveLessons(current);
   };
 
   const handleRotate = async () => {
@@ -499,7 +629,7 @@ export default function KiroUniversity() {
                         done={(me?.repo?.activeDays ?? 0) > 0}
                         title="Building"
                         detail={me?.repo
-                          ? `${me.repo.activeDays} active day${me.repo.activeDays === 1 ? '' : 's'}, ${me.repo.commitCount} commits`
+                          ? `${me.repo.activeDays} active day${me.repo.activeDays === 1 ? '' : 's'} and ${me.repo.commitCount} commit${me.repo.commitCount === 1 ? '' : 's'} inside the challenge window. Counted in IST.`
                           : 'Commit at least once a day so progress is visible.'}
                       />
                       <ChecklistRow
@@ -516,6 +646,8 @@ export default function KiroUniversity() {
                       />
                     </CardContent>
                   </Card>
+
+                  <ArtifactGaps repo={me?.repo} />
 
                   <SetupSection
                     code={setupCode}
@@ -549,27 +681,57 @@ export default function KiroUniversity() {
 
                   <Card className="glass-card">
                     <CardHeader className="pb-3">
-                      <CardTitle className="text-base">Lessons recorded</CardTitle>
+                      <CardTitle className="text-base">Lessons</CardTitle>
                       <CardDescription className="text-xs">
-                        Self-reported and evidence-corroborated. Kiro scores the real thing at
-                        judging.
+                        Self-reported, for our records. Kiro scores the real thing at judging.
+                        A tick in your repo&apos;s{' '}
+                        <span className="font-mono">.kiro/ugmdu.json</span> counts too.
                       </CardDescription>
                     </CardHeader>
-                    <CardContent className="space-y-2">
+                    <CardContent className="space-y-1">
+                      {evidenceToApply.length > 0 && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          className="w-full mb-2"
+                          disabled={savingLessons}
+                          onClick={applyDetected}
+                        >
+                          {savingLessons
+                            ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />
+                            : <Sparkles className="h-3.5 w-3.5 mr-2" />}
+                          Tick the {evidenceToApply.length} we found evidence for
+                        </Button>
+                      )}
                       {LESSONS.map((l) => {
-                        const done = me?.lessonsRecorded?.includes(l.n as never);
+                        const claimed = (me?.lessonsRecorded ?? []).includes(l.n);
+                        const evidence = l.artifact
+                          ? Boolean(me?.repo?.artifacts?.[l.artifact])
+                          : false;
                         return (
-                          <div key={String(l.n)} className="flex items-center justify-between text-sm">
-                            <span className="flex items-center gap-2">
-                              {done
-                                ? <CircleCheck className="h-3.5 w-3.5 text-green-600" />
-                                : <CircleDashed className="h-3.5 w-3.5 text-muted-foreground" />}
-                              {l.label}
-                            </span>
-                            <span className="text-muted-foreground text-xs tabular-nums">
+                          <label
+                            key={l.n}
+                            className="flex items-center gap-2.5 text-sm py-1.5 cursor-pointer rounded hover:bg-muted/40 px-1 -mx-1"
+                          >
+                            <Checkbox
+                              checked={claimed}
+                              disabled={savingLessons}
+                              onCheckedChange={(v) => toggleLesson(l.n, v === true)}
+                            />
+                            <span className="flex-1 min-w-0 truncate">{l.label}</span>
+                            {evidence && (
+                              <Badge
+                                variant="secondary"
+                                className="text-[10px] px-1.5 py-0 shrink-0"
+                                title={`A ${l.artifact} artifact is committed in your repo`}
+                              >
+                                {l.artifact} found
+                              </Badge>
+                            )}
+                            <span className="text-muted-foreground text-xs tabular-nums shrink-0">
                               {l.credits.toLocaleString()}
                             </span>
-                          </div>
+                          </label>
                         );
                       })}
                       <Separator className="my-2" />

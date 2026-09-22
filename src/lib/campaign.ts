@@ -35,10 +35,14 @@ export const ACCOUNT_SAFE_BEFORE_ISO = '2026-06-21T00:00:00Z';
 export const ACCOUNT_FUZZY_BEFORE_ISO = '2026-07-05T00:00:00Z';
 
 export interface Lesson {
-  n: number | 'bonus1' | 'bonus2';
+  /** String id throughout — the backend normalises to '1'..'7' | 'bonus1' |
+   *  'bonus2', so comparing against a number would silently never match. */
+  n: string;
   label: string;
   credits: number;
-  /** The .kiro artifact that typically evidences this lesson, when there is one. */
+  /** The .kiro artifact that typically evidences this lesson, when there is one.
+   *  Presence corroborates a claim; it does not prove the lesson was
+   *  demonstrated. Kiro's reviewer decides that at judging. */
   artifact?: string;
 }
 
@@ -47,19 +51,64 @@ export interface Lesson {
  * so people can see where their award comes from — we do not award them.
  */
 export const LESSONS: Lesson[] = [
-  { n: 1, label: 'Lesson 1', credits: 250, artifact: 'steering' },
-  { n: 2, label: 'Lesson 2', credits: 250, artifact: 'specs' },
-  { n: 3, label: 'Lesson 3', credits: 250 },
-  { n: 4, label: 'Lesson 4', credits: 500, artifact: 'hooks' },
-  { n: 5, label: 'Lesson 5', credits: 500, artifact: 'mcp' },
-  { n: 6, label: 'Lesson 6', credits: 1000, artifact: 'agents' },
-  { n: 7, label: 'Lesson 7', credits: 1000 },
+  { n: '1', label: 'Lesson 1', credits: 250, artifact: 'steering' },
+  { n: '2', label: 'Lesson 2', credits: 250, artifact: 'specs' },
+  { n: '3', label: 'Lesson 3', credits: 250 },
+  { n: '4', label: 'Lesson 4', credits: 500, artifact: 'hooks' },
+  { n: '5', label: 'Lesson 5', credits: 500, artifact: 'mcp' },
+  { n: '6', label: 'Lesson 6', credits: 1000, artifact: 'agents' },
+  { n: '7', label: 'Lesson 7', credits: 1000 },
   { n: 'bonus1', label: 'Bonus 1 (paid plans)', credits: 250 },
   { n: 'bonus2', label: 'Bonus 2', credits: 250 },
 ];
 
 export const COMPLETION_AWARD_CREDITS = 1000;
 export const MAX_CREDITS = 5250;
+
+/**
+ * What the sweep can actually observe in a participant's committed .kiro/ folder.
+ *
+ * Deliberately NOT labelled with lesson numbers. Kiro publishes its lessons
+ * daily on social and Discord and has not stated which feature maps to which
+ * lesson, so any mapping we assert is a guess. Telling someone "Lesson 4
+ * complete" on a guess could have them skip whatever Lesson 4 really was and
+ * lose 500 credits — worse than not telling them at all.
+ *
+ * As a gap list this is useful regardless of the mapping: "you have no MCP
+ * config" is actionable whether or not MCP is Lesson 5.
+ *
+ * Once the real lesson list is published, set `lesson` on each entry and the
+ * UI can start attributing credits.
+ */
+export interface KiroArtifact {
+  key: string;
+  label: string;
+  /** What it is, for someone who has not done it yet. */
+  hint: string;
+  /** Filled in once Kiro's lesson mapping is known. */
+  lesson?: string;
+}
+
+export const KIRO_ARTIFACTS: KiroArtifact[] = [
+  { key: 'steering', label: 'Steering files', hint: 'Project rules Kiro follows on every turn — .kiro/steering/*.md' },
+  { key: 'specs', label: 'Specs', hint: 'requirements.md, design.md and tasks.md under .kiro/specs/' },
+  { key: 'hooks', label: 'Agent hooks', hint: 'Automation that fires on events — .kiro/hooks/*.json' },
+  { key: 'mcp', label: 'MCP servers', hint: 'External tools wired in via .kiro/settings/mcp.json' },
+  { key: 'agents', label: 'Custom agents', hint: 'Purpose-scoped agents under .kiro/agents/' },
+  { key: 'skills', label: 'Skills', hint: 'Reusable instructions — .kiro/skills/<name>/SKILL.md' },
+];
+
+/** Artifacts present and missing, from the last sweep. */
+export function artifactGaps(artifacts: Record<string, boolean> | undefined) {
+  const found = KIRO_ARTIFACTS.filter((a) => artifacts?.[a.key]);
+  const missing = KIRO_ARTIFACTS.filter((a) => !artifacts?.[a.key]);
+  return { found, missing };
+}
+
+/** Lessons we have file-level evidence for. Empty until the mapping is set. */
+export function lessonsWithEvidence(artifacts: Record<string, boolean> | undefined): string[] {
+  return LESSONS.filter((l) => l.artifact && artifacts?.[l.artifact]).map((l) => l.n);
+}
 
 // ── Reward tiers ──────────────────────────────────────────────────
 
@@ -141,7 +190,13 @@ export interface RepoStats {
   lastPushAt?: string | null;
   /** True when we could not reach the repo on the last sweep. */
   unreachable?: boolean;
+  /** null when the repo is empty — expected on day one, not a failure. */
+  eligible?: boolean | null;
+  hasKiroFolder?: boolean;
+  /** Which .kiro artifacts the sweep found. Corroboration, not proof. */
   artifacts?: Record<string, boolean>;
+  /** IST-bucketed days with at least one in-window commit. */
+  activeDayList?: string[];
 }
 
 export interface MyCampaign {
@@ -156,7 +211,8 @@ export interface MyCampaign {
   /** Set when an older setup published the key into a public repo. */
   kironomicsKeyExposed?: boolean;
   repo?: RepoStats | null;
-  lessonsRecorded: (number | string)[];
+  /** Union of what they ticked here and what is in .kiro/ugmdu.json. */
+  lessonsRecorded: string[];
   validatedPosition?: number | null;
   externalEntryConfirmedAt?: string | null;
 }
@@ -241,6 +297,21 @@ export async function rotateKironomicsKey(): Promise<{ apiKey: string; rotated: 
     { method: 'POST', body: JSON.stringify({ rotate: true }) },
   );
   return { apiKey: res?.data?.apiKey ?? '', rotated: Boolean(res?.data?.rotated) };
+}
+
+/**
+ * Record which lessons the participant is claiming.
+ *
+ * The other source is `lessons` in their committed .kiro/ugmdu.json. The backend
+ * unions the two, so ticking here never erases what the setup script wrote, and
+ * editing the manifest never erases what they ticked here.
+ */
+export async function setLessons(lessons: string[]): Promise<string[]> {
+  const res = await callApi<{ lessonsRecorded: string[] }>(`/campaign/${CAMPAIGN_ID}/lessons`, {
+    method: 'POST',
+    body: JSON.stringify({ lessons }),
+  });
+  return res.lessonsRecorded ?? [];
 }
 
 export async function confirmExternalEntry(): Promise<void> {

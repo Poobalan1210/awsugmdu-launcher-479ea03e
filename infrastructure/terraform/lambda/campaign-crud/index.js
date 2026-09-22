@@ -56,10 +56,37 @@ const WINDOW_START_ISO = '2026-09-21T16:00:00Z';
 // exactly at 16:00:00Z is eligible and must not count as a violation.
 const BEFORE_WINDOW_ISO = new Date(Date.parse(WINDOW_START_ISO) - 1000).toISOString();
 
+// Entries close Mon 5 Oct 23:59 PT = Tue 6 Oct 12:29 IST. Commits after this
+// do not count toward the challenge (and Kiro's own terms bar committing after
+// submission until judging concludes).
+const ENTRY_DEADLINE_ISO = '2026-10-06T06:59:00Z';
+
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000; // Asia/Kolkata, no DST
 const SETUP_CODE_TTL_SECONDS = 15 * 60;
 const STALE_AFTER_HOURS = 72;
 const COUNTER_KEY = '__counter__';
+
+// 3 pages x 100 = 300 in-window commits. Far beyond a two-week solo project,
+// and bounded so one prolific repo cannot stall the whole sweep.
+const MAX_COMMIT_PAGES = 3;
+
+/** The lessons a participant may claim. Anything else in a manifest is ignored. */
+const VALID_LESSONS = ['1', '2', '3', '4', '5', '6', '7', 'bonus1', 'bonus2'];
+
+/**
+ * Normalise a claimed lesson list from any source. Manifests are hand-editable,
+ * so this tolerates numbers, strings and junk, and never lets an arbitrary
+ * string into the stored record.
+ */
+function normaliseLessons(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const v of raw) {
+    const s = String(v).trim().toLowerCase();
+    if (VALID_LESSONS.includes(s) && !out.includes(s)) out.push(s);
+  }
+  return out.sort((a, b) => VALID_LESSONS.indexOf(a) - VALID_LESSONS.indexOf(b));
+}
 
 // ── HTTP helpers ──────────────────────────────────────────────────
 function corsHeaders() {
@@ -234,19 +261,40 @@ async function inspectRepo(fullName) {
     out.eligible = null;
   }
 
-  // Distinct active days, bucketed IST. 100 commits covers a two-week sprint.
-  const commits = await gh(`/repos/${owner}/${name}/commits?per_page=100`);
-  if (commits.status === 200 && Array.isArray(commits.body)) {
-    const days = new Set();
-    for (const c of commits.body) {
+  // Distinct active days INSIDE the challenge window, bucketed IST.
+  //
+  // `since` and `until` are what make this a challenge metric rather than a
+  // repo metric. Without them, work done before the window opened or after the
+  // deadline passed counted toward a member's leaderboard position — and only
+  // the most recent 100 commits were ever seen, so a heavy committer's earliest
+  // days were silently dropped. Bounding the query fixes both: everything
+  // returned is in-window by construction, and the result set shrinks.
+  const days = new Set();
+  let inWindowCommits = 0;
+  for (let page = 1; page <= MAX_COMMIT_PAGES; page++) {
+    const batch = await gh(
+      `/repos/${owner}/${name}/commits` +
+        `?since=${encodeURIComponent(WINDOW_START_ISO)}` +
+        `&until=${encodeURIComponent(ENTRY_DEADLINE_ISO)}` +
+        `&per_page=100&page=${page}`,
+    );
+    if (batch.status !== 200 || !Array.isArray(batch.body) || batch.body.length === 0) break;
+    for (const c of batch.body) {
       const d = c?.commit?.committer?.date || c?.commit?.author?.date;
       if (d) days.add(istDay(d));
     }
-    out.activeDays = days.size;
-    out.activeDayList = [...days].sort();
-    const head = await gh(`/repos/${owner}/${name}/commits?per_page=1`);
-    out.commitCount = commitCountFromLink(head.link, head.body);
+    inWindowCommits += batch.body.length;
+    if (batch.body.length < 100) break; // last page
   }
+  out.activeDays = days.size;
+  out.activeDayList = [...days].sort();
+  // Commits that count toward the challenge, not the repo's lifetime total.
+  out.commitCount = inWindowCommits;
+
+  // Lifetime total kept separately: useful for spotting a repo that was busy
+  // outside the window, without letting that inflate the leaderboard.
+  const head = await gh(`/repos/${owner}/${name}/commits?per_page=1`);
+  if (head.status === 200) out.totalCommitCount = commitCountFromLink(head.link, head.body);
 
   // .kiro contents, artifact map, and the leaked-key check in one tree call.
   if (out.defaultBranch) {
@@ -264,6 +312,12 @@ async function inspectRepo(fullName) {
         if (f.status === 200 && f.body?.content) {
           try {
             out.manifest = JSON.parse(Buffer.from(f.body.content, 'base64').toString('utf8'));
+            // Lessons the participant committed to their own repo. Self-declared
+            // and deliberate — they had to write it down and push it. The
+            // artifact map above corroborates, it does not adjudicate: we can
+            // see a steering file exists, not that a lesson was demonstrated.
+            // Kiro's reviewer makes that call at judging.
+            out.manifestLessons = normaliseLessons(out.manifest?.lessons);
           } catch {
             out.manifest = null;
           }
@@ -345,6 +399,28 @@ async function ensureKironomicsToken(userId, displayName) {
   return token;
 }
 
+/**
+ * Lessons a participant is credited with:
+ *
+ *   (ticked on the site  ∪  declared in .kiro/ugmdu.json)  −  explicitly removed
+ *
+ * The union exists because the two sources drift for innocent reasons — someone
+ * ticks a box, then the setup script rewrites the manifest.
+ *
+ * The subtraction is the important half. Without it, unticking a lesson that is
+ * present in the repo manifest appeared to work and then silently reverted on
+ * the next sweep six hours later, which reads as the site ignoring you.
+ */
+function mergedLessons(p) {
+  if (!p) return [];
+  const dismissed = new Set(normaliseLessons(p.lessonsDismissed));
+  const merged = new Set([
+    ...normaliseLessons(p.lessonsDeclared),
+    ...normaliseLessons(p.repo?.manifestLessons),
+  ]);
+  return normaliseLessons([...merged].filter((l) => !dismissed.has(l)));
+}
+
 function publicView(p) {
   if (!p) return null;
   return {
@@ -363,10 +439,13 @@ function publicView(p) {
           commitCount: p.repo.commitCount || 0,
           lastPushAt: p.repo.lastPushAt || null,
           unreachable: Boolean(p.repo.unreachable),
+          eligible: p.repo.eligible ?? null,
+          hasKiroFolder: Boolean(p.repo.hasKiroFolder),
           artifacts: p.repo.artifacts || {},
+          activeDayList: p.repo.activeDayList || [],
         }
       : null,
-    lessonsRecorded: p.lessonsRecorded || [],
+    lessonsRecorded: mergedLessons(p),
     validatedPosition: p.validatedPosition ?? null,
     externalEntryConfirmedAt: p.externalEntryConfirmedAt || null,
   };
@@ -407,7 +486,11 @@ async function handleJoin(campaignId, event) {
     intendedProjectName: (body.projectName || '').trim() || null,
     eligibleForKiroCredits: true,
     kironomicsConnected: false,
-    lessonsRecorded: [],
+    // Lessons live in `lessonsDeclared` (set from the site) and are merged with
+    // the manifest in the repo by mergedLessons(). Deliberately not initialised
+    // here: an unused `lessonsRecorded: []` on the record was what made this
+    // look populated while nothing ever wrote to it.
+    lessonsDeclared: [],
     updatedAt: new Date().toISOString(),
   };
 
@@ -437,7 +520,7 @@ async function handleLeaderboard(campaignId) {
       displayName: p.displayName || 'Builder',
       activeDays: p.repo?.activeDays || 0,
       commitCount: p.repo?.commitCount || 0,
-      lessonsRecorded: (p.lessonsRecorded || []).length,
+      lessonsRecorded: mergedLessons(p).length,
       validated: p.status === 'validated',
     }))
     // Active days first — distinct days, so a hundred pushes in one afternoon
@@ -590,6 +673,50 @@ async function handleRegisterRepo(event) {
   );
 
   return res(200, { repo: publicView({ repo: stats }).repo, eligible: stats.eligible });
+}
+
+/**
+ * Record which lessons the participant is claiming, from the site.
+ *
+ * The manifest in their repo is the other source, but expecting people to
+ * hand-edit .kiro/ugmdu.json as they go is wishful — a checkbox is what will
+ * actually get used. Both feed the same merged list.
+ */
+async function handleLessons(campaignId, event) {
+  const userId = extractUserId(event.headers?.Authorization || event.headers?.authorization);
+  if (!userId) return res(401, { error: 'authentication required' });
+
+  const body = parseBody(event);
+  if (!Array.isArray(body.lessons)) {
+    return res(400, { error: 'lessons must be an array' });
+  }
+  const declared = normaliseLessons(body.lessons);
+
+  // The client sends the complete set it wants shown as ticked. Anything the
+  // repo manifest claims but this set omits is treated as a deliberate removal,
+  // so the server derives dismissals rather than the UI having to track them.
+  const existing = await getParticipation(campaignId, userId);
+  if (!existing) return res(404, { error: 'participation not found' });
+  const fromManifest = normaliseLessons(existing.repo?.manifestLessons);
+  const dismissed = fromManifest.filter((l) => !declared.includes(l));
+
+  await docClient.send(
+    new UpdateCommand({
+      TableName: PARTICIPATION_TABLE,
+      Key: { campaignId, userId },
+      UpdateExpression:
+        'SET lessonsDeclared = :l, lessonsDismissed = :d, updatedAt = :n',
+      ExpressionAttributeValues: {
+        ':l': declared,
+        ':d': dismissed,
+        ':n': new Date().toISOString(),
+      },
+      ConditionExpression: 'attribute_exists(userId)',
+    }),
+  );
+
+  const updated = await getParticipation(campaignId, userId);
+  return res(200, { lessonsRecorded: mergedLessons(updated) });
 }
 
 async function handleConfirmEntry(campaignId, event) {
@@ -752,6 +879,7 @@ exports.handler = async (event) => {
       if (method === 'GET' && action === 'leaderboard') return await handleLeaderboard(campaignId);
       if (method === 'GET' && action === 'stats') return await handleStats(campaignId);
       if (method === 'POST' && action === 'setup-code') return await handleSetupCode(campaignId, event);
+      if (method === 'POST' && action === 'lessons') return await handleLessons(campaignId, event);
       if (method === 'POST' && action === 'confirm-entry') return await handleConfirmEntry(campaignId, event);
       if (method === 'POST' && action === 'validate') return await handleValidate(campaignId, event);
       if (method === 'POST' && action === 'sweep') {

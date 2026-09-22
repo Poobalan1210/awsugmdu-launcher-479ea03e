@@ -1,0 +1,11 @@
+{
+  "name": "campaign-crud",
+  "version": "1.0.0",
+  "description": "Lambda for the Kiro University build-along campaign: participation, setup codes, leaderboard, and the scheduled GitHub sweep",
+  "main": "index.js",
+  "type": "commonjs",
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.621.0",
+    "@aws-sdk/lib-dynamodb": "^3.621.0"
+  }
+}

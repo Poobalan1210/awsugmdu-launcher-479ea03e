@@ -2302,6 +2302,10 @@ resource "aws_api_gateway_deployment" "api" {
       aws_api_gateway_integration.kironomics_any_lambda.id,
       aws_api_gateway_integration.kironomics_proxy_any_lambda.id,
       aws_lambda_function.kironomics_crud.source_code_hash,
+      # Kiro University build-along campaign
+      aws_api_gateway_integration.campaign_any_lambda.id,
+      aws_api_gateway_integration.campaign_proxy_any_lambda.id,
+      aws_lambda_function.campaign_crud.source_code_hash,
       # Circles (renamed from certification-groups): force redeploy so the
       # new /circles path + renamed Lambda go live on the stage.
       aws_api_gateway_integration.certification_groups_get_lambda.id,
@@ -2531,6 +2535,9 @@ resource "aws_api_gateway_deployment" "api" {
     # Kironomics
     aws_api_gateway_integration.kironomics_any_lambda,
     aws_api_gateway_integration.kironomics_proxy_any_lambda,
+    # Kiro University build-along campaign
+    aws_api_gateway_integration.campaign_any_lambda,
+    aws_api_gateway_integration.campaign_proxy_any_lambda,
     # Hackathons
     aws_api_gateway_integration.hackathons_any_lambda,
     aws_api_gateway_integration.hackathons_proxy_any_lambda,

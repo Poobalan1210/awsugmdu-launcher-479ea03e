@@ -27,6 +27,7 @@ import AWSEvents from "./pages/AWSEvents";
 import SpeakerCodeOfConduct from "./pages/SpeakerCodeOfConduct";
 import SpeakerInvite from "./pages/SpeakerInvite";
 import Kironomics from "./pages/Kironomics";
+import KiroUniversity from "./pages/KiroUniversity";
 import Achievements from "./pages/Achievements";
 import NotFound from "./pages/NotFound";
 
@@ -69,6 +70,12 @@ const App = () => (
 
             {/* Kironomics — public landing so anyone can view rankings & install instructions */}
             <Route path="/kironomics" element={<Kironomics />} />
+
+            {/* Kiro University build-along. Deliberately PUBLIC: the rules,
+                reward tiers and leaderboard are what get shared into WhatsApp
+                and drive signups. Auth is required only to act (join, mint a
+                setup code), handled inside the page. */}
+            <Route path="/kiro" element={<KiroUniversity />} />
 
             {/* Achievements — public showcase of awards, milestones & community highlights */}
             <Route path="/achievements" element={<Achievements />} />

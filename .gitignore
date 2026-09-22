@@ -25,8 +25,10 @@ prompts_used_to_create_frontent.txt
 # Terraform
 infrastructure/terraform/.terraform/
 infrastructure/terraform/.terraform.lock.hcl
-infrastructure/terraform/terraform.tfstate
-infrastructure/terraform/terraform.tfstate.backup
+# Covers timestamped backups (terraform.tfstate.<epoch>.backup) too, which the
+# two narrower patterns previously here did not match.
+infrastructure/terraform/*.tfstate*
 infrastructure/terraform/*.tfvars
+infrastructure/terraform/.state-snapshots/
 infrastructure/terraform/lambda/*/node_modules/
 infrastructure/terraform/lambda/*/*.zip

@@ -214,7 +214,10 @@ async function awardPoints(event) {
     UpdateExpression: 'SET points = :points, redeemablePoints = :redeemablePoints, pointActivities = :pointActivities, activities = :activities, updatedAt = :updatedAt',
     ExpressionAttributeValues: {
       ':points': currentPoints + pointsNum,
-      ':redeemablePoints': (user.redeemablePoints || currentPoints) + pointsNum,
+      // `??` not `||`. A user who has spent down to exactly 0 has a falsy but
+      // correct balance; with `||` the next award fell through to their lifetime
+      // total and silently refunded everything they had ever spent.
+      ':redeemablePoints': (user.redeemablePoints ?? currentPoints) + pointsNum,
       ':pointActivities': pointActivities,
       ':activities': activities,
       ':updatedAt': new Date().toISOString()

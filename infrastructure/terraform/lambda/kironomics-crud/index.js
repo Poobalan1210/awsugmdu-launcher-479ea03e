@@ -269,13 +269,28 @@ async function handleProfile(event) {
   if (!userId) return createResponse(401, { error: 'authentication required' });
 
   let user = await getUserById(userId);
+  let rotated = false;
   if (!user) {
     user = newUser(userId, body.displayName);
+  } else if (body.rotate === true) {
+    // The only way to replace a compromised key. Older Kironomics setups wrote
+    // the key as a literal into .kiro/kironomics_report.py, and Kiro University
+    // requires committing .kiro/ to a PUBLIC repo — so anyone who did both
+    // published their key. Rotating keeps every stat and swaps only the
+    // credential. The old token stops resolving because token-index is rebuilt
+    // from this item on write.
+    //
+    // Additive: callers that omit `rotate` behave exactly as before.
+    const next = crypto.randomBytes(32).toString('hex');
+    user.token = next;
+    user.api_key = next;
+    user.token_rotated_at = new Date().toISOString();
+    rotated = true;
   }
   if (body.displayName) user.display_name = body.displayName;
   if (body.publicProfile !== undefined) user.publicProfile = body.publicProfile;
   await putUser(user);
-  return ok({ userId, updated: true, apiKey: user.token || user.api_key });
+  return ok({ userId, updated: true, rotated, apiKey: user.token || user.api_key });
 }
 
 async function handlePrompt(event) {

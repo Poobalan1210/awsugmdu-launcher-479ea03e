@@ -1,8 +1,11 @@
 # Terraform state files
 .terraform/
 .terraform.lock.hcl
-*.tfstate
-*.tfstate.backup
+# `*.tfstate*` on purpose, not `*.tfstate` + `*.tfstate.backup`. Terraform also
+# writes timestamped backups like terraform.tfstate.1780221540.backup, which
+# match neither of the narrower patterns — that is how a 1.2 MB state file with
+# 879 resources ended up committed and public.
+*.tfstate*
 *.tfvars
 
 # Lambda dependencies and builds

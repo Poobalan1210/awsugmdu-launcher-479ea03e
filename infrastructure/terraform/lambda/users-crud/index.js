@@ -19,11 +19,84 @@ const USER_POOL_ID = process.env.COGNITO_USER_POOL_ID;
 const PROFILE_PHOTOS_BUCKET = process.env.PROFILE_PHOTOS_BUCKET;
 const MEETUP_POSTERS_BUCKET = process.env.MEETUP_POSTERS_BUCKET;
 
+const { isOrganiserEmail } = require('./adminUtils');
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Content-Type,Authorization',
   'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
 };
+
+// ── PII protection ────────────────────────────────────────────────
+// GET /users is reachable without authentication and used to return every
+// field of every member record — including email and meetupEmail — to anyone
+// who called it. The API base is in the public JS bundle, so this was a live
+// address-harvesting endpoint.
+//
+// Rather than add auth across every route (separate, larger work), the actual
+// harm is removed by never serialising contact details to a caller who is not
+// the owner or an organiser. The public leaderboard, profile slugs and member
+// lists only ever needed name, avatar, points and id.
+
+/** Fields that must never reach a caller who is not the owner or an organiser. */
+const PRIVATE_USER_FIELDS = [
+  'email',
+  'meetupEmail',
+  'meetupVerificationStatus',
+];
+
+/**
+ * Read claims from the Cognito Authorization header. The payload is base64url,
+ * so it is decoded without verifying the signature — consistent with
+ * lambda/shared/auth.js and kironomics-crud across this stack.
+ *
+ * Note this means a crafted token could claim any `sub`. That is acceptable for
+ * *widening* a response to the owner, but it is why the organiser check below
+ * also confirms the role against the users table rather than trusting `email`.
+ */
+function extractClaims(event) {
+  const header = event?.headers?.Authorization || event?.headers?.authorization;
+  if (!header) return null;
+  const token = String(header).replace(/^Bearer\s+/i, '').trim();
+  if (!token || !token.includes('.')) return null;
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const payload = JSON.parse(Buffer.from(base64, 'base64').toString('utf8'));
+    return {
+      sub: payload.sub || payload['cognito:username'] || null,
+      email: payload.email || null,
+    };
+  } catch (error) {
+    return null;
+  }
+}
+
+/** Organiser by configured email, or by the role stored on their own record. */
+async function callerIsOrganiser(event) {
+  const claims = extractClaims(event);
+  if (!claims) return false;
+  if (claims.email && isOrganiserEmail(claims.email)) return true;
+  if (!claims.sub) return false;
+  try {
+    const r = await docClient.send(new GetCommand({
+      TableName: USERS_TABLE,
+      Key: { userId: claims.sub },
+    }));
+    const role = r.Item?.role;
+    return role === 'admin' || role === 'organiser';
+  } catch (error) {
+    return false;
+  }
+}
+
+function redactUser(user) {
+  if (!user) return user;
+  const copy = { ...user };
+  for (const field of PRIVATE_USER_FIELDS) delete copy[field];
+  return copy;
+}
 
 exports.handler = async (event) => {
   console.log('Event:', JSON.stringify(event, null, 2));
@@ -44,11 +117,11 @@ exports.handler = async (event) => {
     switch (httpMethod) {
       case 'GET':
         if (userId) {
-          // Get single user by ID
-          return await getUser(userId);
+          // Get single user by ID. Contact details only for the owner or an organiser.
+          return await getUser(userId, event);
         } else {
-          // Get all users (for admin)
-          return await getAllUsers();
+          // Get all users. Contact details only for organisers.
+          return await getAllUsers(event);
         }
       
       case 'POST':
@@ -96,7 +169,7 @@ exports.handler = async (event) => {
   }
 };
 
-async function getUser(userId) {
+async function getUser(userId, event) {
   try {
     const result = await docClient.send(new GetCommand({
       TableName: USERS_TABLE,
@@ -110,11 +183,17 @@ async function getUser(userId) {
         body: JSON.stringify({ error: 'User not found' }),
       };
     }
-    
+
+    // The owner must still receive their own email — AuthContext builds the
+    // signed-in User from this response. Everyone else gets the redacted view.
+    const claims = extractClaims(event);
+    const isOwner = Boolean(claims?.sub) && claims.sub === userId;
+    const full = isOwner || (await callerIsOrganiser(event));
+
     return {
       statusCode: 200,
       headers: corsHeaders,
-      body: JSON.stringify(result.Item),
+      body: JSON.stringify(full ? result.Item : redactUser(result.Item)),
     };
   } catch (error) {
     console.error('Error getting user:', error);
@@ -122,17 +201,23 @@ async function getUser(userId) {
   }
 }
 
-async function getAllUsers() {
+async function getAllUsers(event) {
   try {
     const result = await docClient.send(new ScanCommand({
       TableName: USERS_TABLE,
     }));
-    
+
+    const items = result.Items || [];
+    // Organisers keep the full records — the admin members tab, meetup
+    // verification and hackathon judging all need contact details.
+    const full = await callerIsOrganiser(event);
+    const users = full ? items : items.map(redactUser);
+
     return {
       statusCode: 200,
       headers: corsHeaders,
       body: JSON.stringify({
-        users: result.Items || [],
+        users,
         count: result.Count || 0,
       }),
     };

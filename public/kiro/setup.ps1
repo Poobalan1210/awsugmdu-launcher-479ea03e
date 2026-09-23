@@ -22,6 +22,34 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+function Write-Utf8Json {
+  <#
+    Write JSON as UTF-8 with NO byte-order mark.
+
+    Why this exists: `Set-Content -Encoding UTF8` emits a BOM on Windows PowerShell 5.1
+    (PowerShell 7 changed UTF8 to mean BOM-less, 5.1 did not). Python's
+    `json.load(open(path))` then fails with "Expecting value: line 1 column 1 (char 0)",
+    because the BOM decodes to a leading U+FEFF character. The page's install command runs
+    `powershell`, i.e. 5.1, so this hit every Windows member and nobody on macOS or Linux.
+    .NET's UTF8Encoding($false) is BOM-less on every PowerShell version.
+  #>
+  param(
+    [Parameter(Position = 0, Mandatory = $true)][string]$Path,
+    [Parameter(ValueFromPipeline = $true)][string[]]$InputObject
+  )
+  begin { $chunks = New-Object System.Collections.Generic.List[string] }
+  process { foreach ($chunk in $InputObject) { $chunks.Add($chunk) } }
+  end {
+    $full = if ([System.IO.Path]::IsPathRooted($Path)) { $Path }
+            else { Join-Path (Get-Location).Path $Path }
+    $dir = Split-Path -Parent $full
+    if ($dir -and -not (Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
+    $body = $chunks -join "`r`n"
+    if ($body -and -not $body.EndsWith("`n")) { $body += "`r`n" }
+    [System.IO.File]::WriteAllText($full, $body, (New-Object System.Text.UTF8Encoding($false)))
+  }
+}
+
 $Site = if ($env:UGMDU_SITE) { $env:UGMDU_SITE } else { 'https://www.awsugmdu.in' }
 $Api  = if ($env:UGMDU_API)  { $env:UGMDU_API }  else { 'https://2q4zt5zl9e.execute-api.us-east-1.amazonaws.com/dev' }
 
@@ -79,7 +107,9 @@ if ($SetupCode) {
 }
 
 if ($Token) {
-  Set-Content -NoNewline -Path $TokenFile -Value $Token
+  # Explicitly BOM-less and newline-less: report.py reads this with TOKEN_FILE.read_text().strip().
+  # This only worked before because 5.1's *default* Set-Content encoding happens to be BOM-less ANSI.
+  [System.IO.File]::WriteAllText($TokenFile, $Token, (New-Object System.Text.UTF8Encoding($false)))
   Ok "Kironomics key stored at $TokenFile (outside your project)"
 } elseif ((Test-Path $TokenFile) -and (Get-Item $TokenFile).Length -gt 0) {
   Ok 'existing Kironomics key found - keeping it'
@@ -90,7 +120,7 @@ if ($Token) {
   $plain = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
     [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure))
   if (-not $plain) { Die "No key provided. Get one at $Site/kiro and re-run." }
-  Set-Content -NoNewline -Path $TokenFile -Value $plain
+  [System.IO.File]::WriteAllText($TokenFile, $plain, (New-Object System.Text.UTF8Encoding($false)))
   Ok "Kironomics key stored at $TokenFile"
 }
 
@@ -173,8 +203,10 @@ $hooks = [ordered]@{
     }
   )
 }
-$hooks | ConvertTo-Json -Depth 10 | Set-Content -Path '.kiro/hooks/kironomics.json' -Encoding UTF8
-& $Py -c "import json;json.load(open('.kiro/hooks/kironomics.json'))"
+$hooks | ConvertTo-Json -Depth 10 | Write-Utf8Json '.kiro/hooks/kironomics.json'
+# utf-8-sig tolerates a BOM left behind by an older run of this script, so a member who
+# already has a poisoned hooks file is repaired by re-running rather than blocked again.
+& $Py -c "import json,io;json.load(io.open('.kiro/hooks/kironomics.json',encoding='utf-8-sig'))"
 if ($LASTEXITCODE -ne 0) { Die 'Wrote an invalid hooks file. Tell the AWS UG Madurai team.' }
 Ok 'hooks written to .kiro/hooks/kironomics.json'
 
@@ -183,7 +215,7 @@ if (-not (Test-Path '.kiro/ugmdu.json')) {
   [ordered]@{
     campaignId = $CampaignId; participantId = $ParticipantId
     lessons = @(); surfaces = @(); notes = @{}
-  } | ConvertTo-Json -Depth 10 | Set-Content -Path '.kiro/ugmdu.json' -Encoding UTF8
+  } | ConvertTo-Json -Depth 10 | Write-Utf8Json '.kiro/ugmdu.json'
   Ok 'manifest written to .kiro/ugmdu.json'
 } else {
   Warn 'manifest already exists - left untouched'
@@ -241,7 +273,7 @@ if ($repoJson -and $SetupCode) {
     # even if the call above never succeeds.
     $m = Get-Content '.kiro/ugmdu.json' -Raw | ConvertFrom-Json
     $m | Add-Member -NotePropertyName repoUrl -NotePropertyValue $r.url -Force
-    $m | ConvertTo-Json -Depth 10 | Set-Content '.kiro/ugmdu.json' -Encoding UTF8
+    $m | ConvertTo-Json -Depth 10 | Write-Utf8Json '.kiro/ugmdu.json'
   } catch {
     Warn 'could not register the repo yet; re-run this script to retry'
   }

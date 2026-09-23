@@ -50,6 +50,28 @@ function Write-Utf8Json {
   }
 }
 
+function Invoke-Native {
+  <#
+    Runs a native command whose non-zero exit is an expected, handled case (git rev-parse
+    outside a repo, gh auth status when signed out, git remote get-url with no origin yet,
+    etc.), without letting $ErrorActionPreference = 'Stop' turn its stderr into a
+    terminating exception.
+
+    Why this exists: Windows PowerShell 5.1 promotes a `2>`-redirected native command's
+    stderr into the error record pipeline, and 'Stop' then treats that as fatal - even
+    though the whole point of redirecting to $null was to swallow an *expected* failure.
+    This aborted setup for every Windows member starting a brand-new project (git
+    rev-parse --git-dir has nothing to find yet) and for anyone with gh installed but not
+    signed in (gh auth status), before setup ever reached the project directory.
+  #>
+  param([Parameter(Mandatory = $true)][scriptblock]$Command)
+  $prevEap = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try { & $Command 2>$null }
+  catch { $global:LASTEXITCODE = 1 }
+  finally { $ErrorActionPreference = $prevEap }
+}
+
 $Site = if ($env:UGMDU_SITE) { $env:UGMDU_SITE } else { 'https://www.awsugmdu.in' }
 $Api  = if ($env:UGMDU_API)  { $env:UGMDU_API }  else { 'https://2q4zt5zl9e.execute-api.us-east-1.amazonaws.com/dev' }
 
@@ -148,14 +170,14 @@ try {
 # 21 Sep 09:00 PT. A repo created now cannot violate that.
 $HaveGh = $false
 if (Get-Command gh -ErrorAction SilentlyContinue) {
-  gh auth status 2>$null | Out-Null
+  Invoke-Native { gh auth status } | Out-Null
   if ($LASTEXITCODE -eq 0) { $HaveGh = $true }
 }
 
-git rev-parse --git-dir 2>$null | Out-Null
+Invoke-Native { git rev-parse --git-dir } | Out-Null
 if ($LASTEXITCODE -eq 0) {
   Ok "using the existing repository in $(Get-Location)"
-  $old = git log --before='2026-09-21T09:00:00-07:00' --oneline 2>$null | Select-Object -First 3
+  $old = Invoke-Native { git log --before='2026-09-21T09:00:00-07:00' --oneline } | Select-Object -First 3
   if ($old) {
     Say ''
     Say '  STOP - this repo has commits from before the challenge window:'
@@ -227,10 +249,10 @@ if ((Test-Path '.gitignore') -and (Select-String -Path '.gitignore' -Pattern '^\
 }
 
 # -- 7. First commit and remote -------------------------------------
-git add .kiro 2>$null | Out-Null
-git diff --cached --quiet 2>$null
+Invoke-Native { git add .kiro } | Out-Null
+Invoke-Native { git diff --cached --quiet } | Out-Null
 if ($LASTEXITCODE -ne 0) {
-  git commit -q -m 'Set up Kiro University project scaffolding' 2>$null
+  Invoke-Native { git commit -q -m 'Set up Kiro University project scaffolding' } | Out-Null
   Ok 'committed the Kiro scaffolding'
 } else {
   Info 'nothing new to commit'
@@ -238,16 +260,16 @@ if ($LASTEXITCODE -ne 0) {
 
 $repoJson = ''
 if ($HaveGh) {
-  git remote get-url origin 2>$null | Out-Null
+  Invoke-Native { git remote get-url origin } | Out-Null
   if ($LASTEXITCODE -ne 0) {
     $name = Split-Path -Leaf (Get-Location)
     Info "creating a public GitHub repo: $name"
-    gh repo create $name --public --source=. --push 2>$null | Out-Null
+    Invoke-Native { gh repo create $name --public --source=. --push } | Out-Null
     if ($LASTEXITCODE -ne 0) { Warn 'could not create the repo automatically - create it yourself and re-run' }
   } else {
     Info 'remote already configured'
   }
-  $repoJson = gh repo view --json id,name,url,owner 2>$null
+  $repoJson = Invoke-Native { gh repo view --json id,name,url,owner }
 } else {
   Warn 'GitHub CLI not found or not signed in.'
   Warn "Install it, run 'gh auth login', then re-run this script to finish."

@@ -26,6 +26,25 @@ const primaryNavItems = [
   { name: 'Store', path: '/store' },
 ];
 
+/**
+ * Time-limited campaign CTA, promoted to the top bar rather than buried in the
+ * Programs dropdown because it has a hard deadline and only a short window.
+ *
+ * Kept as one self-contained constant and two render blocks so it can be
+ * removed in a single commit once entries close. Set `until` to the deadline and
+ * the nav hides itself automatically — nobody has to remember to take it down.
+ */
+const CAMPAIGN_NAV = {
+  name: 'Kiro University',
+  shortName: 'Kiro University',
+  path: '/kiro',
+  icon: GraduationCap,
+  /** Entries close Mon 5 Oct 23:59 PT = Tue 6 Oct 12:29 IST. */
+  until: '2026-10-06T06:59:00Z',
+};
+
+const campaignIsLive = () => Date.now() < Date.parse(CAMPAIGN_NAV.until);
+
 // Community initiatives grouped under the "Programs" dropdown.
 // Add new initiatives here instead of cluttering the top bar.
 const programItems = [
@@ -74,6 +93,29 @@ export function Header() {
         {primaryNavItems.map(item => <Link key={item.path} to={item.path} className={linkClass(location.pathname === item.path)}>
           {item.name}
         </Link>)}
+
+        {/* Campaign CTA — remove this block when the campaign ends */}
+        {campaignIsLive() && (
+          <Link
+            to={CAMPAIGN_NAV.path}
+            className={cn(
+              'ml-1 flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+              location.pathname === CAMPAIGN_NAV.path
+                ? 'bg-primary text-primary-foreground'
+                : 'border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20',
+            )}
+          >
+            <CAMPAIGN_NAV.icon className="h-4 w-4" />
+            {CAMPAIGN_NAV.shortName}
+            {/* Live indicator: a static ring plus an animated dot, so the motion
+                is decorative and the state is still legible without it. */}
+            <span className="relative flex h-2 w-2" aria-hidden="true">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+            </span>
+            <span className="sr-only">(live campaign)</span>
+          </Link>
+        )}
 
         {/* Programs dropdown */}
         <NavigationMenu>
@@ -206,6 +248,26 @@ export function Header() {
     {/* Mobile Navigation */}
     {mobileMenuOpen && <div className="lg:hidden border-t border-border bg-background animate-fade-in">
       <nav className="container mx-auto px-4 py-4 flex flex-col gap-2">
+        {/* Campaign CTA — remove this block when the campaign ends */}
+        {campaignIsLive() && (
+          <Link
+            to={CAMPAIGN_NAV.path}
+            onClick={() => setMobileMenuOpen(false)}
+            className={cn(
+              'flex items-center gap-3 rounded-md px-4 py-3 text-sm font-medium transition-colors',
+              location.pathname === CAMPAIGN_NAV.path
+                ? 'bg-primary text-primary-foreground'
+                : 'border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20',
+            )}
+          >
+            <CAMPAIGN_NAV.icon className="h-4 w-4 shrink-0" />
+            <span className="flex-1">{CAMPAIGN_NAV.name}</span>
+            <span className="rounded-full bg-primary/20 px-2 py-0.5 text-xs font-semibold">
+              Live
+            </span>
+          </Link>
+        )}
+
         {primaryNavItems.map(item => <Link key={item.path} to={item.path} onClick={() => setMobileMenuOpen(false)} className={`px-4 py-3 rounded-md text-sm font-medium transition-colors ${location.pathname === item.path ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}>
           {item.name}
         </Link>)}

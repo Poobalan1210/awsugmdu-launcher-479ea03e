@@ -120,7 +120,12 @@ def read_plan_data():
         db = kiro_state_db()
         if not db.exists():
             return {}
-        conn = sqlite3.connect(f"file:{db.as_posix()}?mode=ro&immutable=1", uri=True)
+        # as_uri() rather than "file:" + as_posix(): on Windows the latter builds
+        # "file:C:/Users/..." which SQLite does not reliably resolve, so the read
+        # failed, the exception was swallowed below, and Windows members silently
+        # got no credit data at all. as_uri() produces "file:///C:/Users/..."
+        # on Windows and "file:///..." on Unix.
+        conn = sqlite3.connect(f"{db.as_uri()}?mode=ro&immutable=1", uri=True)
         try:
             row = conn.execute(
                 "SELECT value FROM ItemTable WHERE key=?", ("kiro.kiroAgent",)

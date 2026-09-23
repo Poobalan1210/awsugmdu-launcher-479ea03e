@@ -38,6 +38,10 @@ elif command -v python >/dev/null 2>&1; then PY=python
 else die "Python 3 not found. Install Python 3 and re-run."
 fi
 command -v curl >/dev/null 2>&1 || die "curl not found. Install curl and re-run."
+# git is checked up front because this script runs `git init`, `git add` and
+# `git commit`. Without this the first git call fails midway with a raw shell
+# error, after the token and reporter have already been written.
+command -v git >/dev/null 2>&1 || die "git not found. Install git, then re-run this script."
 ok "using $(command -v "$PY")"
 
 # ── 2. Claim the setup code ───────────────────────────────────────
@@ -251,6 +255,18 @@ data = json.loads(p.read_text())
 data["repoUrl"] = reg.get("repoUrl","")
 p.write_text(json.dumps(data, indent=2) + "\n")
 PATCHMANIFEST
+    # The patch above rewrites the manifest AFTER the scaffolding commit, so
+    # without this the script always finished leaving the working tree dirty.
+    # Every participant would see an uncommitted .kiro/ugmdu.json and have to
+    # work out whether that mattered.
+    if ! git diff --quiet -- .kiro/ugmdu.json 2>/dev/null; then
+      git add .kiro/ugmdu.json >/dev/null 2>&1 || true
+      git -c user.email="$(git config user.email 2>/dev/null || echo 'builder@awsugmdu.in')" \
+          -c user.name="$(git config user.name 2>/dev/null || echo 'Builder')" \
+          commit -q -m "Record campaign repo URL in the Kiro manifest" >/dev/null 2>&1 \
+        && ok "manifest updated and committed" \
+        || warn "manifest updated but not committed — commit .kiro/ugmdu.json yourself"
+    fi
   fi
 fi
 

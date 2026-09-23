@@ -106,6 +106,27 @@ foreach ($candidate in @('python', 'python3', 'py')) {
 if (-not $Py) { Die 'Python 3 not found. Install it from python.org (tick "Add to PATH") and re-run.' }
 Ok "using $Py"
 
+# git is checked up front because this script runs `git init`, `git add` and
+# `git commit`. Without this the first git call fails midway with a raw
+# PowerShell exception, after the token and reporter are already written — and
+# on Windows git is the most likely prerequisite to be missing.
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+  Die 'git not found. Install it (winget install --id Git.Git) and re-run.'
+}
+Ok 'git present'
+
+# Windows PowerShell 5.1 inherits the .NET default security protocol, which on
+# unpatched machines still negotiates TLS 1.0/1.1. AWS API Gateway requires 1.2,
+# so Invoke-RestMethod and Invoke-WebRequest fail with "Could not create SSL/TLS
+# secure channel" — before the setup code can be claimed or the reporter
+# downloaded. -bor so an already-correct default is not clobbered.
+try {
+  [Net.ServicePointManager]::SecurityProtocol =
+    [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+} catch {
+  Warn 'could not force TLS 1.2 — if downloads fail, upgrade PowerShell'
+}
+
 # -- 2. Claim the setup code ----------------------------------------
 # Short-lived and single-use. Exchanged for the permanent Kironomics token so
 # that token never lands in command-line history or a screenshot.
@@ -156,7 +177,12 @@ try {
 try {
   Invoke-WebRequest -UseBasicParsing -Uri "$Site/kiro/report.py" -OutFile "$Reporter.new" -TimeoutSec 30
   Move-Item -Force "$Reporter.new" $Reporter
-  & $Py -m py_compile $Reporter 2>$null | Out-Null
+  # Routed through Invoke-Native for the same reason as the git/gh checks, but
+  # with a second consequence worth noting: this call sits inside the try block
+  # whose catch reports *download* failure. Left unguarded, a compile warning
+  # became a terminating error and the member was told to check their internet
+  # connection — the wrong diagnosis entirely.
+  Invoke-Native { & $Py -m py_compile $Reporter } | Out-Null
   if ($LASTEXITCODE -ne 0) { Die 'The reporter failed to compile. Tell the AWS UG Madurai team.' }
   Ok "reporter installed at $Reporter"
 } catch {
@@ -197,7 +223,11 @@ if ($LASTEXITCODE -eq 0) {
   if (Test-Path $ProjectName) { Die "./$ProjectName already exists. Pass a different name." }
   New-Item -ItemType Directory -Force -Path $ProjectName | Out-Null
   Set-Location $ProjectName
-  git init -q
+  # Guarded so a failure reports as a setup problem rather than surfacing a raw
+  # native-command exception. git existing is already checked above; this covers
+  # the remaining causes, e.g. no write permission in the target directory.
+  Invoke-Native { git init -q } | Out-Null
+  if ($LASTEXITCODE -ne 0) { Die "Could not initialise a git repository in ./$ProjectName" }
   Ok "created ./$ProjectName and initialised git"
 }
 

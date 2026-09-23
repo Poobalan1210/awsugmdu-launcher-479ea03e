@@ -110,6 +110,141 @@ export function lessonsWithEvidence(artifacts: Record<string, boolean> | undefin
   return LESSONS.filter((l) => l.artifact && artifacts?.[l.artifact]).map((l) => l.n);
 }
 
+// ── What Kiro's entry form requires ───────────────────────────────
+
+export const ENTRY_FORM_URL = 'https://kiro.dev/2026/university/';
+export const TERMS_URL = 'https://kiro.dev/2026/university/terms/';
+
+/** Judging concludes by this date; Kiro's terms bar committing until then. */
+export const JUDGING_ENDS_LABEL = '19 Oct 2026';
+
+export type RequirementStatus =
+  /** We checked it and it holds. */
+  | 'verified'
+  /** We checked it and it is disqualifying as-is. */
+  | 'blocked'
+  /** Only the participant can confirm this — we must not claim otherwise. */
+  | 'confirm'
+  /** Not checkable yet, usually because no repo is linked. */
+  | 'unknown';
+
+export interface SubmissionRequirement {
+  id: string;
+  label: string;
+  detail: string;
+  /** 'auto' = derived from the repo sweep. 'you' = self-confirmed. */
+  source: 'auto' | 'you';
+}
+
+/**
+ * Everything Kiro's entry form and terms require, in the order it bites.
+ *
+ * Several of these appear nowhere on Kiro's landing page — the account-age rule
+ * and the no-prior-commits rule are terms-only, which is exactly why people miss
+ * them until it is too late to fix.
+ */
+export const SUBMISSION_REQUIREMENTS: SubmissionRequirement[] = [
+  {
+    id: 'repo_public',
+    label: 'Public GitHub repo that you own',
+    detail: 'Private repos cannot be judged. It must be under your own account, not an organisation.',
+    source: 'auto',
+  },
+  {
+    id: 'first_commit',
+    label: 'No commits before 21 Sep, 09:00 PT',
+    detail: 'Deleting files does not fix it — the history is the problem. Never fork or clone an existing project.',
+    source: 'auto',
+  },
+  {
+    id: 'account_age',
+    label: 'GitHub account at least 3 months old',
+    detail: 'Nobody can fix this before the deadline. You can still earn every community reward with us.',
+    source: 'you',
+  },
+  {
+    id: 'kiro_folder',
+    label: '.kiro folder committed',
+    detail: 'This is what reviewers read to score each lesson. Never put a bare .kiro line in .gitignore.',
+    source: 'auto',
+  },
+  {
+    id: 'working_project',
+    label: 'A project that actually runs',
+    detail: 'Functional, not a static mockup. If it cannot be demonstrated on screen, it is not done.',
+    source: 'you',
+  },
+  {
+    id: 'demo_video',
+    label: 'Demo video, 30 seconds to 3 minutes',
+    detail: 'Publicly viewable while signed out. Anything past 3 minutes is not watched.',
+    source: 'you',
+  },
+  {
+    id: 'social_post',
+    label: 'Public post on X or LinkedIn',
+    detail: 'Must carry #KiroUniversity and #BuildWithKiro, tag @kirodotdev on X or @kiro on LinkedIn, and include your repo link, a 2–3 sentence description and the video.',
+    source: 'you',
+  },
+  {
+    id: 'lesson_writeup',
+    label: 'One line per lesson, saying how you used it',
+    detail: 'The entry form asks for this explicitly. Note each one down as you build — it is hard to reconstruct a week later.',
+    source: 'you',
+  },
+  {
+    id: 'entry_form',
+    label: 'Entry form submitted on kiro.dev',
+    detail: 'With the correct email — that is where credits are sent. One entry per person, individual work only.',
+    source: 'you',
+  },
+  {
+    id: 'stop_committing',
+    label: 'Stop committing once you submit',
+    detail: `Commits after submission, until judging concludes around ${JUDGING_ENDS_LABEL}, can disqualify the entry.`,
+    source: 'you',
+  },
+];
+
+/**
+ * Status for the requirements we can actually derive. Everything else stays
+ * 'confirm' — claiming a green tick we have not verified would be worse than
+ * saying nothing, because the participant would stop checking.
+ */
+export function requirementStatus(
+  id: string,
+  repo: RepoStats | null | undefined,
+): RequirementStatus {
+  if (!repo?.fullName) return 'unknown';
+  switch (id) {
+    case 'repo_public':
+      return repo.unreachable ? 'unknown' : 'verified';
+    case 'first_commit':
+      if (repo.eligible === true) return 'verified';
+      if (repo.eligible === false) return 'blocked';
+      return 'unknown';
+    case 'kiro_folder':
+      return repo.hasKiroFolder ? 'verified' : 'blocked';
+    default:
+      return 'confirm';
+  }
+}
+
+/** Pre-filled social post so the required tags and hashtags cannot be forgotten. */
+export function socialPostTemplate(repoUrl?: string, description?: string): string {
+  const desc = description?.trim() || '[2–3 sentences on what you built and what it does]';
+  const repo = repoUrl || '[your public repo link]';
+  return [
+    desc,
+    '',
+    `Repo: ${repo}`,
+    'Demo: [your public video link]',
+    '',
+    'Built with @kirodotdev for the Kiro University Challenge 🎓',
+    '#KiroUniversity #BuildWithKiro',
+  ].join('\n');
+}
+
 // ── Reward tiers ──────────────────────────────────────────────────
 
 export interface RewardTier {
@@ -261,12 +396,22 @@ export async function getCampaignLeaderboard(): Promise<LeaderboardRow[]> {
   }
 }
 
-export async function getValidatedCount(): Promise<number> {
+export interface CampaignStats {
+  validatedCount: number;
+  joinedCount: number;
+  withRepoCount: number;
+}
+
+export async function getCampaignStats(): Promise<CampaignStats> {
   try {
-    const res = await callApi<{ validatedCount?: number }>(`/campaign/${CAMPAIGN_ID}/stats`);
-    return res?.validatedCount ?? 0;
+    const res = await callApi<Partial<CampaignStats>>(`/campaign/${CAMPAIGN_ID}/stats`);
+    return {
+      validatedCount: res?.validatedCount ?? 0,
+      joinedCount: res?.joinedCount ?? 0,
+      withRepoCount: res?.withRepoCount ?? 0,
+    };
   } catch {
-    return 0;
+    return { validatedCount: 0, joinedCount: 0, withRepoCount: 0 };
   }
 }
 

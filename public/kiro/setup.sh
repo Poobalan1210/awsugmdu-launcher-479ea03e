@@ -110,8 +110,9 @@ fi
 HAVE_GH=0
 command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1 && HAVE_GH=1
 
-if git rev-parse --git-dir >/dev/null 2>&1; then
-  ok "using the existing repository in $(pwd)"
+# Run on every repo this script adopts rather than creates — including a folder
+# it resumes — because a repo with older history is disqualified outright.
+require_no_prewindow_commits() {
   OLD="$(git log --before='2026-09-21T09:00:00-07:00' --oneline 2>/dev/null | head -3 || true)"
   if [ -n "${OLD}" ]; then
     say ""
@@ -127,15 +128,35 @@ if git rev-parse --git-dir >/dev/null 2>&1; then
     exit 1
   fi
   ok "no commits before the challenge window"
+}
+
+if git rev-parse --git-dir >/dev/null 2>&1; then
+  ok "using the existing repository in $(pwd)"
+  require_no_prewindow_commits
 else
   [ -n "${PROJECT_NAME}" ] || PROJECT_NAME="kiro-university-project"
   if [ -e "${PROJECT_NAME}" ]; then
-    die "./${PROJECT_NAME} already exists. Pass a different name: sh $0 ${SETUP_CODE} another-name"
+    # A run that stopped partway (GitHub CLI missing, a Windows crash, a network
+    # blip) leaves its folder behind. Pick it up instead of telling the member
+    # to choose a new name, which started a second, empty project and stranded
+    # the first. A folder this script did not create is left alone.
+    if [ -d "${PROJECT_NAME}" ] && { [ -f "${PROJECT_NAME}/.kiro/ugmdu.json" ] || [ -f "${PROJECT_NAME}/.kiro/hooks/kironomics.json" ]; }; then
+      cd "${PROJECT_NAME}"
+      ok "picking up ./${PROJECT_NAME} where an earlier run stopped"
+      if git rev-parse --git-dir >/dev/null 2>&1; then
+        require_no_prewindow_commits
+      else
+        git init -q || die "Could not initialise a git repository in ./${PROJECT_NAME}"
+      fi
+    else
+      die "./${PROJECT_NAME} already exists and was not created by this script. Pass a different name: sh $0 ${SETUP_CODE} another-name"
+    fi
+  else
+    mkdir -p "${PROJECT_NAME}"
+    cd "${PROJECT_NAME}"
+    git init -q
+    ok "created ./${PROJECT_NAME} and initialised git"
   fi
-  mkdir -p "${PROJECT_NAME}"
-  cd "${PROJECT_NAME}"
-  git init -q
-  ok "created ./${PROJECT_NAME} and initialised git"
 fi
 
 # ── 5. Kiro hooks — one Python call each, so this works on every OS ─
@@ -229,44 +250,92 @@ else
 fi
 
 # ── 8. Register the repo with us — participant types nothing ───────
+# Sends the setup code when there is one, plus the Kironomics key saved in step
+# 2. The code expires 15 minutes after it is generated, so a re-run from shell
+# history carries a dead code; the key is what lets that re-run finish. Before
+# the key was accepted, such a re-run created and pushed the repo and then could
+# never register it.
 if [ -n "${REPO_JSON}" ]; then
-  REG="$(printf '%s' "${REPO_JSON}" | "$PY" -c '
-import json,sys
-d = json.load(sys.stdin)
-print(json.dumps({
-    "repoNodeId":  d.get("id"),
-    "fullName":    (d.get("owner") or {}).get("login","") + "/" + d.get("name",""),
-    "ownerLogin":  (d.get("owner") or {}).get("login",""),
-    "repoUrl":     d.get("url"),
-}))' 2>/dev/null || echo '')"
-  if [ -n "${REG}" ] && [ -n "${SETUP_CODE}" ]; then
-    curl -fsS -m 20 -X POST "${API}/campaign/repo" \
-      -H 'Content-Type: application/json' \
-      -d "$(printf '%s' "${REG}" | "$PY" -c "import json,sys;d=json.load(sys.stdin);d['code']='${SETUP_CODE}';print(json.dumps(d))")" \
-      >/dev/null 2>&1 && ok "repository registered — your progress is now tracked" \
-      || warn "could not register the repo yet; re-run this script to retry"
-    # Record the repo URL in the manifest so a daily sweep can find you even if
-    # the call above never succeeds.
-    "$PY" - "${REG}" <<'PATCHMANIFEST' 2>/dev/null || true
-import json,sys,pathlib
-reg = json.loads(sys.argv[1])
+  REG_BODY="$(printf '%s' "${REPO_JSON}" | "$PY" -c '
+import json, pathlib, sys
+repo = json.load(sys.stdin)
+owner = (repo.get("owner") or {}).get("login", "")
+body = {
+    "campaignId": sys.argv[1],
+    "fullName": owner + "/" + repo.get("name", ""),
+    "ownerLogin": owner,
+    "repoUrl": repo.get("url", ""),
+}
+if sys.argv[2]:
+    body["code"] = sys.argv[2]
+try:
+    token = pathlib.Path(sys.argv[3]).read_text().strip()
+except Exception:
+    token = ""
+if token:
+    body["kironomicsToken"] = token
+print(json.dumps(body))
+' "${CAMPAIGN_ID}" "${SETUP_CODE}" "${TOKEN_FILE}" 2>/dev/null || echo '')"
+
+  REG_JSON=''
+  if [ -n "${REG_BODY}" ]; then
+    # Body goes on stdin, never as an argument: it carries the Kironomics key,
+    # and command-line arguments are visible to every user on the machine.
+    REG_RESP="$(printf '%s' "${REG_BODY}" | curl -sS -m 30 -X POST "${API}/campaign/repo" \
+      -H 'Content-Type: application/json' --data-binary @- -w '\n%{http_code}' 2>/dev/null || echo '')"
+    REG_STATUS="$(printf '%s\n' "${REG_RESP}" | tail -n 1)"
+    REG_JSON="$(printf '%s\n' "${REG_RESP}" | sed '$d')"
+    case "${REG_STATUS}" in
+      2??)
+        ok "repository registered — your progress is now tracked"
+        ;;
+      *)
+        REG_ERR="$(printf '%s' "${REG_JSON}" | "$PY" -c '
+import json, sys
+try:
+    print(json.load(sys.stdin).get("error", ""))
+except Exception:
+    print("")' 2>/dev/null || echo '')"
+        if [ -n "${REG_ERR}" ]; then
+          warn "could not register the repo: ${REG_ERR}"
+        else
+          warn "could not reach the campaign API to register the repo."
+          warn "Check your connection and run this script again — it picks up where it stopped."
+        fi
+        REG_JSON=''
+        ;;
+    esac
+  fi
+
+  # Record which repo this project is, and — on a re-run whose setup code could
+  # no longer be claimed — the member it belongs to, which the registration
+  # response carries.
+  "$PY" - "${REPO_JSON}" "${REG_JSON}" <<'PATCHMANIFEST' 2>/dev/null || true
+import json, pathlib, sys
+repo = json.loads(sys.argv[1])
+try:
+    reg = json.loads(sys.argv[2]) if sys.argv[2] else {}
+except Exception:
+    reg = {}
 p = pathlib.Path(".kiro/ugmdu.json")
 data = json.loads(p.read_text())
-data["repoUrl"] = reg.get("repoUrl","")
+data["repoUrl"] = repo.get("url", "")
+if not data.get("participantId") and reg.get("participantId"):
+    data["participantId"] = reg["participantId"]
 p.write_text(json.dumps(data, indent=2) + "\n")
 PATCHMANIFEST
-    # The patch above rewrites the manifest AFTER the scaffolding commit, so
-    # without this the script always finished leaving the working tree dirty.
-    # Every participant would see an uncommitted .kiro/ugmdu.json and have to
-    # work out whether that mattered.
-    if ! git diff --quiet -- .kiro/ugmdu.json 2>/dev/null; then
-      git add .kiro/ugmdu.json >/dev/null 2>&1 || true
-      git -c user.email="$(git config user.email 2>/dev/null || echo 'builder@awsugmdu.in')" \
-          -c user.name="$(git config user.name 2>/dev/null || echo 'Builder')" \
-          commit -q -m "Record campaign repo URL in the Kiro manifest" >/dev/null 2>&1 \
-        && ok "manifest updated and committed" \
-        || warn "manifest updated but not committed — commit .kiro/ugmdu.json yourself"
-    fi
+
+  # The patch above rewrites the manifest AFTER the scaffolding commit, so
+  # without this the script always finished leaving the working tree dirty.
+  # Every participant would see an uncommitted .kiro/ugmdu.json and have to
+  # work out whether that mattered.
+  if ! git diff --quiet -- .kiro/ugmdu.json 2>/dev/null; then
+    git add .kiro/ugmdu.json >/dev/null 2>&1 || true
+    git -c user.email="$(git config user.email 2>/dev/null || echo 'builder@awsugmdu.in')" \
+        -c user.name="$(git config user.name 2>/dev/null || echo 'Builder')" \
+        commit -q -m "Record campaign repo URL in the Kiro manifest" >/dev/null 2>&1 \
+      && ok "manifest updated and committed" \
+      || warn "manifest updated but not committed — commit .kiro/ugmdu.json yourself"
   fi
 fi
 

@@ -200,9 +200,9 @@ if (Get-Command gh -ErrorAction SilentlyContinue) {
   if ($LASTEXITCODE -eq 0) { $HaveGh = $true }
 }
 
-Invoke-Native { git rev-parse --git-dir } | Out-Null
-if ($LASTEXITCODE -eq 0) {
-  Ok "using the existing repository in $(Get-Location)"
+# Run on every repo this script adopts rather than creates - including a folder
+# it resumes - because a repo with older history is disqualified outright.
+function Assert-NoPreWindowCommits {
   $old = Invoke-Native { git log --before='2026-09-21T09:00:00-07:00' --oneline } | Select-Object -First 3
   if ($old) {
     Say ''
@@ -218,18 +218,54 @@ if ($LASTEXITCODE -eq 0) {
     exit 1
   }
   Ok 'no commits before the challenge window'
+}
+
+Invoke-Native { git rev-parse --git-dir } | Out-Null
+if ($LASTEXITCODE -eq 0) {
+  Ok "using the existing repository in $(Get-Location)"
+  Assert-NoPreWindowCommits
 } else {
   if (-not $ProjectName) { $ProjectName = 'kiro-university-project' }
-  if (Test-Path $ProjectName) { Die "./$ProjectName already exists. Pass a different name." }
-  New-Item -ItemType Directory -Force -Path $ProjectName | Out-Null
-  Set-Location $ProjectName
-  # Guarded so a failure reports as a setup problem rather than surfacing a raw
-  # native-command exception. git existing is already checked above; this covers
-  # the remaining causes, e.g. no write permission in the target directory.
-  Invoke-Native { git init -q } | Out-Null
-  if ($LASTEXITCODE -ne 0) { Die "Could not initialise a git repository in ./$ProjectName" }
-  Ok "created ./$ProjectName and initialised git"
+  if (Test-Path $ProjectName) {
+    # A run that stopped partway (GitHub CLI missing, the earlier Windows crashes,
+    # a network blip) leaves its folder behind. Pick it up instead of telling the
+    # member to choose a new name, which started a second, empty project and
+    # stranded the first. A folder this script did not create is left alone.
+    $leftover = (Test-Path $ProjectName -PathType Container) -and (
+      (Test-Path (Join-Path $ProjectName '.kiro/ugmdu.json')) -or
+      (Test-Path (Join-Path $ProjectName '.kiro/hooks/kironomics.json')))
+    if (-not $leftover) {
+      Die "./$ProjectName already exists and was not created by this script. Pass a different name."
+    }
+    Set-Location $ProjectName
+    Ok "picking up ./$ProjectName where an earlier run stopped"
+    Invoke-Native { git rev-parse --git-dir } | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+      Assert-NoPreWindowCommits
+    } else {
+      Invoke-Native { git init -q } | Out-Null
+      if ($LASTEXITCODE -ne 0) { Die "Could not initialise a git repository in ./$ProjectName" }
+    }
+  } else {
+    New-Item -ItemType Directory -Force -Path $ProjectName | Out-Null
+    Set-Location $ProjectName
+    # Guarded so a failure reports as a setup problem rather than surfacing a raw
+    # native-command exception. git existing is already checked above; this covers
+    # the remaining causes, e.g. no write permission in the target directory.
+    Invoke-Native { git init -q } | Out-Null
+    if ($LASTEXITCODE -ne 0) { Die "Could not initialise a git repository in ./$ProjectName" }
+    Ok "created ./$ProjectName and initialised git"
+  }
 }
+
+# A fresh Git for Windows install has no user.name or user.email, and git then
+# refuses to commit. The commit below used to fail silently and print
+# "committed" anyway, so the repo was pushed empty. Fall back to a neutral
+# identity for the scaffolding commit only, matching setup.sh.
+$gitEmail = (Invoke-Native { git config user.email }) | Select-Object -First 1
+if (-not $gitEmail) { $gitEmail = 'builder@awsugmdu.in' }
+$gitName = (Invoke-Native { git config user.name }) | Select-Object -First 1
+if (-not $gitName) { $gitName = 'Builder' }
 
 # -- 5. Kiro hooks --------------------------------------------------
 # Built as an object and serialised, so the Windows path separators are escaped
@@ -282,8 +318,14 @@ if ((Test-Path '.gitignore') -and (Select-String -Path '.gitignore' -Pattern '^\
 Invoke-Native { git add .kiro } | Out-Null
 Invoke-Native { git diff --cached --quiet } | Out-Null
 if ($LASTEXITCODE -ne 0) {
-  Invoke-Native { git commit -q -m 'Set up Kiro University project scaffolding' } | Out-Null
-  Ok 'committed the Kiro scaffolding'
+  Invoke-Native {
+    git -c "user.email=$gitEmail" -c "user.name=$gitName" commit -q -m 'Set up Kiro University project scaffolding'
+  } | Out-Null
+  if ($LASTEXITCODE -eq 0) {
+    Ok 'committed the Kiro scaffolding'
+  } else {
+    Warn 'could not commit the scaffolding - run "git commit" yourself to see why'
+  }
 } else {
   Info 'nothing new to commit'
 }
@@ -307,27 +349,71 @@ if ($HaveGh) {
 }
 
 # -- 8. Register the repo with us - participant types nothing --------
-if ($repoJson -and $SetupCode) {
-  try {
-    $r = $repoJson | ConvertFrom-Json
-    $body = @{
-      code       = $SetupCode
-      repoNodeId = $r.id
+# Sends the setup code when there is one, plus the Kironomics key saved in step
+# 2. The code expires 15 minutes after it is generated, so a re-run from command
+# history carries a dead code; the key is what lets that re-run finish. Before
+# the key was accepted, such a re-run created and pushed the repo and then could
+# never register it. Invoke-RestMethod runs in-process, so the key never appears
+# in a process command line.
+if ($repoJson) {
+  $r = $null
+  try { $r = ($repoJson | Out-String) | ConvertFrom-Json } catch { $r = $null }
+  if ($r) {
+    $body = [ordered]@{
+      campaignId = $CampaignId
       fullName   = "$($r.owner.login)/$($r.name)"
       ownerLogin = $r.owner.login
       repoUrl    = $r.url
     }
-    Invoke-RestMethod -Method Post -Uri "$Api/campaign/repo" -ContentType 'application/json' `
-      -Body ($body | ConvertTo-Json) -TimeoutSec 20 | Out-Null
-    Ok 'repository registered - your progress is now tracked'
+    if ($SetupCode) { $body.code = $SetupCode }
+    if (Test-Path $TokenFile) {
+      $saved = ([System.IO.File]::ReadAllText($TokenFile)).Trim()
+      if ($saved) { $body.kironomicsToken = $saved }
+    }
 
-    # Record the repo URL in the manifest so a daily sweep can still find you
-    # even if the call above never succeeds.
-    $m = Get-Content '.kiro/ugmdu.json' -Raw | ConvertFrom-Json
-    $m | Add-Member -NotePropertyName repoUrl -NotePropertyValue $r.url -Force
-    $m | ConvertTo-Json -Depth 10 | Write-Utf8Json '.kiro/ugmdu.json'
-  } catch {
-    Warn 'could not register the repo yet; re-run this script to retry'
+    $reg = $null
+    try {
+      $reg = Invoke-RestMethod -Method Post -Uri "$Api/campaign/repo" -ContentType 'application/json' `
+        -Body ($body | ConvertTo-Json) -TimeoutSec 30
+      Ok 'repository registered - your progress is now tracked'
+    } catch {
+      # The API explains most failures (expired code, rotated key, not joined),
+      # so show its message rather than a generic one.
+      $serverError = $null
+      try { $serverError = ($_.ErrorDetails.Message | ConvertFrom-Json).error } catch { }
+      if ($serverError) {
+        Warn "could not register the repo: $serverError"
+      } else {
+        Warn 'could not reach the campaign API to register the repo.'
+        Warn 'Check your connection and run this script again - it picks up where it stopped.'
+      }
+    }
+
+    # Record which repo this project is, and - on a re-run whose setup code could
+    # no longer be claimed - the member it belongs to, which the registration
+    # response carries.
+    try {
+      $m = Get-Content '.kiro/ugmdu.json' -Raw | ConvertFrom-Json
+      $m | Add-Member -NotePropertyName repoUrl -NotePropertyValue $r.url -Force
+      if (-not $m.participantId -and $reg -and $reg.participantId) {
+        $m | Add-Member -NotePropertyName participantId -NotePropertyValue $reg.participantId -Force
+      }
+      $m | ConvertTo-Json -Depth 10 | Write-Utf8Json '.kiro/ugmdu.json'
+    } catch {
+      Warn 'could not update .kiro/ugmdu.json'
+    }
+
+    # The manifest was rewritten after the scaffolding commit; commit it so the
+    # working tree is left clean.
+    Invoke-Native { git diff --quiet -- .kiro/ugmdu.json } | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+      Invoke-Native { git add .kiro/ugmdu.json } | Out-Null
+      Invoke-Native {
+        git -c "user.email=$gitEmail" -c "user.name=$gitName" commit -q -m 'Record campaign repo URL in the Kiro manifest'
+      } | Out-Null
+      if ($LASTEXITCODE -eq 0) { Ok 'manifest updated and committed' }
+      else { Warn 'manifest updated but not committed - commit .kiro/ugmdu.json yourself' }
+    }
   }
 }
 

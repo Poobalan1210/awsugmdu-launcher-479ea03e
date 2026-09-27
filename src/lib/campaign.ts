@@ -34,80 +34,109 @@ export const ENTRY_DEADLINE_IST_LABEL = 'Tue 6 Oct, 12:29 PM IST';
 export const ACCOUNT_SAFE_BEFORE_ISO = '2026-06-21T00:00:00Z';
 export const ACCOUNT_FUZZY_BEFORE_ISO = '2026-07-05T00:00:00Z';
 
+/**
+ * How we can tell a lesson is done. Must match LESSON_DEFS in the campaign
+ * Lambda, which does the checking; this copy only picks the right control
+ * before the member's status has loaded.
+ *   repo          read from the repo; nothing to tick
+ *   repo-or-self  read from the repo when we can, otherwise the member ticks it
+ *   self          nothing in a repo shows it, so the member ticks it
+ */
+export type LessonCheck = 'repo' | 'repo-or-self' | 'self';
+
 export interface Lesson {
-  /** String id throughout — the backend normalises to '1'..'7' | 'bonus1' |
-   *  'bonus2', so comparing against a number would silently never match. */
+  /** Same ids as the backend: '1'..'7', 'bonus1', 'bonus2'. */
   n: string;
-  label: string;
+  title: string;
   credits: number;
-  /** The .kiro artifact that typically evidences this lesson, when there is one.
-   *  Presence corroborates a claim; it does not prove the lesson was
-   *  demonstrated. Kiro's reviewer decides that at judging. */
-  artifact?: string;
+  bonus?: boolean;
+  /** A restriction Kiro states for the lesson. */
+  note?: string;
+  check: LessonCheck;
+  docsUrl: string;
+  /** What the feature is, in one line, for someone who has never used it. */
+  what: string;
+  /** What to add, for someone who has not done it yet. */
+  hint: string;
 }
 
 /**
- * Credit values are Kiro's, from their published scoring table. We display them
- * so people can see where their award comes from — we do not award them.
+ * Kiro University's lessons, as published on kiro.dev/2026/university. Credit
+ * values are Kiro's; Kiro awards them, not us.
  */
 export const LESSONS: Lesson[] = [
-  { n: '1', label: 'Lesson 1', credits: 250, artifact: 'steering' },
-  { n: '2', label: 'Lesson 2', credits: 250, artifact: 'specs' },
-  { n: '3', label: 'Lesson 3', credits: 250 },
-  { n: '4', label: 'Lesson 4', credits: 500, artifact: 'hooks' },
-  { n: '5', label: 'Lesson 5', credits: 500, artifact: 'mcp' },
-  { n: '6', label: 'Lesson 6', credits: 1000, artifact: 'agents' },
-  { n: '7', label: 'Lesson 7', credits: 1000 },
-  { n: 'bonus1', label: 'Bonus 1 (paid plans)', credits: 250 },
-  { n: 'bonus2', label: 'Bonus 2', credits: 250 },
+  {
+    n: '1', title: 'Spec-driven development', credits: 250, check: 'repo',
+    docsUrl: 'https://kiro.dev/docs/specs/',
+    what: 'Plan a feature as requirements, a design and a task list, then have Kiro build it from that plan.',
+    hint: 'Create a spec in Kiro and commit .kiro/specs/<feature>/: requirements.md (or bugfix.md), design.md and tasks.md.',
+  },
+  {
+    n: '2', title: 'Steering documents', credits: 250, check: 'repo',
+    docsUrl: 'https://kiro.dev/docs/steering/',
+    what: "Markdown files with your project's rules and context, like your stack and conventions, which Kiro follows in every chat.",
+    hint: "Add markdown rules in .kiro/steering/, or an AGENTS.md. Steering in ~/.kiro/steering/ stays on your machine, where reviewers can't see it.",
+  },
+  {
+    n: '3', title: 'Hooks', credits: 250, check: 'repo',
+    docsUrl: 'https://kiro.dev/docs/hooks/',
+    what: 'Automations Kiro runs when something happens, like checking a file every time you save it.',
+    hint: "Add a hook in .kiro/hooks/ that does something for your project. The Kironomics tracking hook our setup added doesn't count.",
+  },
+  {
+    n: '4', title: 'Property-based testing', credits: 500, note: 'IDE only', check: 'repo-or-self',
+    docsUrl: 'https://kiro.dev/docs/specs/correctness/',
+    what: 'Tests that check a rule holds for hundreds of generated inputs, instead of a few examples you pick by hand.',
+    hint: "In the Kiro IDE, a spec's design step suggests property-based tests as optional tasks. Run them and commit the tests.",
+  },
+  {
+    n: '5', title: 'Powers', credits: 500, check: 'self',
+    docsUrl: 'https://kiro.dev/docs/powers/',
+    what: 'Add-ons that give Kiro the tools and know-how for a service or framework, loaded only when you need them.',
+    hint: 'Install a power and use it in your build. Powers install on your machine, not in your repo, so name the power in your entry and show it in your video.',
+  },
+  {
+    n: '6', title: 'Model Context Protocol (MCP)', credits: 1000, check: 'repo',
+    docsUrl: 'https://kiro.dev/docs/mcp/',
+    what: 'Connects Kiro to outside tools and data, like docs, databases or APIs, through MCP servers.',
+    hint: "Add at least one server to .kiro/settings/mcp.json. Servers in your user-level config stay on your machine, where reviewers can't see them.",
+  },
+  {
+    n: '7', title: 'Custom agents', credits: 1000, check: 'repo',
+    docsUrl: 'https://kiro.dev/docs/custom-agents/',
+    what: 'Your own agent for a specific job, with its own instructions, tools and permissions.',
+    hint: 'Add an agent config to .kiro/agents/ as a .json or .md file.',
+  },
+  {
+    n: 'bonus1', title: 'Kiro Web and cloud sessions', credits: 250, bonus: true, note: 'Paid plans', check: 'self',
+    docsUrl: 'https://kiro.dev/blog/agentic-engineering-in-the-cloud/',
+    what: 'Work with Kiro from the browser, or run sessions in the cloud instead of on your own machine.',
+    hint: "Use Kiro Web, a cloud session or cloud configuration for your build. A repo doesn't show this, so tick it when you have.",
+  },
+  {
+    n: 'bonus2', title: 'Package a Kiro power', credits: 250, bonus: true, check: 'repo-or-self',
+    docsUrl: 'https://kiro.dev/docs/powers/create/',
+    what: 'Bundle your own skills or MCP servers as a power that other people can install.',
+    hint: 'Build your own power (a plugin.json with skills or an mcp.json) and include it in your submission. A separate repo is fine.',
+  },
 ];
 
 export const COMPLETION_AWARD_CREDITS = 1000;
 export const MAX_CREDITS = 5250;
 
-/**
- * What the sweep can actually observe in a participant's committed .kiro/ folder.
- *
- * Deliberately NOT labelled with lesson numbers. Kiro publishes its lessons
- * daily on social and Discord and has not stated which feature maps to which
- * lesson, so any mapping we assert is a guess. Telling someone "Lesson 4
- * complete" on a guess could have them skip whatever Lesson 4 really was and
- * lose 500 credits — worse than not telling them at all.
- *
- * As a gap list this is useful regardless of the mapping: "you have no MCP
- * config" is actionable whether or not MCP is Lesson 5.
- *
- * Once the real lesson list is published, set `lesson` on each entry and the
- * UI can start attributing credits.
- */
-export interface KiroArtifact {
-  key: string;
-  label: string;
-  /** What it is, for someone who has not done it yet. */
-  hint: string;
-  /** Filled in once Kiro's lesson mapping is known. */
-  lesson?: string;
-}
-
-export const KIRO_ARTIFACTS: KiroArtifact[] = [
-  { key: 'steering', label: 'Steering files', hint: 'Project rules Kiro follows on every turn — .kiro/steering/*.md' },
-  { key: 'specs', label: 'Specs', hint: 'requirements.md, design.md and tasks.md under .kiro/specs/' },
-  { key: 'hooks', label: 'Agent hooks', hint: 'Automation that fires on events — .kiro/hooks/*.json' },
-  { key: 'mcp', label: 'MCP servers', hint: 'External tools wired in via .kiro/settings/mcp.json' },
-  { key: 'agents', label: 'Custom agents', hint: 'Purpose-scoped agents under .kiro/agents/' },
-  { key: 'skills', label: 'Skills', hint: 'Reusable instructions — .kiro/skills/<name>/SKILL.md' },
-];
-
-/** Artifacts present and missing, from the last sweep. */
-export function artifactGaps(artifacts: Record<string, boolean> | undefined) {
-  const found = KIRO_ARTIFACTS.filter((a) => artifacts?.[a.key]);
-  const missing = KIRO_ARTIFACTS.filter((a) => !artifacts?.[a.key]);
-  return { found, missing };
-}
-
-/** Lessons we have file-level evidence for. Empty until the mapping is set. */
-export function lessonsWithEvidence(artifacts: Record<string, boolean> | undefined): string[] {
-  return LESSONS.filter((l) => l.artifact && artifacts?.[l.artifact]).map((l) => l.n);
+/** One lesson's standing for the signed-in member, as the backend reports it. */
+export interface LessonState {
+  id: string;
+  check: LessonCheck;
+  /** False until their repo has been read under the current rules. */
+  repoChecked: boolean;
+  /** Evidence found in the repo. */
+  found: boolean;
+  /** What was found, or why nothing counted. */
+  detail: string;
+  ticked: boolean;
+  /** found or ticked, whichever this lesson allows. */
+  counted: boolean;
 }
 
 // ── What Kiro's entry form requires ───────────────────────────────
@@ -134,6 +163,13 @@ export interface SubmissionRequirement {
   detail: string;
   /** 'auto' = derived from the repo sweep. 'you' = self-confirmed. */
   source: 'auto' | 'you';
+  /**
+   * 'eligibility' = rules about the repo and account, mostly checked for you.
+   * 'entry' = what you hand in, which only you can confirm.
+   */
+  group: 'eligibility' | 'entry';
+  /** Status line before it is ticked, when "Tick when done" doesn't fit. */
+  tickPrompt?: string;
 }
 
 /**
@@ -149,60 +185,72 @@ export const SUBMISSION_REQUIREMENTS: SubmissionRequirement[] = [
     label: 'Public GitHub repo that you own',
     detail: 'Private repos cannot be judged. It must be under your own account, not an organisation.',
     source: 'auto',
+    group: 'eligibility',
   },
   {
     id: 'first_commit',
     label: 'No commits before 21 Sep, 09:00 PT',
     detail: 'Deleting files does not fix it — the history is the problem. Never fork or clone an existing project.',
     source: 'auto',
+    group: 'eligibility',
   },
   {
     id: 'account_age',
     label: 'GitHub account at least 3 months old',
     detail: 'Nobody can fix this before the deadline. You can still earn every community reward with us.',
     source: 'you',
+    group: 'eligibility',
+    tickPrompt: 'Tick to confirm',
   },
   {
     id: 'kiro_folder',
     label: '.kiro folder committed',
     detail: 'This is what reviewers read to score each lesson. Never put a bare .kiro line in .gitignore.',
     source: 'auto',
+    group: 'eligibility',
   },
   {
     id: 'working_project',
     label: 'A project that actually runs',
     detail: 'Functional, not a static mockup. If it cannot be demonstrated on screen, it is not done.',
     source: 'you',
+    group: 'entry',
   },
   {
     id: 'demo_video',
     label: 'Demo video, 30 seconds to 3 minutes',
     detail: 'Publicly viewable while signed out. Anything past 3 minutes is not watched.',
     source: 'you',
+    group: 'entry',
   },
   {
     id: 'social_post',
     label: 'Public post on X or LinkedIn',
     detail: 'Must carry #KiroUniversity and #BuildWithKiro, tag @kirodotdev on X or @kiro on LinkedIn, and include your repo link, a 2–3 sentence description and the video.',
     source: 'you',
+    group: 'entry',
   },
   {
     id: 'lesson_writeup',
     label: 'One line per lesson, saying how you used it',
     detail: 'The entry form asks for this explicitly. Note each one down as you build — it is hard to reconstruct a week later.',
     source: 'you',
+    group: 'entry',
   },
   {
     id: 'entry_form',
     label: 'Entry form submitted on kiro.dev',
     detail: 'With the correct email — that is where credits are sent. One entry per person, individual work only.',
     source: 'you',
+    group: 'entry',
   },
   {
     id: 'stop_committing',
     label: 'Stop committing once you submit',
     detail: `Commits after submission, until judging concludes around ${JUDGING_ENDS_LABEL}, can disqualify the entry.`,
     source: 'you',
+    group: 'entry',
+    tickPrompt: 'Tick after you submit',
   },
 ];
 
@@ -215,6 +263,8 @@ export function requirementStatus(
   id: string,
   repo: RepoStats | null | undefined,
 ): RequirementStatus {
+  // Only the participant can confirm these, repo or no repo.
+  if (SUBMISSION_REQUIREMENTS.find((r) => r.id === id)?.source === 'you') return 'confirm';
   if (!repo?.fullName) return 'unknown';
   switch (id) {
     case 'repo_public':
@@ -303,7 +353,7 @@ export function tierForPosition(position: number | null | undefined): RewardTier
 
 /** Remaining slots in each tier, for the live "3 left" affordance. */
 export function slotsRemaining(validatedCount: number) {
-  let consumed = validatedCount;
+  const consumed = validatedCount;
   return REWARD_TIERS.map((tier, i) => {
     const start = i === 0 ? 0 : REWARD_TIERS[i - 1].upTo;
     const size = tier.upTo - start;
@@ -328,8 +378,6 @@ export interface RepoStats {
   /** null when the repo is empty — expected on day one, not a failure. */
   eligible?: boolean | null;
   hasKiroFolder?: boolean;
-  /** Which .kiro artifacts the sweep found. Corroboration, not proof. */
-  artifacts?: Record<string, boolean>;
   /** IST-bucketed days with at least one in-window commit. */
   activeDayList?: string[];
 }
@@ -346,8 +394,10 @@ export interface MyCampaign {
   /** Set when an older setup published the key into a public repo. */
   kironomicsKeyExposed?: boolean;
   repo?: RepoStats | null;
-  /** Union of what they ticked here and what is in .kiro/ugmdu.json. */
+  /** Ids of the lessons that currently count. */
   lessonsRecorded: string[];
+  /** Every lesson's standing, in LESSONS order. */
+  lessons?: LessonState[];
   validatedPosition?: number | null;
   externalEntryConfirmedAt?: string | null;
 }
@@ -445,18 +495,33 @@ export async function rotateKironomicsKey(): Promise<{ apiKey: string; rotated: 
 }
 
 /**
- * Record which lessons the participant is claiming.
- *
- * The other source is `lessons` in their committed .kiro/ugmdu.json. The backend
- * unions the two, so ticking here never erases what the setup script wrote, and
- * editing the manifest never erases what they ticked here.
+ * Stop reminder emails, from the link in one. Needs no sign-in: the signature
+ * in the link is the authorisation. `test` links, from the organisers' test
+ * sends, are checked but change nothing.
  */
-export async function setLessons(lessons: string[]): Promise<string[]> {
-  const res = await callApi<{ lessonsRecorded: string[] }>(`/campaign/${CAMPAIGN_ID}/lessons`, {
+export async function unsubscribeFromReminders(link: {
+  campaignId: string; userId: string; signature: string; test: boolean;
+}): Promise<{ ok: boolean; test?: boolean }> {
+  return callApi(`/campaign/${encodeURIComponent(link.campaignId)}/unsubscribe`, {
     method: 'POST',
-    body: JSON.stringify({ lessons }),
+    body: JSON.stringify({ u: link.userId, s: link.signature, test: link.test }),
   });
-  return res.lessonsRecorded ?? [];
+}
+
+/**
+ * Save the member's ticks: the full set, for the lessons a repo can't show.
+ * Every other lesson is read from the repo and ignores ticks.
+ *
+ * `schema: 2` marks these as ticked against the real lesson titles. The
+ * backend ignores ticks without it, which come from the earlier page that
+ * labelled lessons under a wrong guessed mapping.
+ */
+export async function setLessons(ticks: string[]): Promise<LessonState[]> {
+  const res = await callApi<{ lessons?: LessonState[] }>(`/campaign/${CAMPAIGN_ID}/lessons`, {
+    method: 'POST',
+    body: JSON.stringify({ schema: 2, lessons: ticks }),
+  });
+  return res.lessons ?? [];
 }
 
 export async function confirmExternalEntry(): Promise<void> {

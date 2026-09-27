@@ -37,6 +37,33 @@ variable "campaign_default_id" {
   default     = "kiro-university-2026"
 }
 
+variable "reminder_signing_secret" {
+  description = <<-EOT
+    HMAC key that signs the unsubscribe link in campaign reminder emails. While
+    it is empty the Lambda refuses every run except a dry run, since the links
+    would not work. Any long random string, set in terraform.tfvars (gitignored).
+    Changing it breaks the unsubscribe links in emails already sent.
+  EOT
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "campaign_reminder_mode" {
+  description = <<-EOT
+    What the daily reminder run does. "dry-run" works out who would be emailed
+    and logs only the counts. "live" sends. Go live deliberately, after reading
+    a dry run, since a sent email cannot be taken back.
+  EOT
+  type        = string
+  default     = "dry-run"
+
+  validation {
+    condition     = contains(["dry-run", "live"], var.campaign_reminder_mode)
+    error_message = "campaign_reminder_mode must be \"dry-run\" or \"live\"."
+  }
+}
+
 # ------------------------------------------
 # DYNAMODB
 # ------------------------------------------
@@ -183,6 +210,9 @@ resource "aws_lambda_function" "campaign_crud" {
       GITHUB_TOKEN             = var.github_token
       ADMIN_EMAILS             = var.admin_emails
       DEFAULT_CAMPAIGN_ID      = var.campaign_default_id
+      REMINDER_SIGNING_SECRET  = var.reminder_signing_secret
+      SES_FROM_EMAIL           = "info@awsugmdu.in"
+      APP_URL                  = "https://www.awsugmdu.in"
     }
   }
 
@@ -292,6 +322,43 @@ resource "aws_lambda_permission" "events_campaign_sweep" {
 }
 
 # ------------------------------------------
+# EVENTBRIDGE: daily reminders
+# Emails members who joined but have not linked a repo (runReminders). 04:30 UTC
+# is 10:00 IST. The mode travels in the input, so going live is a variable
+# change that shows up in plan. The Lambda itself caps each member at two
+# reminders, three days apart, and stops at the entry deadline.
+# ------------------------------------------
+resource "aws_cloudwatch_event_rule" "campaign_reminders" {
+  name                = "${var.project_name}-campaign-reminders"
+  description         = "Daily reminder run for Kiro University members who have not linked a repo"
+  schedule_expression = "cron(30 4 * * ? *)"
+
+  tags = {
+    Name = "${var.project_name}-campaign-reminders"
+  }
+}
+
+resource "aws_cloudwatch_event_target" "campaign_reminders" {
+  rule      = aws_cloudwatch_event_rule.campaign_reminders.name
+  target_id = "campaign-crud-reminders"
+  arn       = aws_lambda_function.campaign_crud.arn
+
+  input = jsonencode({
+    task       = "reminders"
+    campaignId = var.campaign_default_id
+    mode       = var.campaign_reminder_mode
+  })
+}
+
+resource "aws_lambda_permission" "events_campaign_reminders" {
+  statement_id  = "AllowEventBridgeInvokeCampaignReminders"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.campaign_crud.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.campaign_reminders.arn
+}
+
+# ------------------------------------------
 # OUTPUTS
 # ------------------------------------------
 output "campaign_participation_table_name" {
@@ -311,4 +378,13 @@ output "campaign_github_token_configured" {
   # rate-limit and quietly stop updating the leaderboard.
   value       = nonsensitive(var.github_token != "")
   description = "False means the sweep will rate-limit against GitHub."
+}
+
+output "campaign_reminders" {
+  # nonsensitive() is safe: whether the secret is set, never its value.
+  value = {
+    mode           = var.campaign_reminder_mode
+    signing_secret = nonsensitive(var.reminder_signing_secret != "") ? "set" : "missing"
+  }
+  description = "Daily reminder mode, and whether unsubscribe links can be signed."
 }

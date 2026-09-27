@@ -166,6 +166,7 @@ EMAIL_SHARED_CONSUMERS=(
   "meetups-crud"
   "meetup-reminder"
   "hackathons-crud"
+  "campaign-crud"
 )
 
 if [ -f "lambda/shared/email.js" ]; then

@@ -28,6 +28,7 @@ import SpeakerCodeOfConduct from "./pages/SpeakerCodeOfConduct";
 import SpeakerInvite from "./pages/SpeakerInvite";
 import Kironomics from "./pages/Kironomics";
 import KiroUniversity from "./pages/KiroUniversity";
+import KiroUnsubscribe from "./pages/KiroUnsubscribe";
 import Achievements from "./pages/Achievements";
 import NotFound from "./pages/NotFound";
 
@@ -76,6 +77,9 @@ const App = () => (
                 and drive signups. Auth is required only to act (join, mint a
                 setup code), handled inside the page. */}
             <Route path="/kiro" element={<KiroUniversity />} />
+            {/* The "Stop these reminders" link in campaign reminder emails.
+                Public: the signature in the link is the authorisation. */}
+            <Route path="/kiro/unsubscribe" element={<KiroUnsubscribe />} />
 
             {/* Achievements — public showcase of awards, milestones & community highlights */}
             <Route path="/achievements" element={<Achievements />} />

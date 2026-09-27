@@ -213,6 +213,9 @@ resource "aws_lambda_function" "campaign_crud" {
       REMINDER_SIGNING_SECRET  = var.reminder_signing_secret
       SES_FROM_EMAIL           = "info@awsugmdu.in"
       APP_URL                  = "https://www.awsugmdu.in"
+      # Lets admin routes verify the sign-in token's signature, not just read it.
+      COGNITO_USER_POOL_ID = aws_cognito_user_pool.user_pool.id
+      COGNITO_CLIENT_ID    = aws_cognito_user_pool_client.web_client.id
     }
   }
 

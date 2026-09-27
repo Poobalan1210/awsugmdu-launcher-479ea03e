@@ -494,6 +494,46 @@ export async function rotateKironomicsKey(): Promise<{ apiKey: string; rotated: 
   return { apiKey: res?.data?.apiKey ?? '', rotated: Boolean(res?.data?.rotated) };
 }
 
+// ── Admin ─────────────────────────────────────────────────────────
+
+/** How far a participant has got, from joining to a validated entry. */
+export type ParticipantStage =
+  | 'not-started' | 'command-generated' | 'setup-stopped' | 'building' | 'submitted' | 'validated';
+
+export interface AdminParticipant {
+  userId: string;
+  name: string;
+  joinedAt: string | null;
+  stage: ParticipantStage;
+  repoFullName: string | null;
+  repoUrl: string | null;
+  repoUnreachable: boolean;
+  /** Distinct IST days with a commit inside the challenge window. */
+  activeDays: number;
+  /** Most recent of those days, YYYY-MM-DD in IST. */
+  lastActiveDay: string | null;
+  commitCount: number;
+  /** Core lessons counted, out of 7. */
+  lessonsDone: number;
+  /** From their site profile; null when they have no profile record. */
+  profile: {
+    type: 'student' | 'professional' | null;
+    /** College for students, company for professionals. */
+    organisation: string;
+    designation: string;
+    city: string;
+    country: string;
+  } | null;
+}
+
+/** Every participant, with profile details. Admins only. */
+export async function getCampaignAdminParticipants(): Promise<AdminParticipant[]> {
+  const res = await callApi<{ participants?: AdminParticipant[] }>(
+    `/campaign/${CAMPAIGN_ID}/admin/participants`,
+  );
+  return res.participants ?? [];
+}
+
 /**
  * Stop reminder emails, from the link in one. Needs no sign-in: the signature
  * in the link is the authorisation. `test` links, from the organisers' test

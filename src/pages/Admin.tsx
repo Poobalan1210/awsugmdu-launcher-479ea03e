@@ -55,6 +55,7 @@ import CirclesManagement from '@/components/admin/CirclesManagement';
 import SprintsTab from '@/components/admin/tabs/SprintsTab';
 import AWSEventsTab from '@/components/admin/tabs/AWSEventsTab';
 import HackathonsTab from '@/components/admin/tabs/HackathonsTab';
+import KiroUniversityTab from '@/components/admin/tabs/KiroUniversityTab';
 import { getHackathons } from '@/lib/hackathons';
 
 /** Sentinel for the "no hackathon" option; Radix Select forbids empty values. */
@@ -7301,6 +7302,10 @@ export default function Admin() {
                     <Award className="h-4 w-4" />
                     AWS Events
                   </TabsTrigger>
+                  <TabsTrigger value="kiro-university" className="gap-2">
+                    <Code2 className="h-4 w-4" />
+                    Kiro University
+                  </TabsTrigger>
                 </>
               )}
               {(isAdmin || isJudge) && (
@@ -7327,6 +7332,10 @@ export default function Admin() {
 
             {isAdmin && (
               <>
+                <TabsContent value="kiro-university" className="space-y-6">
+                  <KiroUniversityTab />
+                </TabsContent>
+
                 <TabsContent value="meetups">
                   <MeetupsManagementTab allUsers={allUsers} />
                 </TabsContent>

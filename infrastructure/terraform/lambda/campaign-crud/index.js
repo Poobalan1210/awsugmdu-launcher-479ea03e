@@ -33,6 +33,7 @@ const {
   UpdateCommand,
   DeleteCommand,
   QueryCommand,
+  BatchGetCommand,
 } = require('@aws-sdk/lib-dynamodb');
 const crypto = require('crypto');
 // Mirrored from lambda/shared/email.js by deploy.sh — edit the master copy.
@@ -144,6 +145,82 @@ function extractEmail(authHeader) {
   } catch {
     return null;
   }
+}
+
+// ── Verified sign-in, for routes that return other members' data ──
+// extractUserId and isAdmin read the token without checking its signature,
+// like the rest of this stack, so a hand-made token passes them. Routes that
+// hand out other members' profiles verify the Cognito ID token for real.
+const COGNITO_USER_POOL_ID = process.env.COGNITO_USER_POOL_ID || '';
+const COGNITO_CLIENT_ID = process.env.COGNITO_CLIENT_ID || '';
+const COGNITO_ISSUER = COGNITO_USER_POOL_ID
+  ? `https://cognito-idp.${COGNITO_USER_POOL_ID.split('_')[0]}.amazonaws.com/${COGNITO_USER_POOL_ID}`
+  : '';
+const JWKS_REFETCH_MS = 60 * 1000;
+let jwksCache = null; // { keys, fetchedAt }
+
+async function cognitoSigningKey(kid) {
+  const find = () => (jwksCache ? jwksCache.keys.find((k) => k.kid === kid) : null) || null;
+  let key = find();
+  // An unknown key id usually means Cognito rotated its keys. Refetch, but at
+  // most once a minute, so junk tokens cannot make us hammer the endpoint.
+  if (!key && (!jwksCache || Date.now() - jwksCache.fetchedAt > JWKS_REFETCH_MS)) {
+    const r = await fetch(`${COGNITO_ISSUER}/.well-known/jwks.json`);
+    if (!r.ok) return null;
+    const body = await r.json();
+    jwksCache = { keys: Array.isArray(body?.keys) ? body.keys : [], fetchedAt: Date.now() };
+    key = find();
+  }
+  return key;
+}
+
+/** Claims of a genuine, unexpired ID token from this site's user pool, or null. */
+async function verifyIdToken(authHeader) {
+  if (!COGNITO_ISSUER || !COGNITO_CLIENT_ID) return null;
+  const parts = String(authHeader || '').replace(/^Bearer\s+/i, '').trim().split('.');
+  if (parts.length !== 3) return null;
+  try {
+    const decode = (s) => JSON.parse(Buffer.from(s, 'base64url').toString('utf8'));
+    const header = decode(parts[0]);
+    const claims = decode(parts[1]);
+    if (header.alg !== 'RS256' || typeof header.kid !== 'string') return null;
+    const jwk = await cognitoSigningKey(header.kid);
+    if (!jwk) return null;
+    const signed = crypto.verify(
+      'RSA-SHA256',
+      Buffer.from(`${parts[0]}.${parts[1]}`),
+      crypto.createPublicKey({ key: jwk, format: 'jwk' }),
+      Buffer.from(parts[2], 'base64url'),
+    );
+    if (!signed) return null;
+    const now = Math.floor(Date.now() / 1000);
+    if (claims.iss !== COGNITO_ISSUER || claims.aud !== COGNITO_CLIENT_ID) return null;
+    if (claims.token_use !== 'id' || typeof claims.sub !== 'string') return null;
+    if (typeof claims.exp !== 'number' || now > claims.exp + 60) return null; // 60s clock skew
+    return claims;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * isAdmin, on a verified token. Returns { userId } for an admin, otherwise
+ * { status } with 401 (no valid sign-in) or 403 (signed in, not an admin).
+ */
+async function verifiedAdmin(event) {
+  const claims = await verifyIdToken(event.headers?.Authorization || event.headers?.authorization);
+  if (!claims) return { status: 401 };
+  const email = String(claims.email || '').toLowerCase();
+  const emailVerified = claims.email_verified === true || claims.email_verified === 'true';
+  if (email && emailVerified && ADMIN_EMAILS.includes(email)) return { userId: claims.sub };
+  try {
+    const r = await docClient.send(new GetCommand({ TableName: USERS_TABLE, Key: { userId: claims.sub } }));
+    const role = r.Item?.role;
+    if (role === 'admin' || role === 'organiser') return { userId: claims.sub };
+  } catch {
+    // treated as not an admin
+  }
+  return { status: 403 };
 }
 
 async function isAdmin(event) {
@@ -1211,6 +1288,99 @@ async function handleConfirmEntry(campaignId, event) {
   return res(200, { confirmed: true });
 }
 
+/** How far a participant has got, from joining to a validated entry. */
+function participantStage(p) {
+  if (p.validatedPosition) return 'validated';
+  if (p.externalEntryConfirmedAt || p.status === 'submitted') return 'submitted';
+  if (p.repoFullName) return 'building';
+  if (p.kironomicsConnected) return 'setup-stopped'; // ran the command, no repo linked
+  if (p.setupCodeIssuedAt) return 'command-generated';
+  return 'not-started';
+}
+
+/** Profile fields for many users at once, keyed by userId. Missing users are absent. */
+async function getProfiles(userIds) {
+  const out = new Map();
+  const ids = [...new Set(userIds)];
+  for (let i = 0; i < ids.length; i += 100) {
+    let keys = ids.slice(i, i + 100).map((userId) => ({ userId }));
+    for (let attempt = 0; keys.length && attempt < 3; attempt++) {
+      const r = await docClient.send(
+        new BatchGetCommand({
+          RequestItems: {
+            [USERS_TABLE]: {
+              Keys: keys,
+              // Aliased throughout: several of these are DynamoDB reserved words.
+              ProjectionExpression: '#u, #n, #t, #d, #cn, #cc, #co, #ln, #lc',
+              ExpressionAttributeNames: {
+                '#u': 'userId', '#n': 'name', '#t': 'userType', '#d': 'designation',
+                '#cn': 'companyName', '#cc': 'companyCity', '#co': 'country',
+                '#ln': 'collegeName', '#lc': 'collegeCity',
+              },
+            },
+          },
+        }),
+      );
+      for (const item of r.Responses?.[USERS_TABLE] || []) out.set(item.userId, item);
+      keys = r.UnprocessedKeys?.[USERS_TABLE]?.Keys || [];
+    }
+  }
+  return out;
+}
+
+/** Student or professional, and where from, as the member filled it in. */
+function profileSummary(u) {
+  if (!u) return null;
+  const type = u.userType === 'student' || u.userType === 'professional' ? u.userType : null;
+  const clean = (v) => (typeof v === 'string' ? v.trim() : '');
+  const student = type === 'student' || (!type && !clean(u.companyName) && Boolean(clean(u.collegeName)));
+  return {
+    type,
+    organisation: student ? clean(u.collegeName) : clean(u.companyName),
+    designation: student ? '' : clean(u.designation),
+    city: student ? clean(u.collegeCity) : clean(u.companyCity),
+    country: clean(u.country),
+  };
+}
+
+/**
+ * Every participant: where they are in the challenge, and from their profile,
+ * where they are from. Admin only, on a verified token, because it returns
+ * every member's profile.
+ */
+async function handleAdminParticipants(campaignId, event) {
+  const who = await verifiedAdmin(event);
+  if (who.status) {
+    return res(who.status, { error: who.status === 401 ? 'Sign in again to continue.' : 'admin only' });
+  }
+
+  const participants = await listParticipants(campaignId);
+  const profiles = await getProfiles(participants.map((p) => p.userId));
+
+  const rows = participants.map((p) => {
+    const u = profiles.get(p.userId);
+    const repo = p.repo || {};
+    const days = Array.isArray(repo.activeDayList) ? repo.activeDayList : [];
+    return {
+      userId: p.userId,
+      name: (u && u.name) || p.displayName || '',
+      joinedAt: p.joinedAt || null,
+      stage: participantStage(p),
+      repoFullName: repo.fullName || p.repoFullName || null,
+      repoUrl: repo.repoUrl || (p.repoFullName ? `https://github.com/${p.repoFullName}` : null),
+      repoUnreachable: Boolean(repo.unreachable),
+      activeDays: repo.activeDays || 0,
+      lastActiveDay: days.length ? days[days.length - 1] : null,
+      commitCount: repo.commitCount || 0,
+      lessonsDone: mergedLessons(p).filter((id) => !id.startsWith('bonus')).length,
+      profile: profileSummary(u),
+    };
+  });
+
+  console.log('admin participants', { by: who.userId, count: rows.length });
+  return res(200, { generatedAt: new Date().toISOString(), participants: rows });
+}
+
 /**
  * Admin validation. Assigns the next validated position from an ATOMIC counter —
  * reward tiers are positional, so a read-then-write here would let two people
@@ -1751,6 +1921,9 @@ exports.handler = async (event) => {
       if (method === 'POST' && action === 'lessons') return await handleLessons(campaignId, event);
       if (method === 'POST' && action === 'confirm-entry') return await handleConfirmEntry(campaignId, event);
       if (method === 'POST' && action === 'validate') return await handleValidate(campaignId, event);
+      if (method === 'GET' && action === 'admin' && r[2] === 'participants') {
+        return await handleAdminParticipants(campaignId, event);
+      }
       if (method === 'POST' && action === 'sweep') {
         if (!(await isAdmin(event))) return res(403, { error: 'admin only' });
         return res(200, await runSweep(campaignId));

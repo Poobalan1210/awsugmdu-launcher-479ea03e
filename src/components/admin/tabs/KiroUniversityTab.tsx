@@ -54,6 +54,7 @@ function searchText(p: AdminParticipant): string {
     typeLabel(p),
     p.profile?.organisation,
     p.profile?.designation,
+    p.profile?.community,
     placeLabel(p),
     STAGES[p.stage].label,
     p.repoUnreachable && 'Repo not reachable',
@@ -303,7 +304,16 @@ function BuilderRow({ p }: { p: AdminParticipant }) {
               <span className="text-muted-foreground">{typeLabel(p)}</span>
               {p.profile.organisation && <> · <span className="font-medium">{p.profile.organisation}</span></>}
             </p>
-            {p.profile.designation && <p className="text-xs text-muted-foreground">{p.profile.designation}</p>}
+            {(p.profile.designation || p.profile.community) && (
+              <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                {p.profile.designation && <span>{p.profile.designation}</span>}
+                {p.profile.community && (
+                  <span className="rounded-full border border-primary/40 px-1.5 text-[10px] font-medium leading-4 text-primary">
+                    {p.profile.community}
+                  </span>
+                )}
+              </p>
+            )}
           </>
         )}
       </TableCell>

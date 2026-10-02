@@ -46,6 +46,9 @@ const PARTICIPATION_TABLE = process.env.PARTICIPATION_TABLE_NAME || 'awsug-campa
 const CODES_TABLE = process.env.SETUP_CODES_TABLE_NAME || 'awsug-campaign-setup-codes';
 const KIRONOMICS_TABLE = process.env.KIRONOMICS_TABLE_NAME || 'awsug-kironomics';
 const USERS_TABLE = process.env.USERS_TABLE_NAME || 'awsug-users';
+// Read by the admin builders list, for College Champs and Cloud Club colleges.
+const COLLEGES_TABLE = process.env.COLLEGES_TABLE_NAME || 'awsug-colleges';
+const CLOUD_CLUBS_TABLE = process.env.CLOUD_CLUBS_TABLE_NAME || 'awsug-cloud_clubs';
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '')
   .split(',')
@@ -203,6 +206,20 @@ async function verifyIdToken(authHeader) {
   }
 }
 
+// Who the site treats as an admin (see AuthContext): the profile's `role`, or
+// an admin or organiser role assigned in the Members tab, which is stored in
+// the `roles` list instead. Checking only `role` locked out admins whose
+// access was granted from the Members tab.
+const ADMIN_ROLE_NAMES = ['admin', 'organiser'];
+
+function hasAdminRole(user) {
+  if (!user) return false;
+  if (ADMIN_ROLE_NAMES.includes(String(user.role || '').toLowerCase())) return true;
+  const roles = Array.isArray(user.roles) ? user.roles : [];
+  return roles.some((r) =>
+    ADMIN_ROLE_NAMES.includes(String((typeof r === 'string' ? r : r?.role) || '').toLowerCase()));
+}
+
 /**
  * isAdmin, on a verified token. Returns { userId } for an admin, otherwise
  * { status } with 401 (no valid sign-in) or 403 (signed in, not an admin).
@@ -215,8 +232,7 @@ async function verifiedAdmin(event) {
   if (email && emailVerified && ADMIN_EMAILS.includes(email)) return { userId: claims.sub };
   try {
     const r = await docClient.send(new GetCommand({ TableName: USERS_TABLE, Key: { userId: claims.sub } }));
-    const role = r.Item?.role;
-    if (role === 'admin' || role === 'organiser') return { userId: claims.sub };
+    if (hasAdminRole(r.Item)) return { userId: claims.sub };
   } catch {
     // treated as not an admin
   }
@@ -1298,48 +1314,76 @@ function participantStage(p) {
   return 'not-started';
 }
 
-/** Profile fields for many users at once, keyed by userId. Missing users are absent. */
-async function getProfiles(userIds) {
+/** Items from one table by key, as a Map on that key. Missing items are absent. */
+async function batchGetAll(table, keyName, keyValues, projection, names) {
   const out = new Map();
-  const ids = [...new Set(userIds)];
+  const ids = [...new Set(keyValues.filter((v) => typeof v === 'string' && v))];
   for (let i = 0; i < ids.length; i += 100) {
-    let keys = ids.slice(i, i + 100).map((userId) => ({ userId }));
+    let keys = ids.slice(i, i + 100).map((v) => ({ [keyName]: v }));
     for (let attempt = 0; keys.length && attempt < 3; attempt++) {
       const r = await docClient.send(
         new BatchGetCommand({
-          RequestItems: {
-            [USERS_TABLE]: {
-              Keys: keys,
-              // Aliased throughout: several of these are DynamoDB reserved words.
-              ProjectionExpression: '#u, #n, #t, #d, #cn, #cc, #co, #ln, #lc',
-              ExpressionAttributeNames: {
-                '#u': 'userId', '#n': 'name', '#t': 'userType', '#d': 'designation',
-                '#cn': 'companyName', '#cc': 'companyCity', '#co': 'country',
-                '#ln': 'collegeName', '#lc': 'collegeCity',
-              },
-            },
-          },
+          RequestItems: { [table]: { Keys: keys, ProjectionExpression: projection, ExpressionAttributeNames: names } },
         }),
       );
-      for (const item of r.Responses?.[USERS_TABLE] || []) out.set(item.userId, item);
-      keys = r.UnprocessedKeys?.[USERS_TABLE]?.Keys || [];
+      for (const item of r.Responses?.[table] || []) out.set(item[keyName], item);
+      keys = r.UnprocessedKeys?.[table]?.Keys || [];
     }
   }
   return out;
 }
 
+/** Profile fields for many users at once, keyed by userId. Missing users are absent. */
+function getProfiles(userIds) {
+  // Aliased throughout: several of these are DynamoDB reserved words.
+  return batchGetAll(USERS_TABLE, 'userId', userIds, '#u, #n, #t, #d, #cn, #cc, #co, #ln, #lc, #ic, #ci, #iq, #qi', {
+    '#u': 'userId', '#n': 'name', '#t': 'userType', '#d': 'designation',
+    '#cn': 'companyName', '#cc': 'companyCity', '#co': 'country',
+    '#ln': 'collegeName', '#lc': 'collegeCity',
+    '#ic': 'isCollegeChamp', '#ci': 'champCollegeId', '#iq': 'isCloudClub', '#qi': 'cloudClubId',
+  });
+}
+
+/**
+ * The colleges behind College Champs and Cloud Club memberships. Students who
+ * sign up through either pick their college from a list, so their profile
+ * stores its id instead of a collegeName: 22 of the first 49 students in the
+ * campaign showed no college until these were looked up.
+ */
+async function getCommunityColleges(profiles) {
+  const list = [...profiles.values()];
+  const names = { '#i': 'id', '#n': 'name', '#l': 'location' };
+  try {
+    const [colleges, clubs] = await Promise.all([
+      batchGetAll(COLLEGES_TABLE, 'id', list.filter((u) => u.isCollegeChamp === true).map((u) => u.champCollegeId), '#i, #n, #l', names),
+      batchGetAll(CLOUD_CLUBS_TABLE, 'id', list.filter((u) => u.isCloudClub === true).map((u) => u.cloudClubId), '#i, #n, #l', names),
+    ]);
+    return { colleges, clubs };
+  } catch (err) {
+    // Only the college names are lost. Everything else in the table still loads.
+    console.error('could not look up community colleges:', err.message);
+    return { colleges: new Map(), clubs: new Map() };
+  }
+}
+
 /** Student or professional, and where from, as the member filled it in. */
-function profileSummary(u) {
+function profileSummary(u, communities = {}) {
   if (!u) return null;
   const type = u.userType === 'student' || u.userType === 'professional' ? u.userType : null;
   const clean = (v) => (typeof v === 'string' ? v.trim() : '');
-  const student = type === 'student' || (!type && !clean(u.companyName) && Boolean(clean(u.collegeName)));
+  const champId = u.isCollegeChamp === true ? clean(u.champCollegeId) : '';
+  const clubId = u.isCloudClub === true ? clean(u.cloudClubId) : '';
+  const listed = (champId && communities.colleges?.get(champId)) || (clubId && communities.clubs?.get(clubId)) || null;
+  const student = type === 'student' ||
+    (!type && !clean(u.companyName) && Boolean(clean(u.collegeName) || listed));
   return {
     type,
-    organisation: student ? clean(u.collegeName) : clean(u.companyName),
+    organisation: student ? clean(u.collegeName) || clean(listed?.name) : clean(u.companyName),
     designation: student ? '' : clean(u.designation),
-    city: student ? clean(u.collegeCity) : clean(u.companyCity),
+    city: student ? clean(u.collegeCity) || clean(listed?.location) : clean(u.companyCity),
     country: clean(u.country),
+    // Which community programme they joined through, if any.
+    community: champId ? 'College Champs' : clubId ? 'Cloud Club' : '',
   };
 }
 
@@ -1356,6 +1400,7 @@ async function handleAdminParticipants(campaignId, event) {
 
   const participants = await listParticipants(campaignId);
   const profiles = await getProfiles(participants.map((p) => p.userId));
+  const communities = await getCommunityColleges(profiles);
 
   const rows = participants.map((p) => {
     const u = profiles.get(p.userId);
@@ -1373,7 +1418,7 @@ async function handleAdminParticipants(campaignId, event) {
       lastActiveDay: days.length ? days[days.length - 1] : null,
       commitCount: repo.commitCount || 0,
       lessonsDone: mergedLessons(p).filter((id) => !id.startsWith('bonus')).length,
-      profile: profileSummary(u),
+      profile: profileSummary(u, communities),
     };
   });
 

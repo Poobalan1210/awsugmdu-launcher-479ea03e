@@ -523,6 +523,8 @@ export interface AdminParticipant {
     designation: string;
     city: string;
     country: string;
+    /** 'College Champs' or 'Cloud Club' when they joined through one, otherwise ''. */
+    community?: string;
   } | null;
 }
 

@@ -409,7 +409,12 @@ export interface LeaderboardRow {
   avatar?: string;
   activeDays: number;
   commitCount: number;
+  /** Every counted lesson, bonuses included. */
   lessonsRecorded: number;
+  /** Of the seven scored lessons, as the builder's own lessons card counts them. */
+  lessonsDone?: number;
+  /** Of the two bonus lessons. */
+  bonusLessonsDone?: number;
   validated: boolean;
 }
 

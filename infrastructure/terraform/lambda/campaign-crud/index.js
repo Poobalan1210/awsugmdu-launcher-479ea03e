@@ -73,9 +73,39 @@ const SETUP_CODE_TTL_SECONDS = 15 * 60;
 const STALE_AFTER_HOURS = 72;
 const COUNTER_KEY = '__counter__';
 
-// 3 pages x 100 = 300 in-window commits. Far beyond a two-week solo project,
-// and bounded so one prolific repo cannot stall the whole sweep.
+// Fallback only, when GitHub's GraphQL API is unavailable: 3 pages x 100 = 300
+// in-window commits. Newest first, so a repo with more than 300 commits on its
+// latest day lost every earlier day: one builder with 25 commits over 7 days
+// showed 1 day after his history briefly ballooned to 8,000 commits.
 const MAX_COMMIT_PAGES = 3;
+
+// Branches counted besides the default one. Kiro Web and cloud sessions commit
+// to a branch and open a pull request, so real work can sit on a branch for
+// days before it is merged.
+const MAX_EXTRA_BRANCHES = 10;
+
+// Bump when the way activity is counted changes, so the next sweep recounts
+// every repo instead of reusing results counted the old way.
+const ACTIVITY_VERSION = 2;
+
+const toGitHubTime = (ms) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z');
+
+/** The challenge window as IST calendar days, each with a GitHub since/until pair. */
+const WINDOW_DAYS = (() => {
+  const start = Date.parse(WINDOW_START_ISO);
+  const end = Date.parse(ENTRY_DEADLINE_ISO);
+  const first = new Date(start + IST_OFFSET_MS);
+  const days = [];
+  let midnight = Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), first.getUTCDate()) - IST_OFFSET_MS;
+  for (; midnight <= end; midnight += 24 * 60 * 60 * 1000) {
+    days.push({
+      day: new Date(midnight + IST_OFFSET_MS).toISOString().slice(0, 10),
+      since: toGitHubTime(Math.max(midnight, start)),
+      until: toGitHubTime(Math.min(midnight + 24 * 60 * 60 * 1000 - 1000, end)),
+    });
+  }
+  return days;
+})();
 
 /** The lessons a participant may claim. Anything else in a manifest is ignored. */
 const VALID_LESSONS = ['1', '2', '3', '4', '5', '6', '7', 'bonus1', 'bonus2'];
@@ -270,6 +300,80 @@ async function gh(path) {
   let body = null;
   if (r.status !== 204) body = await r.json().catch(() => null);
   return { status: r.status, link: r.headers.get('link'), body };
+}
+
+/** GitHub GraphQL data, or null on any error. GraphQL needs a token. */
+async function ghGraphql(query, variables) {
+  if (!GITHUB_TOKEN) return null;
+  try {
+    const r = await fetch('https://api.github.com/graphql', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${GITHUB_TOKEN}`,
+        'Content-Type': 'application/json',
+        'User-Agent': 'awsugmdu-campaign',
+      },
+      body: JSON.stringify({ query, variables }),
+    });
+    const body = await r.json().catch(() => null);
+    // A partial answer is treated as none, so the caller's fallback runs.
+    if (r.status !== 200 || !body || !body.data || (body.errors && body.errors.length)) {
+      console.warn(`GitHub GraphQL ${r.status}: ${body?.errors?.[0]?.message || 'no data'}`);
+      return null;
+    }
+    return body.data;
+  } catch (err) {
+    console.warn('GitHub GraphQL failed:', err.message);
+    return null;
+  }
+}
+
+// One history count per IST day: exact however many commits there are, and
+// one query per repo instead of a page per hundred commits.
+const DAY_COUNT_FIELDS = WINDOW_DAYS
+  .map((d, i) => `d${i}: history(since: "${d.since}", until: "${d.until}") { totalCount }`)
+  .join(' ');
+const ACTIVITY_QUERY = `query($owner: String!, $name: String!, $branches: Int!) {
+  repository(owner: $owner, name: $name) {
+    defaultBranchRef { name target { ... on Commit { ${DAY_COUNT_FIELDS} } } }
+    refs(refPrefix: "refs/heads/", first: $branches) {
+      totalCount
+      nodes { name target { ... on Commit { ${DAY_COUNT_FIELDS} } } }
+    }
+  }
+}`;
+
+/**
+ * Commits per IST day in the window, on the default branch and up to
+ * MAX_EXTRA_BRANCHES others. A day counts if any of those branches has a commit
+ * on it; the commit count is the default branch's, so a branch made from it is
+ * not counted twice. null when GraphQL is unavailable.
+ */
+async function countActivity(owner, name) {
+  const data = await ghGraphql(ACTIVITY_QUERY, { owner, name, branches: MAX_EXTRA_BRANCHES + 1 });
+  const repo = data && data.repository;
+  const main = repo && repo.defaultBranchRef;
+  if (!main || !main.target) return null;
+  const perDay = (target) => WINDOW_DAYS.map((_, i) => Number(target?.[`d${i}`]?.totalCount) || 0);
+
+  const mainCounts = perDay(main.target);
+  const days = new Set(WINDOW_DAYS.filter((_, i) => mainCounts[i] > 0).map((d) => d.day));
+  let branchOnlyDays = 0;
+  for (const ref of repo.refs?.nodes || []) {
+    if (!ref || !ref.target || ref.name === main.name) continue;
+    perDay(ref.target).forEach((n, i) => {
+      if (n > 0 && !days.has(WINDOW_DAYS[i].day)) {
+        days.add(WINDOW_DAYS[i].day);
+        branchOnlyDays++;
+      }
+    });
+  }
+  return {
+    activeDayList: [...days].sort(),
+    commitCount: mainCounts.reduce((a, b) => a + b, 0),
+    branchOnlyDays,
+    branchesTotal: repo.refs?.totalCount || 1,
+  };
 }
 
 function parseRepoUrl(raw) {
@@ -648,6 +752,7 @@ async function inspectRepo(fullName, prev = null) {
   if (
     prev && prev.complete === true && !prev.unreachable &&
     prev.evidenceVersion === EVIDENCE_VERSION &&
+    prev.activityVersion === ACTIVITY_VERSION &&
     prev.lastPushAt && prev.lastPushAt === out.lastPushAt &&
     prev.defaultBranch === out.defaultBranch
   ) {
@@ -686,31 +791,48 @@ async function inspectRepo(fullName, prev = null) {
   // the most recent 100 commits were ever seen, so a heavy committer's earliest
   // days were silently dropped. Bounding the query fixes both: everything
   // returned is in-window by construction, and the result set shrinks.
-  const days = new Set();
-  let inWindowCommits = 0;
-  for (let page = 1; page <= MAX_COMMIT_PAGES; page++) {
-    const batch = await gh(
-      `/repos/${owner}/${name}/commits` +
-        `?since=${encodeURIComponent(WINDOW_START_ISO)}` +
-        `&until=${encodeURIComponent(ENTRY_DEADLINE_ISO)}` +
-        `&per_page=100&page=${page}`,
-    );
-    if (batch.status !== 200 || !Array.isArray(batch.body)) {
-      if (batch.status !== 409) complete = false; // 409: empty repo
-      break;
+  const activity = emptyRepo ? null : await countActivity(owner, name);
+  if (activity) {
+    out.activeDayList = activity.activeDayList;
+    out.activeDays = activity.activeDayList.length;
+    // Commits that count toward the challenge, not the repo's lifetime total.
+    out.commitCount = activity.commitCount;
+    out.branchOnlyDays = activity.branchOnlyDays;
+    out.branchCount = activity.branchesTotal;
+    out.activitySource = 'graphql';
+  } else {
+    // Page by page, newest first, default branch only. Capped (see MAX_COMMIT_PAGES).
+    const days = new Set();
+    let inWindowCommits = 0;
+    let capped = false;
+    for (let page = 1; page <= MAX_COMMIT_PAGES; page++) {
+      const batch = await gh(
+        `/repos/${owner}/${name}/commits` +
+          `?since=${encodeURIComponent(WINDOW_START_ISO)}` +
+          `&until=${encodeURIComponent(ENTRY_DEADLINE_ISO)}` +
+          `&per_page=100&page=${page}`,
+      );
+      if (batch.status !== 200 || !Array.isArray(batch.body)) {
+        if (batch.status !== 409) complete = false; // 409: empty repo
+        break;
+      }
+      if (batch.body.length === 0) break;
+      for (const c of batch.body) {
+        const d = c?.commit?.committer?.date || c?.commit?.author?.date;
+        if (d) days.add(istDay(d));
+      }
+      inWindowCommits += batch.body.length;
+      if (batch.body.length < 100) break; // last page
+      if (page === MAX_COMMIT_PAGES) capped = true;
     }
-    if (batch.body.length === 0) break;
-    for (const c of batch.body) {
-      const d = c?.commit?.committer?.date || c?.commit?.author?.date;
-      if (d) days.add(istDay(d));
-    }
-    inWindowCommits += batch.body.length;
-    if (batch.body.length < 100) break; // last page
+    out.activeDays = days.size;
+    out.activeDayList = [...days].sort();
+    out.commitCount = inWindowCommits;
+    out.activitySource = 'rest';
+    // Earlier days may be missing, so count again next sweep rather than reuse this.
+    if (capped) complete = false;
   }
-  out.activeDays = days.size;
-  out.activeDayList = [...days].sort();
-  // Commits that count toward the challenge, not the repo's lifetime total.
-  out.commitCount = inWindowCommits;
+  out.activityVersion = ACTIVITY_VERSION;
 
   // Lifetime total kept separately: useful for spotting a repo that was busy
   // outside the window, without letting that inflate the leaderboard.
@@ -980,14 +1102,21 @@ async function handleLeaderboard(campaignId) {
   const all = await listParticipants(campaignId);
   const entries = all
     .filter((p) => p.repo && !p.repo.unreachable)
-    .map((p) => ({
-      userId: p.userId,
-      displayName: p.displayName || 'Builder',
-      activeDays: p.repo?.activeDays || 0,
-      commitCount: p.repo?.commitCount || 0,
-      lessonsRecorded: mergedLessons(p).length,
-      validated: p.status === 'validated',
-    }))
+    .map((p) => {
+      const counted = mergedLessons(p);
+      return {
+        userId: p.userId,
+        displayName: p.displayName || 'Builder',
+        activeDays: p.repo?.activeDays || 0,
+        commitCount: p.repo?.commitCount || 0,
+        lessonsRecorded: counted.length,
+        // Split the way each member's own lessons card shows them: the seven
+        // scored lessons, and the two bonuses.
+        lessonsDone: counted.filter((id) => !id.startsWith('bonus')).length,
+        bonusLessonsDone: counted.filter((id) => id.startsWith('bonus')).length,
+        validated: p.status === 'validated',
+      };
+    })
     // Active days first — distinct days, so a hundred pushes in one afternoon
     // still counts once. Commits break ties.
     .sort((a, b) => b.activeDays - a.activeDays || b.commitCount - a.commitCount)

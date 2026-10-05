@@ -94,6 +94,29 @@ function DeadlineStrip() {
   );
 }
 
+// Rank, builder, days, lessons, and commits from the sm breakpoint up.
+const LEADERBOARD_GRID =
+  'grid grid-cols-[2.5rem_1fr_3rem_3.75rem] sm:grid-cols-[3rem_1fr_4.5rem_4.5rem_4.5rem] gap-3 px-4';
+
+/** "4/7", with "+1" when bonus lessons are done too. */
+function LessonsCell({ done, bonus }: { done?: number; bonus?: number }) {
+  // An API from before this column existed sends neither field.
+  if (done === undefined) {
+    return <span className="text-right text-muted-foreground">—</span>;
+  }
+  const label = `${done} of 7 lessons${bonus ? `, plus ${bonus} bonus` : ''}`;
+  return (
+    <span className="text-right tabular-nums whitespace-nowrap" title={label}>
+      <span aria-hidden="true">
+        <span className={done === 7 ? 'font-semibold text-green-600' : 'font-semibold'}>{done}</span>
+        <span className="text-muted-foreground">/7</span>
+        {bonus ? <span className="ml-1 text-xs font-medium text-primary">+{bonus}</span> : null}
+      </span>
+      <span className="sr-only">{label}</span>
+    </span>
+  );
+}
+
 function RewardTiers({ validatedCount }: { validatedCount: number }) {
   const rows = useMemo(() => slotsRemaining(validatedCount), [validatedCount]);
   return (
@@ -705,6 +728,20 @@ function ProgressStrip({
                 </AlertDescription>
               </Alert>
             )}
+            {/* 19 of 72 tracked repos held only the setup commit, and some of those
+                builders were committing to a different repo every day. Nothing
+                tells them the leaderboard is reading the wrong one. */}
+            {!repo.unreachable && (repo.activeDays ?? 0) <= 1 && (repo.commitCount ?? 0) <= 1 && (
+              <Alert>
+                <GitCommit className="h-4 w-4" />
+                <AlertTitle>Only the setup commit so far</AlertTitle>
+                <AlertDescription className="text-sm">
+                  Every day you commit counts on the leaderboard, so commit as you build. Building
+                  in a different folder? Run the setup command from inside that project&apos;s
+                  folder, and we&apos;ll track that repo instead.
+                </AlertDescription>
+              </Alert>
+            )}
           </>
         )}
 
@@ -1223,8 +1260,10 @@ export default function KiroUniversity() {
               <h2 className="text-xl font-semibold">Leaderboard</h2>
             </div>
             <p className="text-sm text-muted-foreground max-w-2xl">
-              Ranked by distinct days with at least one commit, counted in IST. Days, not
-              commit count — so a hundred pushes in one afternoon still counts as one day.
+              Ranked by days with at least one commit on any branch, counted in IST. Days, not
+              commit count, so a hundred pushes in one afternoon still counts as one day.
+              Lessons are the seven Kiro scores, found in the repo or ticked by the builder,
+              and + marks bonus lessons. Updated every 6 hours.
             </p>
 
             {/* Without this, a board of 13 under a hero reading "38 builders
@@ -1258,15 +1297,18 @@ export default function KiroUniversity() {
                 </CardContent>
               ) : (
                 <div className="divide-y divide-border/60">
-                  <div className="grid grid-cols-[3rem_1fr_5rem_5rem] gap-3 px-4 py-2.5 bg-muted/40 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  {/* Commits drop out on phones, where four numeric columns leave no
+                      room for names. Days rank the board, so they always stay. */}
+                  <div className={`${LEADERBOARD_GRID} py-2.5 bg-muted/40 text-xs font-medium uppercase tracking-wide text-muted-foreground`}>
                     <span>Rank</span><span>Builder</span>
                     <span className="text-right">Days</span>
-                    <span className="text-right">Commits</span>
+                    <span className="text-right">Lessons</span>
+                    <span className="hidden sm:block text-right">Commits</span>
                   </div>
                   {leaderboard.map((row) => (
                     <div
                       key={row.userId}
-                      className="grid grid-cols-[3rem_1fr_5rem_5rem] gap-3 px-4 py-3 items-center text-sm"
+                      className={`${LEADERBOARD_GRID} py-3 items-center text-sm`}
                     >
                       <span className="font-semibold tabular-nums text-muted-foreground">
                         {row.rank <= 3 ? ['🥇', '🥈', '🥉'][row.rank - 1] : `#${row.rank}`}
@@ -1282,7 +1324,8 @@ export default function KiroUniversity() {
                         )}
                       </span>
                       <span className="text-right tabular-nums font-semibold">{row.activeDays}</span>
-                      <span className="text-right tabular-nums text-muted-foreground">{row.commitCount}</span>
+                      <LessonsCell done={row.lessonsDone} bonus={row.bonusLessonsDone} />
+                      <span className="hidden sm:block text-right tabular-nums text-muted-foreground">{row.commitCount}</span>
                     </div>
                   ))}
                 </div>
@@ -1319,8 +1362,9 @@ export default function KiroUniversity() {
                         <span>
                           <span className="block text-sm font-medium">Show the setup command</span>
                           <span className="block text-sm text-muted-foreground mt-0.5">
-                            For a second project, a new machine, or after rotating your
-                            Kironomics key. Safe to re-run.
+                            For a new machine, or after rotating your Kironomics key. Run it
+                            inside another project&apos;s folder to switch the repo we track to that
+                            one. Safe to re-run.
                           </span>
                         </span>
                         <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform data-[state=open]:rotate-180" />

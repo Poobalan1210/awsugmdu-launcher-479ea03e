@@ -9,7 +9,9 @@ import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { getCampaignAdminParticipants, type AdminParticipant, type ParticipantStage } from '@/lib/campaign';
+import KiroPrizesPanel from './KiroPrizesPanel';
 
 const STAGES: Record<ParticipantStage, { label: string; rank: number; cls: string }> = {
   validated: { label: 'Validated', rank: 5, cls: 'bg-green-600 text-white hover:bg-green-600 border-transparent' },
@@ -85,10 +87,31 @@ function StatTile({ value, label, hint }: { value: number; label: string; hint?:
 }
 
 /**
- * Admin view of the Kiro University build-along: where every participant is
- * in the challenge, and from their profile, where they are from.
+ * Admin view of the Kiro University build-along: the prizes, now the challenge
+ * is over, and the builders.
  */
 export default function KiroUniversityTab() {
+  return (
+    <Tabs defaultValue="prizes" className="space-y-6">
+      <TabsList>
+        <TabsTrigger value="prizes">Prizes</TabsTrigger>
+        <TabsTrigger value="builders">Builders</TabsTrigger>
+      </TabsList>
+      <TabsContent value="prizes">
+        <KiroPrizesPanel />
+      </TabsContent>
+      <TabsContent value="builders">
+        <BuildersPanel />
+      </TabsContent>
+    </Tabs>
+  );
+}
+
+/**
+ * Where every participant is in the challenge, and from their profile, where
+ * they are from.
+ */
+function BuildersPanel() {
   const { data = [], isLoading, isFetching, error, refetch } = useQuery({
     queryKey: ['admin-kiro-participants'],
     queryFn: getCampaignAdminParticipants,

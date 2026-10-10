@@ -1,6 +1,10 @@
+const crypto = require('crypto');
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
-const { DynamoDBDocumentClient, PutCommand, GetCommand, UpdateCommand, DeleteCommand, QueryCommand, ScanCommand } = require('@aws-sdk/lib-dynamodb');
+const { DynamoDBDocumentClient, PutCommand, GetCommand, UpdateCommand, DeleteCommand, QueryCommand, ScanCommand, TransactWriteCommand } = require('@aws-sdk/lib-dynamodb');
 const { SESClient, SendEmailCommand } = require('@aws-sdk/client-ses');
+// Mirrored from lambda/shared/checkout.js by deploy.sh — edit the master copy.
+// Prize claims in the campaign Lambda use the same checks.
+const { validateCheckout } = require('./shared/checkout');
 
 const client = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(client);
@@ -13,8 +17,146 @@ const USERS_TABLE = process.env.USERS_TABLE_NAME;
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
-  'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
+  'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS'
 };
+
+function respond(statusCode, body) {
+  return { statusCode, headers: corsHeaders, body: JSON.stringify(body) };
+}
+
+function parseBody(body) {
+  if (!body) return {};
+  try {
+    const parsed = typeof body === 'string' ? JSON.parse(body) : body;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function escapeHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// ── Sign-in ───────────────────────────────────────────────────────
+// Every route except the public catalogue verifies the Cognito ID token's
+// signature, the same check the campaign Lambda's admin routes make. Before
+// this, redeem trusted a userId in the request body, so anyone who knew a
+// member's id (they are public on the leaderboards) could spend that member's
+// points, and anyone could list every order with its address and phone.
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '')
+  .split(',')
+  .map((s) => s.trim().toLowerCase())
+  .filter(Boolean);
+const COGNITO_USER_POOL_ID = process.env.COGNITO_USER_POOL_ID || '';
+const COGNITO_CLIENT_ID = process.env.COGNITO_CLIENT_ID || '';
+const COGNITO_ISSUER = COGNITO_USER_POOL_ID
+  ? `https://cognito-idp.${COGNITO_USER_POOL_ID.split('_')[0]}.amazonaws.com/${COGNITO_USER_POOL_ID}`
+  : '';
+const JWKS_REFETCH_MS = 60 * 1000;
+let jwksCache = null; // { keys, fetchedAt }
+
+async function cognitoSigningKey(kid) {
+  const find = () => (jwksCache ? jwksCache.keys.find((k) => k.kid === kid) : null) || null;
+  let key = find();
+  // An unknown key id usually means Cognito rotated its keys. Refetch, but at
+  // most once a minute, so junk tokens cannot make us hammer the endpoint.
+  if (!key && (!jwksCache || Date.now() - jwksCache.fetchedAt > JWKS_REFETCH_MS)) {
+    const r = await fetch(`${COGNITO_ISSUER}/.well-known/jwks.json`);
+    if (!r.ok) return null;
+    const body = await r.json();
+    jwksCache = { keys: Array.isArray(body?.keys) ? body.keys : [], fetchedAt: Date.now() };
+    key = find();
+  }
+  return key;
+}
+
+/** Claims of a genuine, unexpired ID token from this site's user pool, or null. */
+async function verifyIdToken(authHeader) {
+  if (!COGNITO_ISSUER || !COGNITO_CLIENT_ID) return null;
+  const parts = String(authHeader || '').replace(/^Bearer\s+/i, '').trim().split('.');
+  if (parts.length !== 3) return null;
+  try {
+    const decode = (s) => JSON.parse(Buffer.from(s, 'base64url').toString('utf8'));
+    const header = decode(parts[0]);
+    const claims = decode(parts[1]);
+    if (header.alg !== 'RS256' || typeof header.kid !== 'string') return null;
+    const jwk = await cognitoSigningKey(header.kid);
+    if (!jwk) return null;
+    const signed = crypto.verify(
+      'RSA-SHA256',
+      Buffer.from(`${parts[0]}.${parts[1]}`),
+      crypto.createPublicKey({ key: jwk, format: 'jwk' }),
+      Buffer.from(parts[2], 'base64url'),
+    );
+    if (!signed) return null;
+    const now = Math.floor(Date.now() / 1000);
+    if (claims.iss !== COGNITO_ISSUER || claims.aud !== COGNITO_CLIENT_ID) return null;
+    if (claims.token_use !== 'id' || typeof claims.sub !== 'string') return null;
+    if (typeof claims.exp !== 'number' || now > claims.exp + 60) return null; // 60s clock skew
+    return claims;
+  } catch {
+    return null;
+  }
+}
+
+// Who the site treats as an admin (see AuthContext): the profile's `role`, or
+// an admin or organiser role from the Members tab, kept in the `roles` list.
+const ADMIN_ROLE_NAMES = ['admin', 'organiser'];
+
+function hasAdminRole(user) {
+  if (!user) return false;
+  if (ADMIN_ROLE_NAMES.includes(String(user.role || '').toLowerCase())) return true;
+  const roles = Array.isArray(user.roles) ? user.roles : [];
+  return roles.some((r) =>
+    ADMIN_ROLE_NAMES.includes(String((typeof r === 'string' ? r : r?.role) || '').toLowerCase()));
+}
+
+/**
+ * The signed-in caller, or null without a valid token. Whether they are an
+ * admin is looked up only when a route asks.
+ */
+async function getCaller(event) {
+  const claims = await verifyIdToken(event.headers?.Authorization || event.headers?.authorization);
+  if (!claims) return null;
+  let admin;
+  return {
+    userId: claims.sub,
+    async isAdmin() {
+      if (admin === undefined) {
+        const email = String(claims.email || '').toLowerCase();
+        const emailVerified = claims.email_verified === true || claims.email_verified === 'true';
+        if (email && emailVerified && ADMIN_EMAILS.includes(email)) {
+          admin = true;
+        } else {
+          try {
+            const r = await docClient.send(new GetCommand({ TableName: USERS_TABLE, Key: { userId: claims.sub } }));
+            admin = hasAdminRole(r.Item);
+          } catch {
+            admin = false;
+          }
+        }
+      }
+      return admin;
+    },
+  };
+}
+
+/**
+ * For the public catalogue: 'anonymous' without a sign-in, 'invalid' when a
+ * token was sent but fails verification, or the caller's admin status.
+ */
+async function catalogueViewer(event) {
+  const header = event.headers?.Authorization || event.headers?.authorization;
+  if (!header) return 'anonymous';
+  const caller = await getCaller(event);
+  if (!caller) return 'invalid';
+  return (await caller.isAdmin()) ? 'admin' : 'member';
+}
 
 // Email sending function
 async function sendEmail(to, subject, htmlBody, textBody) {
@@ -122,87 +264,96 @@ AWS User Group MDU Team
 }
 
 exports.handler = async (event) => {
-  console.log('Event:', JSON.stringify(event, null, 2));
-
   const { httpMethod, path, pathParameters, body, queryStringParameters } = event;
+  // Method and path only: the full event carries the sign-in token, and
+  // checkout bodies carry addresses and phone numbers.
+  console.log('Request:', httpMethod, path);
 
   try {
-    // Store Items Routes
-    if (path === '/store/items' && httpMethod === 'GET') {
-      return await listStoreItems();
+    const isItemPath = /\/store\/items\/[^/]+$/.test(path);
+    const isOrderPath = /\/store\/orders\/[^/]+$/.test(path);
+
+    // The catalogue is public. Unredeemed codes are for organisers only. A
+    // token that fails verification is refused rather than quietly treated as
+    // a visitor's: an admin given the visitor's view, which has no codes,
+    // would save the item back with its codes gone.
+    if ((path === '/store/items' || isItemPath) && httpMethod === 'GET') {
+      const viewer = await catalogueViewer(event);
+      if (viewer === 'invalid') return respond(401, { message: 'Sign in again to continue.' });
+      return path === '/store/items'
+        ? await listStoreItems(viewer === 'admin')
+        : await getStoreItem(pathParameters.id, viewer === 'admin');
     }
-    
+
+    // Everything else needs a verified sign-in.
+    const caller = await getCaller(event);
+    if (!caller) return respond(401, { message: 'Sign in again to continue.' });
+
+    if (/\/store\/items\/[^/]+\/redeem$/.test(path) && httpMethod === 'POST') {
+      return await redeemItem(pathParameters.id, parseBody(body), caller.userId);
+    }
+
+    // Members see their own orders. Admins see anyone's, or all of them.
+    if (path === '/store/orders' && httpMethod === 'GET') {
+      const requested = queryStringParameters?.userId;
+      if (await caller.isAdmin()) return await listOrders(requested);
+      if (requested && requested !== caller.userId) {
+        return respond(403, { message: 'You can only see your own orders.' });
+      }
+      return await listOrders(caller.userId);
+    }
+    if (isOrderPath && httpMethod === 'GET') {
+      return await getOrder(pathParameters.id, caller);
+    }
+
+    // The rest manages the store.
+    if (!(await caller.isAdmin())) return respond(403, { message: 'Only organisers can do that.' });
+
     if (path === '/store/items' && httpMethod === 'POST') {
-      return await createStoreItem(JSON.parse(body));
+      return await createStoreItem(parseBody(body));
     }
-    
-    if (path.match(/\/store\/items\/[^/]+$/) && httpMethod === 'GET') {
-      return await getStoreItem(pathParameters.id);
+    if (isItemPath && httpMethod === 'PUT') {
+      return await updateStoreItem(pathParameters.id, parseBody(body));
     }
-    
-    if (path.match(/\/store\/items\/[^/]+$/) && httpMethod === 'PUT') {
-      return await updateStoreItem(pathParameters.id, JSON.parse(body));
-    }
-    
-    if (path.match(/\/store\/items\/[^/]+$/) && httpMethod === 'DELETE') {
+    if (isItemPath && httpMethod === 'DELETE') {
       return await deleteStoreItem(pathParameters.id);
     }
-
-    // Orders Routes
-    if (path === '/store/orders' && httpMethod === 'GET') {
-      const userId = queryStringParameters?.userId;
-      return await listOrders(userId);
-    }
-    
     if (path === '/store/orders' && httpMethod === 'POST') {
-      return await createOrder(JSON.parse(body));
+      return await createOrder(parseBody(body));
     }
-    
-    if (path.match(/\/store\/orders\/[^/]+$/) && httpMethod === 'GET') {
-      return await getOrder(pathParameters.id);
+    if (/\/store\/orders\/[^/]+\/status$/.test(path) && httpMethod === 'PATCH') {
+      return await updateOrderStatus(pathParameters.id, parseBody(body));
     }
-    
-    if (path.match(/\/store\/orders\/[^/]+\/status$/) && httpMethod === 'PATCH') {
-      return await updateOrderStatus(pathParameters.id, JSON.parse(body));
+    if (/\/store\/orders\/[^/]+\/assign-code$/.test(path) && httpMethod === 'PATCH') {
+      return await assignCodeToOrder(pathParameters.id, parseBody(body));
     }
 
-    if (path.match(/\/store\/orders\/[^/]+\/assign-code$/) && httpMethod === 'PATCH') {
-      return await assignCodeToOrder(pathParameters.id, JSON.parse(body));
-    }
-
-    // Redeem Route
-    if (path.match(/\/store\/items\/[^/]+\/redeem$/) && httpMethod === 'POST') {
-      return await redeemItem(pathParameters.id, JSON.parse(body));
-    }
-
-    return {
-      statusCode: 404,
-      headers: corsHeaders,
-      body: JSON.stringify({ message: 'Route not found' })
-    };
+    return respond(404, { message: 'Route not found' });
   } catch (error) {
     console.error('Error:', error);
-    return {
-      statusCode: 500,
-      headers: corsHeaders,
-      body: JSON.stringify({ message: error.message })
-    };
+    return respond(500, { message: error.message });
   }
 };
 
+/**
+ * A store item as members see it. Unredeemed codes are what members spend
+ * points on, so only organisers get them; everyone else gets a count.
+ */
+function forCatalogue(item, includeCodes) {
+  if (includeCodes || !Array.isArray(item.availableCodes)) return item;
+  const { availableCodes, ...rest } = item;
+  return { ...rest, availableCodeCount: availableCodes.length };
+}
+
 // Store Items Functions
-async function listStoreItems() {
+async function listStoreItems(includeCodes) {
   const params = {
     TableName: STORE_ITEMS_TABLE
   };
 
   const result = await docClient.send(new ScanCommand(params));
-  
-  return {
-    statusCode: 200,
-    headers: corsHeaders,
-    body: JSON.stringify(result.Items || [])
-  };
+
+  return respond(200, (result.Items || []).map((item) => forCatalogue(item, includeCodes)));
 }
 
 async function createStoreItem(data) {
@@ -243,7 +394,7 @@ async function createStoreItem(data) {
   };
 }
 
-async function getStoreItem(id) {
+async function getStoreItem(id, includeCodes) {
   const params = {
     TableName: STORE_ITEMS_TABLE,
     Key: { id }
@@ -252,18 +403,10 @@ async function getStoreItem(id) {
   const result = await docClient.send(new GetCommand(params));
 
   if (!result.Item) {
-    return {
-      statusCode: 404,
-      headers: corsHeaders,
-      body: JSON.stringify({ message: 'Item not found' })
-    };
+    return respond(404, { message: 'Item not found' });
   }
 
-  return {
-    statusCode: 200,
-    headers: corsHeaders,
-    body: JSON.stringify(result.Item)
-  };
+  return respond(200, forCatalogue(result.Item, includeCodes));
 }
 
 async function updateStoreItem(id, data) {
@@ -435,32 +578,84 @@ async function createOrder(data) {
   };
 }
 
-async function getOrder(id) {
+async function getOrder(id, caller) {
   const params = {
     TableName: ORDERS_TABLE,
     Key: { id }
   };
 
   const result = await docClient.send(new GetCommand(params));
+  const order = result.Item;
 
-  if (!result.Item) {
-    return {
-      statusCode: 404,
-      headers: corsHeaders,
-      body: JSON.stringify({ message: 'Order not found' })
-    };
+  // Someone else's order looks the same as a missing one.
+  if (!order || (order.userId !== caller.userId && !(await caller.isAdmin()))) {
+    return respond(404, { message: 'Order not found' });
   }
 
-  return {
-    statusCode: 200,
-    headers: corsHeaders,
-    body: JSON.stringify(result.Item)
-  };
+  return respond(200, order);
+}
+
+const ORDER_STATUSES = ['pending', 'processing', 'shipped', 'delivered', 'cancelled', 'completed'];
+
+/**
+ * The email a member gets when their physical order is marked completed. The
+ * wording follows how it reached them: shipped, or collected at an event.
+ */
+function buildCompletionEmail(order, adminNotes) {
+  const itemHtml = `<strong>${escapeHtml(order.itemName)}</strong>`;
+  const notes = typeof adminNotes === 'string' ? adminNotes.trim() : '';
+  const copy = order.fulfillmentMethod === 'pickup'
+    ? {
+        subject: `You've collected your ${order.itemName}`,
+        heading: 'Enjoy your prize! 🎉',
+        html: `You collected your ${itemHtml} at our event.`,
+        text: `You collected your ${order.itemName} at our event.`,
+      }
+    : order.fulfillmentMethod === 'ship'
+      ? {
+          subject: `Your ${order.itemName} has been shipped`,
+          heading: 'It is on its way! 🎉',
+          html: `Your ${itemHtml} has been shipped to the address you gave us.`,
+          text: `Your ${order.itemName} has been shipped to the address you gave us.`,
+        }
+      : {
+          subject: `Your ${order.itemName} Order is Complete`,
+          heading: 'Order Completed! 🎉',
+          html: `Your order for ${itemHtml} has been processed and completed.`,
+          text: `Your order for ${order.itemName} has been processed and completed.`,
+        };
+
+  const htmlBody = `
+    <h2>${copy.heading}</h2>
+    <p>${copy.html}</p>
+    ${notes ? `
+    <div style="background-color: #f4f4f4; padding: 15px; border-radius: 5px; margin: 20px 0;">
+      <strong>Notes from the organisers:</strong><br>
+      ${escapeHtml(notes).replace(/\n/g, '<br>')}
+    </div>
+    ` : ''}
+    <p>Thank you for being part of our community!</p>
+    <p>Best regards,<br>AWS User Group MDU Team</p>
+  `;
+  const textBody = `
+${copy.text}
+
+${notes ? `Notes from the organisers:\n${notes}\n\n` : ''}Thank you for being part of our community!
+
+Best regards,
+AWS User Group MDU Team
+  `;
+  return { subject: copy.subject, htmlBody, textBody };
 }
 
 async function updateOrderStatus(id, data) {
+  if (!ORDER_STATUSES.includes(data.status)) {
+    return respond(400, { message: `Unknown status. Use one of: ${ORDER_STATUSES.join(', ')}.` });
+  }
+
   const updateExpressions = ['#status = :status', '#updatedAt = :updatedAt'];
   const expressionAttributeNames = {
+    '#id': 'id',
     '#status': 'status',
     '#updatedAt': 'updatedAt'
   };
@@ -479,12 +674,20 @@ async function updateOrderStatus(id, data) {
     TableName: ORDERS_TABLE,
     Key: { id },
     UpdateExpression: `SET ${updateExpressions.join(', ')}`,
+    // Without this, a status update for a mistyped id would create a stub order.
+    ConditionExpression: 'attribute_exists(#id)',
     ExpressionAttributeNames: expressionAttributeNames,
     ExpressionAttributeValues: expressionAttributeValues,
     ReturnValues: 'ALL_NEW'
   };
 
-  const result = await docClient.send(new UpdateCommand(params));
+  let result;
+  try {
+    result = await docClient.send(new UpdateCommand(params));
+  } catch (err) {
+    if (err.name === 'ConditionalCheckFailedException') return respond(404, { message: 'Order not found' });
+    throw err;
+  }
   const order = result.Attributes;
 
   // Send email notification when order is completed
@@ -494,42 +697,14 @@ async function updateOrderStatus(id, data) {
       Key: { userId: order.userId }
     };
     const userResult = await docClient.send(new GetCommand(userParams));
-    
+
     if (userResult.Item && userResult.Item.email) {
-      const user = userResult.Item;
-      const subject = `Your ${order.itemName} Order is Complete`;
-      const htmlBody = `
-        <h2>Order Completed! 🎉</h2>
-        <p>Your order for <strong>${order.itemName}</strong> has been processed and completed.</p>
-        ${data.adminNotes ? `
-        <div style="background-color: #f4f4f4; padding: 15px; border-radius: 5px; margin: 20px 0;">
-          <strong>Admin Notes:</strong><br>
-          ${data.adminNotes}
-        </div>
-        ` : ''}
-        <p>Thank you for being part of our community!</p>
-        <p>Best regards,<br>AWS User Group MDU Team</p>
-      `;
-      const textBody = `
-Order Completed!
-
-Your order for ${order.itemName} has been processed and completed.
-
-${data.adminNotes ? `Admin Notes:\n${data.adminNotes}\n\n` : ''}
-Thank you for being part of our community!
-
-Best regards,
-AWS User Group MDU Team
-      `;
-      await sendEmail(user.email, subject, htmlBody, textBody);
+      const { subject, htmlBody, textBody } = buildCompletionEmail(order, data.adminNotes);
+      await sendEmail(userResult.Item.email, subject, htmlBody, textBody);
     }
   }
 
-  return {
-    statusCode: 200,
-    headers: corsHeaders,
-    body: JSON.stringify(result.Attributes)
-  };
+  return respond(200, order);
 }
 
 async function assignCodeToOrder(id, data) {
@@ -620,169 +795,158 @@ async function assignCodeToOrder(id, data) {
   };
 }
 
-// Redeem Item Function
-async function redeemItem(itemId, data) {
-  const { userId } = data;
-
-  // Get the item
-  const itemParams = {
-    TableName: STORE_ITEMS_TABLE,
-    Key: { id: itemId }
-  };
-  const itemResult = await docClient.send(new GetCommand(itemParams));
-  
-  if (!itemResult.Item) {
-    return {
-      statusCode: 404,
-      headers: corsHeaders,
-      body: JSON.stringify({ message: 'Item not found' })
-    };
+// ── Checkout ──────────────────────────────────────────────────────
+/**
+ * Spend points on an item. The points, the stock or code, and the order are
+ * written in one transaction, each guarded by a condition on what was read.
+ * Two redeems at once cannot both spend the same points, take the last item or
+ * get the same code, and a failure never leaves points spent without an order.
+ */
+async function redeemItem(itemId, data, userId) {
+  if (data.userId && data.userId !== userId) {
+    return respond(403, { message: 'You can only redeem with your own account.' });
   }
 
-  const item = itemResult.Item;
+  const item = (await docClient.send(new GetCommand({ TableName: STORE_ITEMS_TABLE, Key: { id: itemId } }))).Item;
+  if (!item) return respond(404, { message: 'Item not found' });
+  if (!item.inStock) return respond(400, { message: 'Item is out of stock' });
 
-  if (!item.inStock) {
-    return {
-      statusCode: 400,
-      headers: corsHeaders,
-      body: JSON.stringify({ message: 'Item is out of stock' })
-    };
-  }
+  const itemType = item.itemType === 'virtual' ? 'virtual' : 'physical';
+  const checkout = validateCheckout(itemType, data);
+  if (checkout.error) return respond(400, { message: checkout.error });
 
-  // Get user
-  const userParams = {
-    TableName: USERS_TABLE,
-    Key: { userId }
-  };
-  const userResult = await docClient.send(new GetCommand(userParams));
-  
-  if (!userResult.Item) {
-    return {
-      statusCode: 404,
-      headers: corsHeaders,
-      body: JSON.stringify({ message: 'User not found' })
-    };
-  }
+  const user = (await docClient.send(new GetCommand({ TableName: USERS_TABLE, Key: { userId } }))).Item;
+  if (!user) return respond(404, { message: 'User not found' });
 
-  const user = userResult.Item;
-  const currentPoints = user.points || 0;
-  const currentRedeemablePoints = user.redeemablePoints ?? currentPoints;
+  const price = Number(item.points) || 0;
+  // Profiles from before redeemable points existed have none: their balance is their total.
+  const hasBalance = typeof user.redeemablePoints === 'number';
+  const balance = hasBalance ? user.redeemablePoints : (Number(user.points) || 0);
+  if (balance < price) return respond(400, { message: 'Insufficient points' });
 
-  if (currentRedeemablePoints < item.points) {
-    return {
-      statusCode: 400,
-      headers: corsHeaders,
-      body: JSON.stringify({ message: 'Insufficient points' })
-    };
-  }
-
-  // Deduct points from redeemablePoints only (overall points stay the same)
-  const updateUserParams = {
-    TableName: USERS_TABLE,
-    Key: { userId },
-    UpdateExpression: 'SET #redeemablePoints = :redeemablePoints, #activities = :activities, #pointActivities = :pointActivities',
-    ExpressionAttributeNames: {
-      '#redeemablePoints': 'redeemablePoints',
-      '#activities': 'activities',
-      '#pointActivities': 'pointActivities'
-    },
-    ExpressionAttributeValues: {
-      ':redeemablePoints': currentRedeemablePoints - item.points,
-      ':activities': [
-        ...(user.activities || []),
-        {
-          type: 'store_redeemed',
-          itemId,
-          itemName: item.name,
-          points: item.points,
-          timestamp: new Date().toISOString()
-        }
-      ],
-      ':pointActivities': user.pointActivities || []
-    }
-  };
-  await docClient.send(new UpdateCommand(updateUserParams));
-
-  // Decrement quantity for physical items
-  if (item.itemType === 'physical' && item.quantity !== undefined && item.quantity > 0) {
-    const newQuantity = item.quantity - 1;
-    const updateItemParams = {
-      TableName: STORE_ITEMS_TABLE,
-      Key: { id: itemId },
-      UpdateExpression: 'SET #quantity = :quantity, #inStock = :inStock',
-      ExpressionAttributeNames: {
-        '#quantity': 'quantity',
-        '#inStock': 'inStock'
-      },
-      ExpressionAttributeValues: {
-        ':quantity': newQuantity,
-        ':inStock': newQuantity > 0
-      }
-    };
-    await docClient.send(new UpdateCommand(updateItemParams));
-  }
-
-  // Create order
+  const now = new Date().toISOString();
   const order = {
-    id: `order_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    id: `order_${Date.now()}_${crypto.randomBytes(5).toString('hex')}`,
     userId,
     itemId,
-    itemName: item.name,
-    itemType: item.itemType,
-    points: item.points,
+    itemName: item.name || '',
+    itemType,
+    points: price,
     status: 'pending',
-    shippingAddress: data.shippingAddress || {},
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
+    createdAt: now,
+    updatedAt: now
   };
-
-  // For virtual items, auto-assign a code if available
-  if (item.itemType === 'virtual' && item.availableCodes && item.availableCodes.length > 0) {
-    const code = item.availableCodes[0];
-    order.code = code;
-    order.status = 'completed';
-
-    // Remove the code from available codes
-    const updatedCodes = item.availableCodes.slice(1);
-    const updateItemParams = {
-      TableName: STORE_ITEMS_TABLE,
-      Key: { id: itemId },
-      UpdateExpression: 'SET #availableCodes = :codes, #inStock = :inStock',
-      ExpressionAttributeNames: {
-        '#availableCodes': 'availableCodes',
-        '#inStock': 'inStock'
-      },
-      ExpressionAttributeValues: {
-        ':codes': updatedCodes,
-        ':inStock': updatedCodes.length > 0
-      }
-    };
-    await docClient.send(new UpdateCommand(updateItemParams));
-
-    // Send email with the code
-    if (user.email) {
-      const { subject, htmlBody, textBody } = buildCodeEmail(item, {
-        code,
-        points: item.points,
-        name: user.name,
-      });
-      await sendEmail(user.email, subject, htmlBody, textBody);
-    }
+  if (checkout.method) {
+    order.fulfillmentMethod = checkout.method;
+    order.shippingAddress = checkout.contact;
+    if (checkout.notes) order.customerNotes = checkout.notes;
   }
 
-  const orderParams = {
-    TableName: ORDERS_TABLE,
-    Item: order
-  };
-  await docClient.send(new PutCommand(orderParams));
+  // 1. The points, only while the balance still covers them. Overall points
+  //    stay the same: spending never lowers what a member has earned.
+  const transactItems = [{
+    Update: {
+      TableName: USERS_TABLE,
+      Key: { userId },
+      UpdateExpression: hasBalance
+        ? 'SET #rp = #rp - :price, #ac = list_append(if_not_exists(#ac, :empty), :act), #ua = :now'
+        : 'SET #rp = :after, #ac = list_append(if_not_exists(#ac, :empty), :act), #ua = :now',
+      ConditionExpression: hasBalance ? '#rp >= :price' : 'attribute_not_exists(#rp)',
+      ExpressionAttributeNames: { '#rp': 'redeemablePoints', '#ac': 'activities', '#ua': 'updatedAt' },
+      ExpressionAttributeValues: {
+        ...(hasBalance ? { ':price': price } : { ':after': balance - price }),
+        ':empty': [],
+        ':act': [{
+          type: 'store_redeemed',
+          itemId,
+          itemName: order.itemName,
+          points: price,
+          orderId: order.id,
+          timestamp: now
+        }],
+        ':now': now
+      }
+    }
+  }];
 
-  return {
-    statusCode: 200,
-    headers: corsHeaders,
-    body: JSON.stringify({
-      message: 'Item redeemed successfully',
-      order,
-      remainingPoints: currentRedeemablePoints - item.points
-    })
-  };
+  // 2. Stock: one fewer, only if nobody took one since it was read.
+  if (itemType === 'physical' && typeof item.quantity === 'number' && item.quantity > 0) {
+    const left = item.quantity - 1;
+    transactItems.push({
+      Update: {
+        TableName: STORE_ITEMS_TABLE,
+        Key: { id: itemId },
+        UpdateExpression: 'SET #q = :left, #is = :inStock',
+        ConditionExpression: '#q = :q',
+        ExpressionAttributeNames: { '#q': 'quantity', '#is': 'inStock' },
+        ExpressionAttributeValues: { ':left': left, ':inStock': left > 0, ':q': item.quantity }
+      }
+    });
+  }
+
+  // 3. Virtual items: hand out the next code, only if it is still the next one.
+  let code = null;
+  if (itemType === 'virtual' && Array.isArray(item.availableCodes) && item.availableCodes.length > 0) {
+    code = item.availableCodes[0];
+    const rest = item.availableCodes.slice(1);
+    order.code = code;
+    order.status = 'completed';
+    transactItems.push({
+      Update: {
+        TableName: STORE_ITEMS_TABLE,
+        Key: { id: itemId },
+        UpdateExpression: 'SET #codes = :rest, #is = :inStock',
+        ConditionExpression: 'size(#codes) = :n AND #codes[0] = :code',
+        ExpressionAttributeNames: { '#codes': 'availableCodes', '#is': 'inStock' },
+        ExpressionAttributeValues: {
+          ':rest': rest,
+          ':inStock': rest.length > 0,
+          ':n': item.availableCodes.length,
+          ':code': code
+        }
+      }
+    });
+  }
+
+  // 4. The order.
+  transactItems.push({
+    Put: {
+      TableName: ORDERS_TABLE,
+      Item: order,
+      ConditionExpression: 'attribute_not_exists(#id)',
+      ExpressionAttributeNames: { '#id': 'id' }
+    }
+  });
+
+  try {
+    await docClient.send(new TransactWriteCommand({ TransactItems: transactItems }));
+  } catch (err) {
+    if (err.name === 'TransactionCanceledException') {
+      const reasons = (err.CancellationReasons || []).map((r) => r && r.Code);
+      if (reasons[0] === 'ConditionalCheckFailed') {
+        return respond(400, { message: 'Insufficient points. Refresh the page to see your current balance.' });
+      }
+      if (reasons.includes('ConditionalCheckFailed')) {
+        return respond(409, { message: 'Someone redeemed this item at the same moment. Try again.' });
+      }
+      return respond(409, { message: 'The redemption could not be completed. Try again.' });
+    }
+    throw err;
+  }
+
+  // The code goes out only once the order is safely written.
+  if (code && user.email) {
+    const { subject, htmlBody, textBody } = buildCodeEmail(item, {
+      code,
+      points: price,
+      name: user.name,
+    });
+    await sendEmail(user.email, subject, htmlBody, textBody);
+  }
+
+  return respond(200, {
+    message: 'Item redeemed successfully',
+    order,
+    remainingPoints: balance - price
+  });
 }

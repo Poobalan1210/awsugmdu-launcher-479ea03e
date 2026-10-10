@@ -4,48 +4,53 @@ import { Footer } from '@/components/layout/Footer';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ShoppingBag, Coins, Loader2 } from 'lucide-react';
+import { ShoppingBag, Coins, Loader2, Gift } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { getStoreItems, redeemStoreItem, type StoreItem } from '@/lib/store';
+import { CheckoutDialog } from '@/components/store/CheckoutDialog';
+import { usePrizeClaim } from '@/hooks/usePrizeClaim';
+import { prizeTierById } from '@/lib/campaign';
+import { getStoreItems, redeemStoreItem, SHIPPING_WINDOW, type RedeemRequest, type StoreItem } from '@/lib/store';
 import { toast } from 'sonner';
 
 export default function Store() {
   const { user, refreshUser } = useAuth();
   const [storeItems, setStoreItems] = useState<StoreItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [redeemingItemId, setRedeemingItemId] = useState<string | null>(null);
-  const [showRedeemDialog, setShowRedeemDialog] = useState(false);
   const [selectedItem, setSelectedItem] = useState<StoreItem | null>(null);
+  // Set when the checkout is a prize claim. Fixed when the dialog opens, so it
+  // does not flip to a points checkout as the claimed coupon updates.
+  const [checkoutCoupon, setCheckoutCoupon] = useState<{ code: string } | null>(null);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
-  const [shippingAddress, setShippingAddress] = useState({
-    name: '',
-    address: '',
-    city: '',
-    state: '',
-    zipCode: '',
-    phone: '',
-  });
+  const prizeClaim = usePrizeClaim();
 
   useEffect(() => {
     loadStoreItems();
   }, []);
 
-  const loadStoreItems = async () => {
+  const loadStoreItems = async (quiet = false) => {
     try {
-      setLoading(true);
+      if (!quiet) setLoading(true);
       const items = await getStoreItems();
       setStoreItems(items);
     } catch (error) {
       console.error('Failed to load store items:', error);
-      toast.error('Failed to load store items');
+      if (!quiet) toast.error('Failed to load store items');
     } finally {
-      setLoading(false);
+      if (!quiet) setLoading(false);
     }
   };
+
+  // The item an unused prize coupon claims: the one fixed when prizes were
+  // issued, or for older coupons the prize's match by name.
+  const prize = prizeClaim.canClaim ? prizeClaim.prize : null;
+  const prizeTier = prizeTierById(prize?.tier);
+  const prizeItem = prize
+    ? storeItems.find((i) => i.id === prize.itemId) ??
+      (prizeTier ? storeItems.find((i) => i.itemType !== 'virtual' && prizeTier.storeMatch.test(i.name)) : undefined)
+    : undefined;
 
   const handleRedeemClick = (item: StoreItem) => {
     if (!user) {
@@ -53,48 +58,50 @@ export default function Store() {
       return;
     }
     setSelectedItem(item);
-    setShippingAddress({
-      name: user.name || '',
-      address: '',
-      city: '',
-      state: '',
-      zipCode: '',
-      phone: '',
-    });
-    setShowRedeemDialog(true);
+    setCheckoutCoupon(prize && item.id === prizeItem?.id ? { code: prize.code } : null);
+    setCheckoutOpen(true);
   };
 
-  const handleRedeem = async () => {
+  /** Spend points on the item, or claim it with the prize coupon. Throws to keep the dialog open. */
+  const handleCheckout = async (request: RedeemRequest) => {
     if (!selectedItem || !user) return;
-
+    if (checkoutCoupon) {
+      await prizeClaim.claim(request);
+      await loadStoreItems(true);
+      return;
+    }
     try {
-      setRedeemingItemId(selectedItem.id);
-      const result = await redeemStoreItem(selectedItem.id, user.id, shippingAddress);
-      toast.success(`Successfully redeemed ${selectedItem.name}! Remaining points: ${result.remainingPoints}`);
-      setShowRedeemDialog(false);
-      
-      // Refresh user data to update points
-      await refreshUser();
-    } catch (error: any) {
+      const result = await redeemStoreItem(selectedItem.id, request);
+      const isPhysical = selectedItem.itemType !== 'virtual';
+      const next = !isPhysical
+        ? (result.order.code ? 'Your code is on its way to your email.' : "We'll email your code once it's ready.")
+        : request.fulfillmentMethod === 'ship'
+          ? `It ships in ${SHIPPING_WINDOW}.`
+          : 'Collect it at our next in-person event.';
+      toast.success(
+        `Redeemed ${selectedItem.name}. ${next} You have ${result.remainingPoints.toLocaleString()} points left.`,
+      );
+      // Refresh points and stock.
+      await Promise.all([refreshUser(), loadStoreItems(true)]);
+    } catch (error: unknown) {
       console.error('Failed to redeem item:', error);
-      toast.error(error.message || 'Failed to redeem item');
-    } finally {
-      setRedeemingItemId(null);
+      toast.error(error instanceof Error ? error.message : 'Failed to redeem item');
+      throw error;
     }
   };
 
   // Get unique categories
   const categories = ['all', ...new Set(storeItems.map(item => item.category || 'general'))];
-  
+
   // Filter items by category
-  const filteredItems = categoryFilter === 'all' 
-    ? storeItems 
+  const filteredItems = categoryFilter === 'all'
+    ? storeItems
     : storeItems.filter(item => (item.category || 'general') === categoryFilter);
 
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
-      
+
       <main className="flex-1">
         {/* Hero */}
         <section className="py-16 bg-gradient-to-br from-purple-500/10 via-background to-background">
@@ -153,47 +160,76 @@ export default function Store() {
             </div>
           ) : (
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {filteredItems.map((item) => (
-                <Card key={item.id} className="glass-card hover-lift overflow-hidden">
-                  <CardContent className="p-0">
-                    <div className="h-40 bg-gradient-to-br from-purple-500/5 to-blue-500/5 flex items-center justify-center overflow-hidden">
-                      {item.image?.startsWith('http') ? (
-                        <img 
-                          src={item.image} 
-                          alt={item.name}
-                          className="w-full h-full object-contain p-2"
-                        />
-                      ) : (
-                        <span role="img" aria-label={item.name} className="text-7xl">
-                          {item.image}
-                        </span>
-                      )}
-                    </div>
-                    <div className="p-6">
-                      <div className="flex items-start justify-between gap-2 mb-2">
-                        <h3 className="font-semibold">{item.name}</h3>
-                        {!item.inStock && (
-                          <Badge variant="secondary">Out of Stock</Badge>
+              {filteredItems.map((item) => {
+                // A winner's prize: claimed with their coupon, free, even if
+                // it shows out of stock while the organisers restock.
+                const isPrize = item.id === prizeItem?.id;
+                return (
+                  <Card
+                    key={item.id}
+                    className={`glass-card hover-lift overflow-hidden ${isPrize ? 'ring-2 ring-orange-500/70' : ''}`}
+                  >
+                    <CardContent className="p-0">
+                      <div className="h-40 bg-gradient-to-br from-purple-500/5 to-blue-500/5 flex items-center justify-center overflow-hidden">
+                        {item.image?.startsWith('http') ? (
+                          <img
+                            src={item.image}
+                            alt={item.name}
+                            className="w-full h-full object-contain p-2"
+                          />
+                        ) : (
+                          <span role="img" aria-label={item.name} className="text-7xl">
+                            {item.image}
+                          </span>
                         )}
                       </div>
-                      <p className="text-sm text-muted-foreground mb-4">{item.description}</p>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1 text-primary font-bold">
-                          <Coins className="h-4 w-4" />
-                          {item.points}
+                      <div className="p-6">
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <h3 className="font-semibold">{item.name}</h3>
+                          {isPrize ? (
+                            <Badge className="shrink-0 gap-1 border-transparent bg-orange-500 text-white hover:bg-orange-500">
+                              <Gift className="h-3 w-3" aria-hidden="true" />
+                              Your prize
+                            </Badge>
+                          ) : !item.inStock && (
+                            <Badge variant="secondary">Out of Stock</Badge>
+                          )}
                         </div>
-                        <Button 
-                          size="sm" 
-                          disabled={!user || !item.inStock || (user.redeemablePoints < item.points)}
-                          onClick={() => handleRedeemClick(item)}
-                        >
-                          {!user ? 'Sign In' : user.redeemablePoints < item.points ? 'Not Enough Points' : 'Redeem'}
-                        </Button>
+                        <p className="text-sm text-muted-foreground mb-4">{item.description}</p>
+                        <div className="flex items-center justify-between">
+                          {isPrize ? (
+                            <span className="text-sm font-medium text-orange-600 dark:text-orange-400">
+                              Free with your coupon
+                            </span>
+                          ) : (
+                            <div className="flex items-center gap-1 text-primary font-bold">
+                              <Coins className="h-4 w-4" />
+                              {item.points}
+                            </div>
+                          )}
+                          {isPrize ? (
+                            <Button
+                              size="sm"
+                              className="bg-orange-500 text-white hover:bg-orange-600"
+                              onClick={() => handleRedeemClick(item)}
+                            >
+                              Claim free
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              disabled={!user || !item.inStock || (user.redeemablePoints < item.points)}
+                              onClick={() => handleRedeemClick(item)}
+                            >
+                              {!user ? 'Sign In' : user.redeemablePoints < item.points ? 'Not Enough Points' : 'Redeem'}
+                            </Button>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           )}
         </section>
@@ -237,95 +273,16 @@ export default function Store() {
 
       <Footer />
 
-      {/* Redeem Dialog */}
-      <Dialog open={showRedeemDialog} onOpenChange={setShowRedeemDialog}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle>Redeem {selectedItem?.name}</DialogTitle>
-            <DialogDescription>
-              This will cost {selectedItem?.points} points. Please provide your shipping address.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="name">Full Name</Label>
-              <Input
-                id="name"
-                value={shippingAddress.name}
-                onChange={(e) => setShippingAddress({ ...shippingAddress, name: e.target.value })}
-                placeholder="John Doe"
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="address">Address</Label>
-              <Input
-                id="address"
-                value={shippingAddress.address}
-                onChange={(e) => setShippingAddress({ ...shippingAddress, address: e.target.value })}
-                placeholder="123 Main St"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="city">City</Label>
-                <Input
-                  id="city"
-                  value={shippingAddress.city}
-                  onChange={(e) => setShippingAddress({ ...shippingAddress, city: e.target.value })}
-                  placeholder="City"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="state">State</Label>
-                <Input
-                  id="state"
-                  value={shippingAddress.state}
-                  onChange={(e) => setShippingAddress({ ...shippingAddress, state: e.target.value })}
-                  placeholder="State"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="zipCode">ZIP Code</Label>
-                <Input
-                  id="zipCode"
-                  value={shippingAddress.zipCode}
-                  onChange={(e) => setShippingAddress({ ...shippingAddress, zipCode: e.target.value })}
-                  placeholder="12345"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="phone">Phone</Label>
-                <Input
-                  id="phone"
-                  value={shippingAddress.phone}
-                  onChange={(e) => setShippingAddress({ ...shippingAddress, phone: e.target.value })}
-                  placeholder="+1234567890"
-                />
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowRedeemDialog(false)}>
-              Cancel
-            </Button>
-            <Button 
-              onClick={handleRedeem} 
-              disabled={redeemingItemId === selectedItem?.id || !shippingAddress.name || !shippingAddress.address}
-            >
-              {redeemingItemId === selectedItem?.id ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Redeeming...
-                </>
-              ) : (
-                'Confirm Redemption'
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <CheckoutDialog
+        open={checkoutOpen}
+        onOpenChange={setCheckoutOpen}
+        item={selectedItem}
+        coupon={checkoutCoupon}
+        balance={user?.redeemablePoints}
+        email={user?.email}
+        defaultName={user?.name}
+        onSubmit={handleCheckout}
+      />
     </div>
   );
 }

@@ -11,6 +11,7 @@
  * UI shows an explicit "not connected yet" state instead of an error boundary.
  */
 import { callApi } from './api';
+import type { Order, RedeemRequest } from './store';
 
 export const CAMPAIGN_ID = 'kiro-university-2026';
 
@@ -295,71 +296,117 @@ export function socialPostTemplate(repoUrl?: string, description?: string): stri
   ].join('\n');
 }
 
-// ── Reward tiers ──────────────────────────────────────────────────
+// ── Prizes ────────────────────────────────────────────────────────
 
-export interface RewardTier {
-  id: string;
-  name: string;
-  /** Inclusive upper bound on validated position. */
+export type PrizeTierId = 'jacket' | 'power-bank' | 'water-bottle' | 't-shirt' | 'stickers';
+
+export interface PrizeTier {
+  id: PrizeTierId;
+  item: string;
+  /** Inclusive range of final leaderboard places. */
+  from: number;
   upTo: number;
-  blurb: string;
+  /** Points the coupon adds to the winner's overall points: the item's price in the store. */
+  points: number;
+  emoji: string;
+  /** Finds the store item the prize is claimed as, before prizes are issued fix it. */
+  storeMatch: RegExp;
   /** Tailwind classes for the tier accent. */
   accent: string;
 }
 
 /**
- * Positional tiers, assigned on the validated position — NOT on raw submission.
+ * Community prizes by final leaderboard place. Must match PRIZE_TIERS in the
+ * campaign Lambda, which issues the coupons.
  *
- * That ordering matters: if the tier were claimed the moment someone submits, an
- * empty repo could take the top prize and a real entry would be pushed down. We
- * assign when an entry passes validation, so position reflects finished work.
- *
- * Everyone past the last tier still earns points, the badge and the showcase —
- * a hard cutoff would remove any reason to submit late, and most submissions in
- * a two-week challenge land in the final 48 hours.
+ * Each winner's coupon claims one store item, their prize, and nothing else.
+ * Claiming it, from their profile or the store, creates the order and adds the
+ * coupon's points to their overall points. The points are spent on the prize
+ * at the same time, so their spendable balance does not change.
  */
-export const REWARD_TIERS: RewardTier[] = [
+export const PRIZE_TIERS: PrizeTier[] = [
   {
-    id: 'tier-a',
-    name: 'First 5 validated',
-    upTo: 5,
-    blurb: 'Premium swag — jacket or hoodie, plus the digital badge.',
+    id: 'jacket', item: 'Jacket', from: 1, upTo: 3, points: 2500, emoji: '🧥',
+    storeMatch: /jacket/i,
     accent: 'from-amber-500/20 to-orange-500/10 border-amber-500/40',
   },
   {
-    id: 'tier-b',
-    name: 'Next 10',
-    upTo: 15,
-    blurb: 'T-shirt and sticker pack, plus the digital badge.',
+    id: 'power-bank', item: 'Power bank', from: 4, upTo: 6, points: 2000, emoji: '🔋',
+    storeMatch: /power\s*-?\s*bank/i,
     accent: 'from-slate-400/20 to-slate-500/10 border-slate-400/40',
   },
   {
-    id: 'tier-c',
-    name: 'Next 20',
-    upTo: 35,
-    blurb: 'Sticker pack and the digital badge.',
+    id: 'water-bottle', item: 'Water bottle', from: 7, upTo: 11, points: 1500, emoji: '💧',
+    storeMatch: /bottle/i,
+    accent: 'from-sky-500/20 to-cyan-500/10 border-sky-500/40',
+  },
+  {
+    id: 't-shirt', item: 'T-shirt', from: 12, upTo: 31, points: 1000, emoji: '👕',
+    storeMatch: /t\s*-?\s*shirt/i,
+    accent: 'from-violet-500/20 to-purple-500/10 border-violet-500/40',
+  },
+  {
+    id: 'stickers', item: 'Sticker sheet', from: 32, upTo: 51, points: 150, emoji: '✨',
+    storeMatch: /sticker/i,
     accent: 'from-orange-700/20 to-amber-700/10 border-orange-700/40',
   },
 ];
 
+/** How many places win anything. */
+export const PRIZE_PLACES = PRIZE_TIERS[PRIZE_TIERS.length - 1].upTo;
+
+/**
+ * Leaderboard places that need at least one of the seven lessons. Builders
+ * without one rank below them. Matches LESSON_GATE_PLACES in the backend.
+ */
+export const LESSON_GATE_PLACES = 40;
+
 export const BASE_REWARD_BLURB =
   'Community points, the digital badge and a place in the showcase.';
 
-/** Which tier a validated position falls into, or null for the base reward. */
-export function tierForPosition(position: number | null | undefined): RewardTier | null {
-  if (!position || position < 1) return null;
-  return REWARD_TIERS.find((t) => position <= t.upTo) ?? null;
+/** The prize for a leaderboard place, or null past the last prize. */
+export function prizeTierForPlace(place: number | null | undefined): PrizeTier | null {
+  if (!place || place < 1) return null;
+  return PRIZE_TIERS.find((t) => place <= t.upTo) ?? null;
 }
 
-/** Remaining slots in each tier, for the live "3 left" affordance. */
-export function slotsRemaining(validatedCount: number) {
-  const consumed = validatedCount;
-  return REWARD_TIERS.map((tier, i) => {
-    const start = i === 0 ? 0 : REWARD_TIERS[i - 1].upTo;
-    const size = tier.upTo - start;
-    const taken = Math.max(0, Math.min(size, consumed - start));
-    return { tier, size, taken, left: Math.max(0, size - taken) };
-  });
+export function prizeTierById(id: string | null | undefined): PrizeTier | null {
+  return PRIZE_TIERS.find((t) => t.id === id) ?? null;
+}
+
+/** "jacket" for "Jacket", to read naturally after "a". */
+export function prizeItemInSentence(item: string): string {
+  return item.charAt(0).toLowerCase() + item.slice(1);
+}
+
+/** A winner's coupon, for one store item: their prize. */
+export interface CampaignPrize {
+  code: string;
+  tier: PrizeTierId;
+  item: string;
+  /** Added to their overall points when they claim the prize. */
+  points: number;
+  /** The prize place the prize was awarded for. */
+  place: number;
+  /** Their rank on the public leaderboard. Differs from `place` only when someone above was excluded. */
+  boardRank: number;
+  status: 'issued' | 'claimed';
+  issuedAt: string;
+  /** The store item the coupon claims. */
+  itemId: string | null;
+  claimedAt: string | null;
+  /** The store order the prize was claimed as. */
+  orderId: string | null;
+}
+
+export interface ClaimPrizeResult {
+  prize: CampaignPrize;
+  order: Order;
+  /** Overall points just added. */
+  added: number;
+  /** Totals after the claim, or null if they could not be read back. */
+  points: number | null;
+  redeemablePoints: number | null;
 }
 
 // ── Types ─────────────────────────────────────────────────────────
@@ -400,6 +447,10 @@ export interface MyCampaign {
   lessons?: LessonState[];
   validatedPosition?: number | null;
   externalEntryConfirmedAt?: string | null;
+  /** The winner's coupon, once prizes are issued. */
+  prize?: CampaignPrize | null;
+  /** True when an organiser has left them out of the prizes. */
+  prizeExcluded?: boolean;
 }
 
 export interface LeaderboardRow {
@@ -455,6 +506,8 @@ export interface CampaignStats {
   validatedCount: number;
   joinedCount: number;
   withRepoCount: number;
+  /** True once prizes are issued: the standings are final from then on. */
+  prizesIssued: boolean;
 }
 
 export async function getCampaignStats(): Promise<CampaignStats> {
@@ -464,10 +517,23 @@ export async function getCampaignStats(): Promise<CampaignStats> {
       validatedCount: res?.validatedCount ?? 0,
       joinedCount: res?.joinedCount ?? 0,
       withRepoCount: res?.withRepoCount ?? 0,
+      prizesIssued: res?.prizesIssued ?? false,
     };
   } catch {
-    return { validatedCount: 0, joinedCount: 0, withRepoCount: 0 };
+    return { validatedCount: 0, joinedCount: 0, withRepoCount: 0, prizesIssued: false };
   }
+}
+
+/**
+ * Claim the signed-in winner's prize with their coupon: the order is created
+ * for their prize item, free, and the coupon's points go onto their overall
+ * points. Takes the same details as a store checkout.
+ */
+export async function claimPrize(request: RedeemRequest): Promise<ClaimPrizeResult> {
+  return callApi<ClaimPrizeResult>(`/campaign/${CAMPAIGN_ID}/prize/claim`, {
+    method: 'POST',
+    body: JSON.stringify(request),
+  });
 }
 
 // ── Writes (throw, so the UI can surface a real failure) ──────────
@@ -539,6 +605,140 @@ export async function getCampaignAdminParticipants(): Promise<AdminParticipant[]
     `/campaign/${CAMPAIGN_ID}/admin/participants`,
   );
   return res.participants ?? [];
+}
+
+export type PrizeEmailStatus = 'pending' | 'sending' | 'sent' | 'failed';
+
+/** One winner, as the admin prize list shows them. */
+export interface AdminPrizeRow {
+  /** Prize place: the leaderboard rank, once anyone excluded is taken out. */
+  place: number;
+  /** Rank on the public leaderboard. */
+  boardRank: number;
+  userId: string;
+  name: string;
+  email: string | null;
+  tier: PrizeTierId;
+  activeDays: number;
+  commitCount: number;
+  lessonsDone: number;
+  bonusLessonsDone: number;
+  /** false when the repo has commits from before the challenge window. */
+  repoEligible: boolean | null;
+  /** How far they got in the challenge. */
+  stage: ParticipantStage | null;
+  /** null until prizes are issued. */
+  coupon: {
+    code: string;
+    status: 'issued' | 'claimed';
+    emailStatus: PrizeEmailStatus;
+    emailedAt: string | null;
+    emailError: string | null;
+    claimedAt: string | null;
+    orderId: string | null;
+  } | null;
+}
+
+/** The store item a prize is claimed as, and its stock. */
+export interface AdminPrizeItem {
+  tier: PrizeTierId;
+  itemId: string | null;
+  itemName: string | null;
+  quantity: number | null;
+  inStock: boolean | null;
+}
+
+/** A tie on days and commits across a prize boundary, and what decided it. */
+export interface AdminPrizeTie {
+  place: number;
+  aboveName: string;
+  belowName: string;
+  decidedBy: 'lessons' | 'member id';
+}
+
+export interface AdminPrizes {
+  deadlinePassed: boolean;
+  issued: boolean;
+  issuedAt: string | null;
+  issuedByName: string | null;
+  /** When the board the prizes come from was last read from GitHub. */
+  standingsAsOf: string | null;
+  /** Why issuing has to wait for a refresh, if it does. */
+  sweepBlocker: string | null;
+  /** Identifies the previewed list. Issuing fails if the list changed since. */
+  fingerprint: string | null;
+  /** A preview from the live standings until issued, then the frozen allocation. */
+  rows: AdminPrizeRow[];
+  /** Before issuing: members taken out of the prizes. */
+  excluded: { userId: string; name: string; boardRank: number }[];
+  /** Before issuing: on the board with no active day, so they win nothing. */
+  inactive: { userId: string; name: string; boardRank: number }[];
+  /**
+   * Before issuing: builders with no lesson, ranked below the places that need
+   * one. activityRank is where days and commits alone would put them.
+   */
+  movedForLessons?: { userId: string; name: string; activityRank: number; boardRank: number }[];
+  /** Before issuing: repos GitHub would not show on the last refresh. They are not ranked. */
+  unreachable: { userId: string; name: string; repoFullName: string }[];
+  /** Before issuing: ranked repos the last refresh could only read in part. */
+  incomplete?: { userId: string; name: string; repoFullName: string }[];
+  /** Before issuing: ties across a prize boundary. */
+  ties: AdminPrizeTie[];
+  /** The store item each prize is claimed as: fixed once issued, until then today's match. */
+  tierItems: AdminPrizeItem[];
+  /** Before issuing: prizes with winners but no store item. Issuing waits for these. */
+  missingItems: string[];
+}
+
+/** The prize list. Admins only. */
+export async function getAdminPrizes(): Promise<AdminPrizes> {
+  return callApi<AdminPrizes>(`/campaign/${CAMPAIGN_ID}/admin/prizes`);
+}
+
+/**
+ * Freeze the standings and give each winner a coupon. `fingerprint` is the
+ * previewed list's: issuing fails if the list has changed since. Safe to
+ * repeat: once issued, it only fills in missing coupons.
+ */
+export async function issuePrizes(
+  fingerprint: string | null,
+): Promise<{ issuedAt: string; created: number; skipped: number; total: number }> {
+  return callApi(`/campaign/${CAMPAIGN_ID}/admin/prizes/issue`, {
+    method: 'POST',
+    body: JSON.stringify({ fingerprint }),
+  });
+}
+
+/** Re-read every repo from GitHub. Can take a minute or two. Admins only. */
+export async function refreshStandings(): Promise<{ updated?: number; unreachable?: number; total?: number; skipped?: string }> {
+  return callApi(`/campaign/${CAMPAIGN_ID}/sweep`, { method: 'POST' });
+}
+
+/**
+ * Email one batch of coupons. Call until `remaining` is 0. `retryFailed` puts
+ * failed sends back in the queue first.
+ */
+export async function emailPrizeWinners(retryFailed = false): Promise<{ sent: number; failed: number; remaining: number }> {
+  return callApi(`/campaign/${CAMPAIGN_ID}/admin/prizes/email`, {
+    method: 'POST',
+    body: JSON.stringify({ retryFailed }),
+  });
+}
+
+/** Send the signed-in admin a sample coupon email. */
+export async function sendTestPrizeEmail(tier?: PrizeTierId): Promise<{ ok: boolean; sentTo: string }> {
+  return callApi(`/campaign/${CAMPAIGN_ID}/admin/prizes/test-email`, {
+    method: 'POST',
+    body: JSON.stringify({ tier }),
+  });
+}
+
+/** Take a member out of the prizes, or put them back. Only before prizes are issued. */
+export async function setPrizeExclusion(userId: string, excluded: boolean): Promise<void> {
+  await callApi(`/campaign/${CAMPAIGN_ID}/admin/prizes/exclude`, {
+    method: 'POST',
+    body: JSON.stringify({ userId, excluded }),
+  });
 }
 
 /**

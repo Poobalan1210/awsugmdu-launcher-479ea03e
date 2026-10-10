@@ -25,7 +25,7 @@ export interface PointActivity {
   userId: string;
   points: number;
   reason: string;
-  type: 'adhoc' | 'submission' | 'badge' | 'event' | 'signup' | 'meetup_verification';
+  type: 'adhoc' | 'submission' | 'badge' | 'event' | 'signup' | 'meetup_verification' | 'coupon';
   awardedBy?: string;
   awardedAt: string;
 }
@@ -128,6 +128,10 @@ export interface UserActivity {
   role?: string;
   itemId?: string;
   itemName?: string;
+  /** Store redemptions since orders started recording it. */
+  orderId?: string;
+  /** A prize claimed with this coupon, so no points were spent. */
+  prizeCode?: string;
 }
 
 // Badge criteria types for auto-awarding

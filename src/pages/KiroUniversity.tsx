@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
@@ -24,14 +24,16 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
+import { CheckoutDialog } from '@/components/store/CheckoutDialog';
+import { usePrizeClaim } from '@/hooks/usePrizeClaim';
 import {
   BASE_REWARD_BLURB, COMPLETION_AWARD_CREDITS, ENTRY_DEADLINE_IST_LABEL, ENTRY_FORM_URL,
-  CAMPAIGN_ID, LESSONS, MAX_CREDITS, PLATFORM_LABEL,
+  CAMPAIGN_ID, LESSONS, LESSON_GATE_PLACES, MAX_CREDITS, PLATFORM_LABEL, PRIZE_PLACES, PRIZE_TIERS,
   SUBMISSION_REQUIREMENTS, TERMS_URL, detectPlatform,
   getCampaignLeaderboard, getCampaignStats, getMyCampaign, joinCampaign,
-  mintSetupCode, requirementStatus, rotateKironomicsKey, setLessons,
-  setupCommand, slotsRemaining, socialPostTemplate, tierForPosition, timeLeftToDeadline,
-  type Lesson, type LessonState, type Platform, type RepoStats, type RequirementStatus, type RewardTier,
+  mintSetupCode, prizeItemInSentence, prizeTierById, prizeTierForPlace, requirementStatus,
+  rotateKironomicsKey, setLessons, setupCommand, socialPostTemplate, timeLeftToDeadline,
+  type CampaignPrize, type Lesson, type LessonState, type Platform, type RepoStats, type RequirementStatus,
 } from '@/lib/campaign';
 
 const fadeUp = {
@@ -117,36 +119,65 @@ function LessonsCell({ done, bonus }: { done?: number; bonus?: number }) {
   );
 }
 
-function RewardTiers({ validatedCount }: { validatedCount: number }) {
-  const rows = useMemo(() => slotsRemaining(validatedCount), [validatedCount]);
+/** The prizes, by final leaderboard rank. */
+function PrizeTiers() {
   return (
-    <div className="grid gap-4 md:grid-cols-3">
-      {rows.map(({ tier, size, left }, i) => (
-        <motion.div
-          key={tier.id}
-          variants={fadeUp}
-          initial="hidden"
-          whileInView="show"
-          viewport={{ once: true }}
-          transition={{ duration: 0.35, delay: i * 0.06 }}
-        >
-          <Card className={`h-full glass-card bg-gradient-to-br ${tier.accent}`}>
-            <CardHeader className="pb-3">
-              <div className="flex items-start justify-between gap-2">
-                <CardTitle className="text-base">{tier.name}</CardTitle>
-                <Badge variant={left > 0 ? 'default' : 'secondary'} className="shrink-0">
-                  {left > 0 ? `${left} left` : 'full'}
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <p className="text-sm text-muted-foreground">{tier.blurb}</p>
-              <Progress value={((size - left) / size) * 100} className="h-1.5" />
-            </CardContent>
-          </Card>
-        </motion.div>
-      ))}
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      {PRIZE_TIERS.map((tier, i) => {
+        const winners = tier.upTo - tier.from + 1;
+        return (
+          <motion.div
+            key={tier.id}
+            variants={fadeUp}
+            initial="hidden"
+            whileInView="show"
+            viewport={{ once: true }}
+            transition={{ duration: 0.35, delay: i * 0.06 }}
+          >
+            <Card className={`h-full glass-card bg-gradient-to-br ${tier.accent}`}>
+              <CardHeader className="pb-2">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  {tier.from === tier.upTo ? `Rank ${tier.from}` : `Ranks ${tier.from}–${tier.upTo}`}
+                </p>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <span className="text-xl leading-none" aria-hidden="true">{tier.emoji}</span>
+                  {tier.item}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-0.5 text-sm text-muted-foreground">
+                <p>{winners} {winners === 1 ? 'winner' : 'winners'}</p>
+                <p>Coupon worth {tier.points.toLocaleString()} points</p>
+              </CardContent>
+            </Card>
+          </motion.div>
+        );
+      })}
     </div>
+  );
+}
+
+/** For winners with an unclaimed prize: what they won, and a way to claim it. */
+function PrizeBanner({ prize, onClaim }: { prize: CampaignPrize; onClaim: () => void }) {
+  const tier = prizeTierById(prize.tier);
+  const item = prizeItemInSentence(prize.item);
+  return (
+    <Card className={`glass-card bg-gradient-to-br ${tier?.accent ?? ''}`}>
+      <CardContent className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-start gap-4">
+          <span className="text-4xl leading-none" aria-hidden="true">{tier?.emoji ?? '🎁'}</span>
+          <div className="space-y-1">
+            <p className="font-semibold">You finished #{prize.boardRank ?? prize.place} and won a {item}.</p>
+            <p className="text-sm text-muted-foreground">
+              Your coupon covers it, free. Claim it to have it shipped in November and December, or
+              collect it at our next in-person event.
+            </p>
+          </div>
+        </div>
+        <div className="sm:shrink-0">
+          <Button size="sm" onClick={onClaim}>Claim my {item}</Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -613,13 +644,33 @@ function SubmissionRequirements({
  * built, and whether tracking is running.
  */
 function ProgressStrip({
-  repo, kironomicsConnected, tier, position,
+  repo, kironomicsConnected, rank, prize, prizesIssued, prizeExcluded,
 }: {
   repo?: RepoStats | null;
   kironomicsConnected: boolean;
-  tier: RewardTier | null;
-  position?: number | null;
+  /** Current leaderboard rank, when ranked. */
+  rank?: number | null;
+  prize?: CampaignPrize | null;
+  /** Once true the standings are final and no new prize can come. */
+  prizesIssued: boolean;
+  /** An organiser has left this member out of the prizes. */
+  prizeExcluded: boolean;
 }) {
+  const provisional = prizesIssued || prizeExcluded ? null : prizeTierForPlace(rank);
+  const prizeTile: { value: string; hint: string; tone?: 'muted' } = prize
+    ? {
+        value: `#${prize.boardRank ?? prize.place}`,
+        hint: `${prize.item}. ${prize.status === 'claimed' ? 'Prize claimed' : 'Ready to claim'}`,
+      }
+    : prizeExcluded
+      ? { value: rank ? `#${rank}` : '—', hint: 'Not in the prize list', tone: 'muted' }
+      : provisional
+      ? { value: `#${rank}`, hint: `${provisional.item}, if your rank holds` }
+      : {
+          value: rank ? `#${rank}` : '—',
+          hint: prizesIssued ? 'Prizes have been issued' : `Ranks 1–${PRIZE_PLACES} win a prize`,
+          tone: 'muted',
+        };
   const tiles: { label: string; value: string; hint: string; tone?: 'good' | 'muted' }[] = [
     { label: 'Active days', value: String(repo?.activeDays ?? 0), hint: 'Days you committed, in IST' },
     { label: 'Commits', value: String(repo?.commitCount ?? 0), hint: 'Inside the challenge window' },
@@ -630,10 +681,10 @@ function ProgressStrip({
       tone: kironomicsConnected ? 'good' : 'muted',
     },
     {
-      label: 'Community reward',
-      value: position ? `#${position}` : 'Pending',
-      hint: position ? (tier ? tier.name : 'Points, badge and showcase') : 'Your tier is set when your entry is validated',
-      tone: position ? undefined : 'muted',
+      label: 'Community prize',
+      value: prizeTile.value,
+      hint: prizeTile.hint,
+      tone: prizeTile.tone,
     },
   ];
 
@@ -655,7 +706,9 @@ function ProgressStrip({
             <CardTitle className="text-base">No repo linked yet</CardTitle>
           )}
           {repo?.fullName && (
-            <span className="text-xs text-muted-foreground">Refreshed every 6 hours</span>
+            <span className="text-xs text-muted-foreground">
+              {prizesIssued ? 'Final standings' : 'Refreshed every 6 hours'}
+            </span>
           )}
         </div>
       </CardHeader>
@@ -765,7 +818,7 @@ function ProgressStrip({
 
 /** A lesson's standing in a few words, for the collapsed row. */
 function lessonStatusLine(
-  l: Lesson, s: LessonState | undefined, hasRepo: boolean, repoUnreachable: boolean,
+  l: Lesson, s: LessonState | undefined, hasRepo: boolean, repoUnreachable: boolean, locked: boolean,
 ): { text: string; done: boolean } {
   const check = s?.check ?? l.check;
   if (s?.found) return { text: s.detail || 'Found in your repo', done: true };
@@ -780,6 +833,8 @@ function lessonStatusLine(
   if (!s?.repoChecked) {
     return { text: repoUnreachable ? "Couldn't read your repo on the last check" : 'Checking your repo…', done: false };
   }
+  // Once entries close, the repo counts as it stood then (see LessonsCard).
+  if (locked) return { text: s.detail || 'Not in your repo when entries closed', done: false };
   if (check === 'repo-or-self') {
     return { text: s.detail || 'Not in your repo. Tick it if you did it elsewhere', done: false };
   }
@@ -793,12 +848,14 @@ function lessonStatusLine(
  * member. Detection shows a file exists, not that the lesson was done well.
  */
 function LessonsCard({
-  lessons, hasRepo, repoUnreachable, saving, onToggle,
+  lessons, hasRepo, repoUnreachable, saving, locked, onToggle,
 }: {
   lessons?: LessonState[];
   hasRepo: boolean;
   repoUnreachable: boolean;
   saving: boolean;
+  /** Entries have closed, so ticks can no longer change. */
+  locked: boolean;
   onToggle: (id: string, next: boolean) => void;
 }) {
   const byId = new Map((lessons ?? []).map((l) => [l.id, l]));
@@ -811,14 +868,14 @@ function LessonsCard({
     const check = s?.check ?? l.check;
     const found = Boolean(s?.found);
     const tickable = check !== 'repo' && !found;
-    const status = lessonStatusLine(l, s, hasRepo, repoUnreachable);
+    const status = lessonStatusLine(l, s, hasRepo, repoUnreachable, locked);
 
     const control = found ? (
       <CircleCheck className="h-5 w-5 text-green-600" aria-hidden="true" />
     ) : tickable ? (
       <Checkbox
         checked={Boolean(s?.ticked)}
-        disabled={saving || !s}
+        disabled={saving || locked || !s}
         onCheckedChange={(v) => onToggle(l.n, v === true)}
         aria-label={`Mark ${l.title} as done`}
         className={ROW_CHECKBOX}
@@ -869,6 +926,7 @@ function LessonsCard({
         <CardDescription>
           What Kiro awards credits for. We check most of them in your repo, and Kiro&apos;s
           reviewers make the final call.
+          {locked && ' Entries have closed, so ticks are final and your repo counts as it stood then.'}
         </CardDescription>
         {showCount && (
           <Progress value={(requiredDone / 7) * 100} className="h-1.5" aria-label={`${requiredDone} of 7 lessons done`} />
@@ -892,6 +950,8 @@ function LessonsCard({
 
 export default function KiroUniversity() {
   const { user, isAuthenticated, isLoading } = useAuth();
+  // Claiming the prize from this page, for winners.
+  const prizeClaim = usePrizeClaim();
 
   const [ageConfirmed, setAgeConfirmed] = useState(false);
   const [consent, setConsent] = useState(false);
@@ -914,7 +974,7 @@ export default function KiroUniversity() {
     queryFn: getCampaignLeaderboard,
   });
 
-  const { data: stats = { validatedCount: 0, joinedCount: 0, withRepoCount: 0 } } = useQuery({
+  const { data: stats = { validatedCount: 0, joinedCount: 0, withRepoCount: 0, prizesIssued: false } } = useQuery({
     queryKey: ['campaign-stats'],
     queryFn: getCampaignStats,
   });
@@ -931,7 +991,8 @@ export default function KiroUniversity() {
   const actionRef = useRef<HTMLElement>(null);
   const scrollToAction = () =>
     actionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  const myTier = tierForPosition(me?.validatedPosition);
+  const myRank = leaderboard.find((row) => row.userId === user?.id)?.rank ?? null;
+  const challengeOver = timeLeftToDeadline().passed;
 
   const handleJoin = async () => {
     if (!ageConfirmed) {
@@ -988,6 +1049,7 @@ export default function KiroUniversity() {
       hasRepo={Boolean(me?.repo?.fullName)}
       repoUnreachable={Boolean(me?.repo?.unreachable)}
       saving={savingLessons}
+      locked={challengeOver}
       onToggle={toggleLesson}
     />
   );
@@ -1018,13 +1080,19 @@ export default function KiroUniversity() {
           <div className="container relative mx-auto px-4 py-14 sm:py-20">
             <motion.div variants={fadeUp} initial="hidden" animate="show" transition={{ duration: 0.4 }}>
               <div className="flex flex-wrap items-center gap-3 mb-5">
-                <span className="inline-flex items-center gap-2 rounded-full bg-primary/10 text-primary px-3 py-1 text-xs font-semibold uppercase tracking-wide">
-                  <span className="relative flex h-1.5 w-1.5" aria-hidden="true">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
-                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
+                {challengeOver ? (
+                  <span className="inline-flex items-center gap-2 rounded-full bg-muted px-3 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Challenge closed
                   </span>
-                  Live now
-                </span>
+                ) : (
+                  <span className="inline-flex items-center gap-2 rounded-full bg-primary/10 text-primary px-3 py-1 text-xs font-semibold uppercase tracking-wide">
+                    <span className="relative flex h-1.5 w-1.5" aria-hidden="true">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
+                      <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
+                    </span>
+                    Live now
+                  </span>
+                )}
                 <DeadlineStrip />
               </div>
 
@@ -1102,11 +1170,12 @@ export default function KiroUniversity() {
                 <h2 className="text-xl font-semibold">What you earn from us</h2>
               </div>
               <p className="text-sm text-muted-foreground max-w-2xl">
-                On top of Kiro&apos;s credits. Tiers go by validated position, not submission
-                time, so they reflect finished work. Everyone with a valid entry earns{' '}
+                On top of Kiro&apos;s credits. Prizes go by final leaderboard rank. Each winner
+                gets a coupon for their prize, by email and in their profile, and claims it there
+                for free. Everyone with a valid entry earns{' '}
                 {BASE_REWARD_BLURB.toLowerCase()}
               </p>
-              <RewardTiers validatedCount={stats.validatedCount} />
+              <PrizeTiers />
             </section>
           )}
 
@@ -1199,6 +1268,10 @@ export default function KiroUniversity() {
               </Card>
             ) : (
               <div className="space-y-6">
+                {me?.prize?.status === 'issued' && (
+                  <PrizeBanner prize={me.prize} onClaim={prizeClaim.openDialog} />
+                )}
+
                 {me?.kironomicsKeyExposed && (
                   <Alert variant="destructive">
                     <ShieldAlert className="h-4 w-4" />
@@ -1221,8 +1294,10 @@ export default function KiroUniversity() {
                 <ProgressStrip
                   repo={me?.repo}
                   kironomicsConnected={Boolean(me?.kironomicsConnected)}
-                  tier={myTier}
-                  position={me?.validatedPosition}
+                  rank={myRank}
+                  prize={me?.prize}
+                  prizesIssued={stats.prizesIssued}
+                  prizeExcluded={Boolean(me?.prizeExcluded)}
                 />
 
                 {/* Before setup, the command is the next step, so it comes first.
@@ -1262,8 +1337,14 @@ export default function KiroUniversity() {
             <p className="text-sm text-muted-foreground max-w-2xl">
               Ranked by days with at least one commit on any branch, counted in IST. Days, not
               commit count, so a hundred pushes in one afternoon still counts as one day.
-              Lessons are the seven Kiro scores, found in the repo or ticked by the builder,
-              and + marks bonus lessons. Updated every 6 hours.
+              Commits break ties, then lessons. The top {LESSON_GATE_PLACES} places need at
+              least one of the seven lessons, so builders without one rank below them. Commits
+              and lesson files count from both main and master, each commit once. Lessons are
+              the seven Kiro scores, found in the repo as it stood when entries closed or ticked
+              by the builder, and + marks bonus lessons.{' '}
+              {stats.prizesIssued
+                ? 'Prizes have been issued, so these are the final standings.'
+                : 'Updated every 6 hours.'}
             </p>
 
             {/* Without this, a board of 13 under a hero reading "38 builders
@@ -1333,15 +1414,21 @@ export default function KiroUniversity() {
             </Card>
           </section>
 
-          {/* Rewards move below the fold once someone has joined — they have
+          {/* Prizes move below the fold once someone has joined — they have
               already seen them, and their status matters more. */}
           {joined && (
             <section className="space-y-5">
               <div className="flex items-center gap-2">
                 <Trophy className="h-5 w-5 text-primary" />
-                <h2 className="text-xl font-semibold">Community reward tiers</h2>
+                <h2 className="text-xl font-semibold">Community prizes</h2>
               </div>
-              <RewardTiers validatedCount={stats.validatedCount} />
+              <p className="text-sm text-muted-foreground max-w-2xl">
+                By final leaderboard rank. Winners get a coupon for their prize by email and in
+                their profile, and claim it free: shipped in November and December, or collected
+                at our next in-person event. Claiming also adds the prize&apos;s points to your
+                overall points.
+              </p>
+              <PrizeTiers />
             </section>
           )}
 
@@ -1429,6 +1516,17 @@ export default function KiroUniversity() {
       </main>
 
       <Footer />
+
+      {prizeClaim.prize && (
+        <CheckoutDialog
+          open={prizeClaim.dialogOpen}
+          onOpenChange={prizeClaim.setDialogOpen}
+          item={{ name: prizeClaim.prize.item, points: prizeClaim.prize.points, itemType: 'physical' }}
+          coupon={{ code: prizeClaim.prize.code }}
+          defaultName={user?.name}
+          onSubmit={async (request) => { await prizeClaim.claim(request); }}
+        />
+      )}
     </div>
   );
 }

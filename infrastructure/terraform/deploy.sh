@@ -180,6 +180,24 @@ if [ -f "lambda/shared/email.js" ]; then
   echo ""
 fi
 
+# Store checkout checks (fulfilment, mobile number, address), shared by the
+# store and by Kiro University prize claims so both accept the same details.
+CHECKOUT_SHARED_CONSUMERS=(
+  "store-crud"
+  "campaign-crud"
+)
+
+if [ -f "lambda/shared/checkout.js" ]; then
+  for func in "${CHECKOUT_SHARED_CONSUMERS[@]}"; do
+    if [ -d "lambda/$func" ]; then
+      mkdir -p "lambda/$func/shared"
+      cp "lambda/shared/checkout.js" "lambda/$func/shared/checkout.js"
+      ok "Synced shared/checkout.js → $func"
+    fi
+  done
+  echo ""
+fi
+
 # Derive the agent-type whitelist from the circle-digest agent modules (the
 # single source of truth) and bake it into circles-crud so the API validation
 # stays in sync automatically when agents are added/removed.

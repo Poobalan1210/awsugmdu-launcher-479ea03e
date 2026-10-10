@@ -107,6 +107,11 @@ resource "aws_lambda_function" "store_crud" {
       ORDERS_TABLE_NAME      = aws_dynamodb_table.orders.name
       USERS_TABLE_NAME       = aws_dynamodb_table.users.name
       SES_FROM_EMAIL         = "info@awsugmdu.in"
+      # Store routes verify the sign-in token: members redeem with and see only
+      # their own account, and only admins manage items and orders.
+      ADMIN_EMAILS         = var.admin_emails
+      COGNITO_USER_POOL_ID = aws_cognito_user_pool.user_pool.id
+      COGNITO_CLIENT_ID    = aws_cognito_user_pool_client.web_client.id
     }
   }
 

@@ -34,10 +34,15 @@ const {
   DeleteCommand,
   QueryCommand,
   BatchGetCommand,
+  ScanCommand,
+  TransactWriteCommand,
 } = require('@aws-sdk/lib-dynamodb');
 const crypto = require('crypto');
 // Mirrored from lambda/shared/email.js by deploy.sh — edit the master copy.
 const { sendEmail, renderEmail, APP_URL } = require('./shared/email');
+// Mirrored from lambda/shared/checkout.js by deploy.sh — edit the master copy.
+// The store's own checkout uses the same checks.
+const { validateCheckout } = require('./shared/checkout');
 
 const client = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(client);
@@ -46,6 +51,9 @@ const PARTICIPATION_TABLE = process.env.PARTICIPATION_TABLE_NAME || 'awsug-campa
 const CODES_TABLE = process.env.SETUP_CODES_TABLE_NAME || 'awsug-campaign-setup-codes';
 const KIRONOMICS_TABLE = process.env.KIRONOMICS_TABLE_NAME || 'awsug-kironomics';
 const USERS_TABLE = process.env.USERS_TABLE_NAME || 'awsug-users';
+// A prize is claimed as a store order for the winner's prize item.
+const STORE_ITEMS_TABLE = process.env.STORE_ITEMS_TABLE_NAME || 'awsug-store-items';
+const ORDERS_TABLE = process.env.ORDERS_TABLE_NAME || 'awsug-orders';
 // Read by the admin builders list, for College Champs and Cloud Club colleges.
 const COLLEGES_TABLE = process.env.COLLEGES_TABLE_NAME || 'awsug-colleges';
 const CLOUD_CLUBS_TABLE = process.env.CLOUD_CLUBS_TABLE_NAME || 'awsug-cloud_clubs';
@@ -72,6 +80,11 @@ const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000; // Asia/Kolkata, no DST
 const SETUP_CODE_TTL_SECONDS = 15 * 60;
 const STALE_AFTER_HOURS = 72;
 const COUNTER_KEY = '__counter__';
+// Holds the frozen prize allocation once prizes are issued (handleIssuePrizes).
+const PRIZES_KEY = '__prizes__';
+// When the GitHub sweep last started and finished, so prizes are never issued
+// from a board that is halfway through a refresh.
+const SWEEP_KEY = '__sweep__';
 
 // Fallback only, when GitHub's GraphQL API is unavailable: 3 pages x 100 = 300
 // in-window commits. Newest first, so a repo with more than 300 commits on its
@@ -84,11 +97,33 @@ const MAX_COMMIT_PAGES = 3;
 // days before it is merged.
 const MAX_EXTRA_BRANCHES = 10;
 
-// Bump when the way activity is counted changes, so the next sweep recounts
-// every repo instead of reusing results counted the old way.
-const ACTIVITY_VERSION = 2;
+// Branches whose work counts in full, as the default branch's does: active
+// days, commits, lesson files and the pre-window check. The setup script's
+// `git init` names the first branch master or main depending on the member's
+// git, and some members then pushed their work to the other one. One builder's
+// default branch held only the setup commit while their work, specs included,
+// was on main, so they showed 1 commit and none of their lessons. Other
+// branches still count towards active days only (MAX_EXTRA_BRANCHES).
+const PRIMARY_BRANCHES = ['main', 'master'];
+
+// Listing a branch's in-window commits, to count main and master together
+// without counting a commit twice: 100 per page.
+const MAX_COMMIT_ID_PAGES = 10;
+
+// Bump when the way repos are counted or read changes, so the next sweep
+// recounts every repo instead of reusing results from the old rules, and
+// prizes wait for that recount (sweepBlocker).
+// 3: main and master both count in full (PRIMARY_BRANCHES).
+// 4: lessons are read from each branch as it stood when entries closed, and
+//    spec files outside a folder per spec count (SPEC_MARKDOWN).
+const ACTIVITY_VERSION = 4;
 
 const toGitHubTime = (ms) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z');
+
+// The deadline as GitHub's `until`, which is inclusive: the same end the
+// window's last day is counted to, so a commit counted as in the window is
+// also in the snapshot lessons are read from.
+const DEADLINE_UNTIL = toGitHubTime(Date.parse(ENTRY_DEADLINE_ISO));
 
 /** The challenge window as IST calendar days, each with a GitHub since/until pair. */
 const WINDOW_DAYS = (() => {
@@ -153,6 +188,15 @@ function parseBody(event) {
  * consistent with lambda/shared/auth.js and kironomics-crud across this stack.
  */
 function extractUserId(authHeader) {
+  const id = readUserId(authHeader);
+  // Ids starting with "__" key the campaign's own records: the validation
+  // counter, the prize lock and the sweep status. No member has one, and this
+  // check does not verify the token, so refusing them here stops every member
+  // route from writing over those records.
+  return id && !isReservedId(id) ? id : null;
+}
+
+function readUserId(authHeader) {
   if (!authHeader) return null;
   const token = String(authHeader).replace(/^Bearer\s+/i, '').trim();
   if (!token) return null;
@@ -166,6 +210,11 @@ function extractUserId(authHeader) {
   } catch {
     return null;
   }
+}
+
+/** Keys of the campaign's own records in the participation table, never a member's. */
+function isReservedId(id) {
+  return String(id).startsWith('__');
 }
 
 function extractEmail(authHeader) {
@@ -333,9 +382,15 @@ async function ghGraphql(query, variables) {
 const DAY_COUNT_FIELDS = WINDOW_DAYS
   .map((d, i) => `d${i}: history(since: "${d.since}", until: "${d.until}") { totalCount }`)
   .join(' ');
+// A branch with its head commit, its last commit when entries closed (lessons
+// are read from that one) and per-day counts.
+const BRANCH_DAY_FIELDS = `name target { ... on Commit { oid
+  atDeadline: history(first: 1, until: "${DEADLINE_UNTIL}") { nodes { oid } }
+  ${DAY_COUNT_FIELDS} } }`;
 const ACTIVITY_QUERY = `query($owner: String!, $name: String!, $branches: Int!) {
   repository(owner: $owner, name: $name) {
-    defaultBranchRef { name target { ... on Commit { ${DAY_COUNT_FIELDS} } } }
+    defaultBranchRef { ${BRANCH_DAY_FIELDS} }
+    ${PRIMARY_BRANCHES.map((b, i) => `p${i}: ref(qualifiedName: "refs/heads/${b}") { ${BRANCH_DAY_FIELDS} }`).join('\n    ')}
     refs(refPrefix: "refs/heads/", first: $branches) {
       totalCount
       nodes { name target { ... on Commit { ${DAY_COUNT_FIELDS} } } }
@@ -343,37 +398,160 @@ const ACTIVITY_QUERY = `query($owner: String!, $name: String!, $branches: Int!) 
   }
 }`;
 
+// A branch's commits inside the window, by id, a page at a time. The range is
+// exactly the one the per-day counts cover, so the two always agree.
+const WINDOW_COMMIT_IDS_QUERY = `query($owner: String!, $name: String!, $ref: String!, $after: String) {
+  repository(owner: $owner, name: $name) {
+    ref(qualifiedName: $ref) {
+      target { ... on Commit {
+        history(first: 100, after: $after, since: "${WINDOW_DAYS[0].since}", until: "${WINDOW_DAYS[WINDOW_DAYS.length - 1].until}") {
+          pageInfo { hasNextPage endCursor }
+          nodes { oid }
+        }
+      } }
+    }
+  }
+}`;
+
+/** A branch's in-window commit ids, or null when they cannot all be listed. */
+async function windowCommitIds(owner, name, branch) {
+  const ids = new Set();
+  let after = null;
+  for (let page = 0; page < MAX_COMMIT_ID_PAGES; page++) {
+    const data = await ghGraphql(WINDOW_COMMIT_IDS_QUERY, { owner, name, ref: `refs/heads/${branch}`, after });
+    const history = data?.repository?.ref?.target?.history;
+    if (!history) return null;
+    for (const n of history.nodes || []) if (n && n.oid) ids.add(n.oid);
+    if (!history.pageInfo?.hasNextPage) return ids;
+    after = history.pageInfo.endCursor;
+  }
+  return null; // more than MAX_COMMIT_ID_PAGES pages
+}
+
+/** Whether two inspections read lessons from the same branches at the same commits. */
+function sameLessonCommits(a, b) {
+  return Array.isArray(a) && Array.isArray(b) && a.length === b.length &&
+    a.every((c, i) => c && c.branch === b[i].branch && (c.oid || null) === (b[i].oid || null));
+}
+
+/** Branches with their head commit, without a second entry for the same head. */
+function distinctHeads(branches) {
+  return branches.filter((b, i) => !b.oid || branches.findIndex((x) => x.oid === b.oid) === i);
+}
+
 /**
- * Commits per IST day in the window, on the default branch and up to
- * MAX_EXTRA_BRANCHES others. A day counts if any of those branches has a commit
- * on it; the commit count is the default branch's, so a branch made from it is
- * not counted twice. null when GraphQL is unavailable.
+ * Commits per IST day in the window. A day counts if the default branch, main,
+ * master or up to MAX_EXTRA_BRANCHES others has a commit on it. Commits are
+ * those on the default branch, main and master, each counted once, so a branch
+ * made from another is not counted twice. null when GraphQL is unavailable.
  */
 async function countActivity(owner, name) {
   const data = await ghGraphql(ACTIVITY_QUERY, { owner, name, branches: MAX_EXTRA_BRANCHES + 1 });
   const repo = data && data.repository;
-  const main = repo && repo.defaultBranchRef;
-  if (!main || !main.target) return null;
+  const def = repo && repo.defaultBranchRef;
+  if (!def || !def.target) return null;
   const perDay = (target) => WINDOW_DAYS.map((_, i) => Number(target?.[`d${i}`]?.totalCount) || 0);
+  const total = (target) => perDay(target).reduce((a, b) => a + b, 0);
 
-  const mainCounts = perDay(main.target);
-  const days = new Set(WINDOW_DAYS.filter((_, i) => mainCounts[i] > 0).map((d) => d.day));
-  let branchOnlyDays = 0;
+  // The default branch first, then main and master when they exist.
+  const primary = [def, ...PRIMARY_BRANCHES.map((_, i) => repo[`p${i}`])]
+    .filter((r) => r && r.name && r.target)
+    .filter((r, i, all) => all.findIndex((x) => x.name === r.name) === i);
+  const primaryNames = new Set(primary.map((r) => r.name));
+
+  const days = new Set();
+  const addDays = (target) => perDay(target).forEach((n, i) => { if (n > 0) days.add(WINDOW_DAYS[i].day); });
+  addDays(def.target);
+  const defaultDays = days.size;
+  for (const r of primary) addDays(r.target);
   for (const ref of repo.refs?.nodes || []) {
-    if (!ref || !ref.target || ref.name === main.name) continue;
-    perDay(ref.target).forEach((n, i) => {
-      if (n > 0 && !days.has(WINDOW_DAYS[i].day)) {
-        days.add(WINDOW_DAYS[i].day);
-        branchOnlyDays++;
-      }
-    });
+    if (ref && ref.target && !primaryNames.has(ref.name)) addDays(ref.target);
   }
+
+  // Commits on the default branch, main and master. When they point at
+  // different commits, they are listed by id so shared history counts once.
+  // deadlineOid is null for a branch with no commit by the deadline, and
+  // undefined if GitHub left it out, so it is looked up again.
+  const branches = primary.map((r) => ({
+    name: r.name,
+    oid: r.target.oid || null,
+    deadlineOid: r.target.atDeadline ? r.target.atDeadline.nodes?.[0]?.oid || null : undefined,
+    total: total(r.target),
+  }));
+  const withWork = distinctHeads(branches).filter((b) => b.total > 0);
+  let commitCount = withWork.length ? withWork[0].total : 0;
+  let commitsExact = true;
+  if (withWork.length > 1) {
+    const sets = await Promise.all(withWork.map((b) => windowCommitIds(owner, name, b.name)));
+    if (sets.every(Boolean)) {
+      commitCount = new Set(sets.flatMap((s) => [...s])).size;
+    } else {
+      // Could not list them all: the busiest branch's count, a lower bound.
+      commitCount = Math.max(...withWork.map((b) => b.total));
+      commitsExact = false;
+    }
+  }
+
   return {
     activeDayList: [...days].sort(),
-    commitCount: mainCounts.reduce((a, b) => a + b, 0),
-    branchOnlyDays,
+    commitCount,
+    commitsExact,
+    branchOnlyDays: days.size - defaultDays,
     branchesTotal: repo.refs?.totalCount || 1,
+    branches: branches.map(({ name: b, oid, deadlineOid }) => ({ name: b, oid, deadlineOid })),
   };
+}
+
+/**
+ * A branch's last commit at or before the deadline, from the REST API, when
+ * the activity query did not say. { ok, oid }: oid is null when the branch had
+ * no commit by then, and ok is false when GitHub failed.
+ */
+async function restDeadlineCommit(owner, name, branch) {
+  const r = await gh(
+    `/repos/${owner}/${name}/commits?sha=${encodeURIComponent(branch)}` +
+      `&until=${encodeURIComponent(DEADLINE_UNTIL)}&per_page=1`,
+  );
+  if (r.status === 200 && Array.isArray(r.body)) return { ok: true, oid: r.body[0]?.sha || null };
+  if (r.status === 409) return { ok: true, oid: null }; // empty repo
+  return { ok: false, oid: null };
+}
+
+/**
+ * The default branch, main and master, with their head commits, from the REST
+ * API when GraphQL is unavailable. `ok` is false when a lookup failed.
+ */
+async function restPrimaryBranches(owner, name, defaultBranch) {
+  const branches = [];
+  let ok = true;
+  for (const b of [defaultBranch, ...PRIMARY_BRANCHES.filter((x) => x !== defaultBranch)]) {
+    const r = await gh(`/repos/${owner}/${name}/branches/${encodeURIComponent(b)}`);
+    if (r.status === 200 && r.body?.commit?.sha) branches.push({ name: b, oid: r.body.commit.sha });
+    else if (b === defaultBranch) branches.push({ name: b, oid: null });
+    if (r.status !== 200 && r.status !== 404) ok = false;
+  }
+  return { branches, ok };
+}
+
+/**
+ * One evidence record from several branches' findings, default branch first.
+ * A lesson counts if any of them has it, and says where when that is not the
+ * default branch.
+ */
+function mergeEvidence(perBranch) {
+  if (perBranch.length === 1) return perBranch[0].evidence;
+  const merged = {};
+  for (const key of new Set(perBranch.flatMap((b) => Object.keys(b.evidence)))) {
+    const hit = perBranch.find((b) => b.evidence[key] && b.evidence[key].found);
+    if (hit) {
+      const { detail } = hit.evidence[key];
+      merged[key] = { found: true, detail: hit.isDefault ? detail : `${detail || 'Found'} (on ${hit.branch})` };
+    } else {
+      const hint = perBranch.find((b) => b.evidence[key] && b.evidence[key].detail);
+      merged[key] = { found: false, detail: hint ? hint.evidence[key].detail : '' };
+    }
+  }
+  return merged;
 }
 
 function parseRepoUrl(raw) {
@@ -428,8 +606,11 @@ const LESSON_DEFS = [
 ];
 const TICKABLE_LESSONS = LESSON_DEFS.filter((d) => d.check !== 'repo').map((d) => d.id);
 
-// Bump whenever detection changes, so the next sweep re-reads every repo
-// instead of reusing results computed under older rules.
+// Bump when stored evidence can no longer be shown as it is. lessonStatus
+// ignores evidence from any other version, so every member's lessons read as
+// missing until the next sweep reaches their repo. When the old evidence can
+// stand in until then, bump ACTIVITY_VERSION instead: the next sweep re-reads
+// every repo either way.
 const EVIDENCE_VERSION = 2;
 
 // File-content reads per repo, on top of the fixed calls. Bounds a sweep.
@@ -449,6 +630,12 @@ const OUR_HOOK_FILE = /(^|\/)\.kiro\/hooks\/kironomics\.json$/i;
 // at least one participant works. These match .kiro/ at any depth.
 const IN_KIRO = /(^|\/)\.kiro\//;
 const SPEC_DOC = /^((?:.*\/)?)\.kiro\/specs\/([^/]+)\/(requirements|bugfix|design|tasks)\.md$/i;
+// Any Markdown file under .kiro/specs/. Kiro writes a folder per spec, but some
+// members kept their spec documents straight in .kiro/specs/ or named them
+// their own way. These count when a repo has no spec in Kiro's layout.
+const SPEC_MARKDOWN = /^((?:.*\/)?)\.kiro\/specs\/(?:.+\/)?[^/]+\.md$/i;
+// An index of the specs, not a spec.
+const README_DOC = /(^|\/)readme\.md$/i;
 const STEERING_DOC = /(^|\/)\.kiro\/steering\/.+\.md$/i;
 const AGENTS_MD = /(^|\/)AGENTS\.md$/i;
 // Hook files sit directly in .kiro/hooks/. Anything in a subfolder is a script
@@ -533,19 +720,23 @@ async function detectLessonEvidence(paths, readFile) {
   const ev = {};
 
   // Lesson 1: spec-driven development. Bugfix specs use bugfix.md. A spec is
-  // its folder, so the same name in two lesson folders is two specs.
+  // its folder, so the same name in two lesson folders is two specs. Without
+  // one in Kiro's layout, any spec document under .kiro/specs/ counts.
   const specs = new Map();
   for (const p of files) {
     const m = p.match(SPEC_DOC);
     if (m) specs.set(`${m[1]}${m[2]}`, m[1]);
   }
-  const specRoots = [...new Set(specs.values())];
-  ev.specs = specs.size
-    ? {
-        found: true,
-        detail: `${plural(specs.size, 'spec')} in ${specRoots.length === 1 ? `${specRoots[0]}.kiro/specs` : `${specRoots.length} .kiro folders`}`,
-      }
-    : { found: false, detail: '' };
+  const specsIn = (roots) => (roots.length === 1 ? `${roots[0]}.kiro/specs` : `${roots.length} .kiro folders`);
+  const looseSpecs = specs.size ? [] : files.filter((p) => SPEC_MARKDOWN.test(p) && !README_DOC.test(p));
+  if (specs.size) {
+    ev.specs = { found: true, detail: `${plural(specs.size, 'spec')} in ${specsIn([...new Set(specs.values())])}` };
+  } else if (looseSpecs.length) {
+    const roots = [...new Set(looseSpecs.map((p) => p.match(SPEC_MARKDOWN)[1]))];
+    ev.specs = { found: true, detail: `${plural(looseSpecs.length, 'spec file')} in ${specsIn(roots)}` };
+  } else {
+    ev.specs = { found: false, detail: '' };
+  }
 
   // Lesson 2: steering. Kiro also reads AGENTS.md, at the root or in any folder.
   const steering = files.filter((p) => STEERING_DOC.test(p));
@@ -792,6 +983,40 @@ async function inspectRepo(fullName, prev = null) {
   // days were silently dropped. Bounding the query fixes both: everything
   // returned is in-window by construction, and the result set shrinks.
   const activity = emptyRepo ? null : await countActivity(owner, name);
+
+  // The branches that count in full: the default branch, main and master
+  // (PRIMARY_BRANCHES), default first. From the activity query, or looked up
+  // when GraphQL is unavailable. Each distinct head commit is read once.
+  let primary = [{ name: out.defaultBranch, oid: null }];
+  if (activity) {
+    primary = activity.branches;
+  } else if (!emptyRepo) {
+    const looked = await restPrimaryBranches(owner, name, out.defaultBranch);
+    primary = looked.branches;
+    if (!looked.ok) complete = false;
+  }
+  const heads = distinctHeads(primary);
+  out.primaryBranches = primary.map((b) => b.name);
+
+  // Commits from before the window disqualify on main and master too.
+  for (const b of emptyRepo ? [] : heads.slice(1)) {
+    if (out.eligible === false) break;
+    const pre = await gh(
+      `/repos/${owner}/${name}/commits?sha=${encodeURIComponent(b.name)}` +
+        `&until=${encodeURIComponent(BEFORE_WINDOW_ISO)}&per_page=1`,
+    );
+    if (pre.status === 200 && Array.isArray(pre.body)) {
+      if (pre.body.length) {
+        out.eligible = false;
+        const d = pre.body[0]?.commit?.committer?.date;
+        if (d) out.preWindowCommitDate = d.slice(0, 10);
+        out.preWindowBranch = b.name;
+      }
+    } else {
+      complete = false;
+    }
+  }
+
   if (activity) {
     out.activeDayList = activity.activeDayList;
     out.activeDays = activity.activeDayList.length;
@@ -800,34 +1025,40 @@ async function inspectRepo(fullName, prev = null) {
     out.branchOnlyDays = activity.branchOnlyDays;
     out.branchCount = activity.branchesTotal;
     out.activitySource = 'graphql';
+    // A lower bound when the commits could not all be listed: count again.
+    if (!activity.commitsExact) complete = false;
   } else {
-    // Page by page, newest first, default branch only. Capped (see MAX_COMMIT_PAGES).
+    // Page by page, newest first, on the default branch, main and master, each
+    // commit once. Capped per branch (see MAX_COMMIT_PAGES).
     const days = new Set();
-    let inWindowCommits = 0;
+    const ids = new Set();
     let capped = false;
-    for (let page = 1; page <= MAX_COMMIT_PAGES; page++) {
-      const batch = await gh(
-        `/repos/${owner}/${name}/commits` +
-          `?since=${encodeURIComponent(WINDOW_START_ISO)}` +
-          `&until=${encodeURIComponent(ENTRY_DEADLINE_ISO)}` +
-          `&per_page=100&page=${page}`,
-      );
-      if (batch.status !== 200 || !Array.isArray(batch.body)) {
-        if (batch.status !== 409) complete = false; // 409: empty repo
-        break;
+    for (const b of heads) {
+      for (let page = 1; page <= MAX_COMMIT_PAGES; page++) {
+        const batch = await gh(
+          `/repos/${owner}/${name}/commits` +
+            `?sha=${encodeURIComponent(b.name)}` +
+            `&since=${encodeURIComponent(WINDOW_START_ISO)}` +
+            `&until=${encodeURIComponent(ENTRY_DEADLINE_ISO)}` +
+            `&per_page=100&page=${page}`,
+        );
+        if (batch.status !== 200 || !Array.isArray(batch.body)) {
+          if (batch.status !== 409) complete = false; // 409: empty repo
+          break;
+        }
+        if (batch.body.length === 0) break;
+        for (const c of batch.body) {
+          if (c && c.sha) ids.add(c.sha);
+          const d = c?.commit?.committer?.date || c?.commit?.author?.date;
+          if (d) days.add(istDay(d));
+        }
+        if (batch.body.length < 100) break; // last page
+        if (page === MAX_COMMIT_PAGES) capped = true;
       }
-      if (batch.body.length === 0) break;
-      for (const c of batch.body) {
-        const d = c?.commit?.committer?.date || c?.commit?.author?.date;
-        if (d) days.add(istDay(d));
-      }
-      inWindowCommits += batch.body.length;
-      if (batch.body.length < 100) break; // last page
-      if (page === MAX_COMMIT_PAGES) capped = true;
     }
     out.activeDays = days.size;
     out.activeDayList = [...days].sort();
-    out.commitCount = inWindowCommits;
+    out.commitCount = ids.size;
     out.activitySource = 'rest';
     // Earlier days may be missing, so count again next sweep rather than reuse this.
     if (capped) complete = false;
@@ -840,61 +1071,182 @@ async function inspectRepo(fullName, prev = null) {
   if (head.status === 200) out.totalCommitCount = commitCountFromLink(head.link, head.body);
   else if (head.status !== 409) complete = false;
 
-  // .kiro contents, lesson evidence, and the leaked-key check in one tree call.
-  // An empty repo has no tree, and nothing to find yet.
-  let paths = emptyRepo ? [] : null;
-  if (!paths && out.defaultBranch) {
-    const tree = await gh(
-      `/repos/${owner}/${name}/git/trees/${encodeURIComponent(out.defaultBranch)}?recursive=1`,
-    );
-    if (tree.status === 200 && Array.isArray(tree.body?.tree)) {
-      paths = tree.body.tree.filter((n) => n.type === 'blob').map((n) => n.path);
-      out.treeTruncated = Boolean(tree.body.truncated);
-    } else if (tree.status === 409) {
-      paths = [];
-    } else {
-      complete = false;
+  // Trees are read by commit, one call each, so a branch that has not moved
+  // since entries closed is read once for both uses below. null when GitHub
+  // failed. An empty repo has no tree, and nothing to find yet.
+  const treeCache = new Map();
+  const readTree = async (ref) => {
+    if (!treeCache.has(ref)) {
+      const tree = await gh(`/repos/${owner}/${name}/git/trees/${encodeURIComponent(ref)}?recursive=1`);
+      let result = null;
+      if (tree.status === 200 && Array.isArray(tree.body?.tree)) {
+        result = {
+          truncated: Boolean(tree.body.truncated),
+          paths: tree.body.tree.filter((n) => n.type === 'blob').map((n) => n.path),
+        };
+      } else if (tree.status === 409) {
+        result = { truncated: false, paths: [] };
+      }
+      treeCache.set(ref, result);
+    }
+    return treeCache.get(ref);
+  };
+  // The last inspection, if it was of this same repo, for anything this one
+  // could not read.
+  const sameRepo = Boolean(prev && !prev.unreachable && (prev.repoNodeId && out.repoNodeId
+    ? prev.repoNodeId === out.repoNodeId
+    : String(prev.fullName || '').toLowerCase() === String(out.fullName || '').toLowerCase()));
+
+  // Lessons: from each branch that counts in full as it stood when entries
+  // closed, at its last commit by ENTRY_DEADLINE_ISO. Lessons decide places on
+  // the leaderboard (LESSON_GATE_PLACES), so a file added after entries closed
+  // must not count, and Kiro's terms bar committing after submission anyway.
+  // A branch with no commit by then had nothing in it.
+  const snapshots = [];
+  let snapshotRead = emptyRepo;
+  if (emptyRepo) {
+    snapshots.push({ branch: out.defaultBranch, isDefault: true, oid: null, paths: [] });
+  } else {
+    const seen = new Set();
+    for (const [i, b] of heads.entries()) {
+      let oid = b.deadlineOid;
+      if (oid === undefined) {
+        const found = await restDeadlineCommit(owner, name, b.name);
+        if (!found.ok) {
+          complete = false;
+          continue;
+        }
+        oid = found.oid;
+      }
+      // Branches that were at the same commit then are read once.
+      if (seen.has(oid)) continue;
+      seen.add(oid);
+      const tree = oid ? await readTree(oid) : { truncated: false, paths: [] };
+      if (!tree) {
+        complete = false;
+        continue;
+      }
+      snapshots.push({ branch: b.name, isDefault: i === 0, oid, ...tree });
+      if (i === 0) snapshotRead = true;
     }
   }
 
-  if (paths) {
-    out.hasKiroFolder = paths.some((p) => p.startsWith('.kiro/'));
-    out.kironomicsKeyExposed = paths.some((p) => LEAKED_KEY_PATH.test(p));
-
-    const readFile = async (p) => {
-      try {
-        return await fetchRepoFile(owner, name, p, out.defaultBranch);
-      } catch (err) {
-        complete = false;
-        throw err;
+  // Only once the default branch is read: a lesson must never show as missing
+  // just because its tree could not be fetched. If main or master could not
+  // be read, the default branch's findings stand and the next sweep retries.
+  if (snapshotRead) {
+    // The commits the lessons are read from: null for a branch with none yet.
+    const lessonCommits = snapshots.map((s) => ({ branch: s.branch, oid: s.oid }));
+    // Once entries close these commits stop changing, so evidence read in
+    // full from the same ones under the same rules is kept, not read again.
+    // A GitHub error while reading a file would otherwise drop a lesson found
+    // last time, and with it the member's place among those needing one.
+    const samePrevRead = sameRepo && prev.evidence &&
+      prev.evidenceVersion === EVIDENCE_VERSION && prev.activityVersion === ACTIVITY_VERSION &&
+      sameLessonCommits(prev.lessonCommits, lessonCommits);
+    // Records from before evidenceComplete existed were read in full if the
+    // whole inspection was.
+    const prevReadInFull = prev?.evidenceComplete ?? prev?.complete === true;
+    let readFailed = false;
+    if (samePrevRead && prevReadInFull === true) {
+      out.evidence = prev.evidence;
+    } else {
+      const perBranch = [];
+      for (const s of snapshots) {
+        const readFile = async (p) => {
+          if (!s.oid) return null;
+          try {
+            return await fetchRepoFile(owner, name, p, s.oid);
+          } catch (err) {
+            complete = false;
+            readFailed = true;
+            throw err;
+          }
+        };
+        perBranch.push({ ...s, evidence: await detectLessonEvidence(s.paths, readFile) });
       }
-    };
-
-    out.evidence = await detectLessonEvidence(paths, readFile);
+      // A lesson counts if any branch that counts in full had it.
+      out.evidence = mergeEvidence(perBranch);
+      // A file that could not be read this time cannot unfind a lesson an
+      // earlier read of the same commits found.
+      if (readFailed && samePrevRead) {
+        for (const [key, e] of Object.entries(prev.evidence)) {
+          if (e && e.found && !out.evidence[key]?.found) out.evidence[key] = e;
+        }
+      }
+    }
     out.evidenceVersion = EVIDENCE_VERSION;
+    // false when a file could not be read, so the evidence may be short.
+    out.evidenceComplete = !readFailed;
+    out.lessonCommits = lessonCommits;
     // The old shape, for the page version still deployed until the new one
     // ships. Derived from the evidence so both agree.
+    const lessonPaths = [...new Set(snapshots.flatMap((s) => s.paths))];
     out.artifacts = {
       steering: out.evidence.steering.found,
       specs: out.evidence.specs.found,
       hooks: out.evidence.hooks.found,
       mcp: out.evidence.mcp.found,
       agents: out.evidence.agents.found,
-      skills: paths.some((p) => SKILL_FILE.test(p)),
+      skills: lessonPaths.some((p) => SKILL_FILE.test(p)),
     };
+  } else if (sameRepo && prev.evidence && prev.evidenceVersion === EVIDENCE_VERSION) {
+    // Keep what the last read found rather than show every lesson as missing,
+    // which would also move the member out of the places that need one.
+    // `complete` is false, so the next sweep reads the repo again.
+    out.evidence = prev.evidence;
+    out.evidenceVersion = prev.evidenceVersion;
+    if (prev.artifacts) out.artifacts = prev.artifacts;
+    if (prev.lessonCommits) out.lessonCommits = prev.lessonCommits;
+    if (typeof prev.evidenceComplete === 'boolean') out.evidenceComplete = prev.evidenceComplete;
+    out.evidenceCarriedOver = true;
+  }
 
-    if (paths.includes('.kiro/ugmdu.json')) {
+  // The rest is about the repo as it is now: whether .kiro/ is committed, a
+  // leaked key, and the setup manifest. A key committed on any public branch
+  // is public, whenever it was committed.
+  const current = [];
+  let currentRead = emptyRepo;
+  if (!emptyRepo) {
+    for (const [i, b] of heads.entries()) {
+      const ref = b.oid || b.name;
+      const tree = await readTree(ref);
+      if (!tree) {
+        complete = false;
+        continue;
+      }
+      current.push({ ref, ...tree });
+      if (i === 0) currentRead = true;
+    }
+  }
+  if (currentRead) {
+    const allPaths = [...new Set(current.flatMap((t) => t.paths))];
+    out.hasKiroFolder = allPaths.some((p) => p.startsWith('.kiro/'));
+    out.kironomicsKeyExposed = allPaths.some((p) => LEAKED_KEY_PATH.test(p));
+
+    const withManifest = current.find((t) => t.paths.includes('.kiro/ugmdu.json'));
+    if (withManifest) {
+      // Kept for its participantId, which says whose setup command made the
+      // repo. Its `lessons` list no longer counts: nobody edits it by hand,
+      // and the repo files are better evidence.
+      let text = null;
       try {
-        // Kept for its participantId, which says whose setup command made
-        // the repo. Its `lessons` list no longer counts: nobody edits it by
-        // hand, and the repo files are better evidence.
-        const text = await readFile('.kiro/ugmdu.json');
+        text = await fetchRepoFile(owner, name, '.kiro/ugmdu.json', withManifest.ref);
+      } catch {
+        complete = false;
+      }
+      try {
         out.manifest = text ? JSON.parse(text) : null;
       } catch {
         out.manifest = null;
       }
     }
+  } else if (sameRepo) {
+    for (const key of ['hasKiroFolder', 'kironomicsKeyExposed', 'manifest']) {
+      if (key in prev) out[key] = prev[key];
+    }
   }
+  out.treeTruncated = [...snapshots, ...current].some((t) => t.truncated);
 
   out.complete = complete;
 
@@ -924,7 +1276,7 @@ async function listParticipants(campaignId) {
     items.push(...(r.Items || []));
     ExclusiveStartKey = r.LastEvaluatedKey;
   } while (ExclusiveStartKey);
-  return items.filter((i) => i.userId !== COUNTER_KEY);
+  return items.filter((i) => !isReservedId(i.userId));
 }
 
 /**
@@ -1037,6 +1389,9 @@ function publicView(p) {
     lessons: lessonStatus(p),
     validatedPosition: p.validatedPosition ?? null,
     externalEntryConfirmedAt: p.externalEntryConfirmedAt || null,
+    prize: publicPrize(p.prize),
+    // So their page does not promise a prize an organiser has ruled out.
+    prizeExcluded: p.prizeExcluded === true,
   };
 }
 
@@ -1098,9 +1453,39 @@ async function handleMe(campaignId, event) {
   return res(200, { participation: publicView(p) });
 }
 
-async function handleLeaderboard(campaignId) {
-  const all = await listParticipants(campaignId);
-  const entries = all
+// Leaderboard places that need at least one of the seven scored lessons, as
+// well as an active day. Builders without one rank below these places.
+const LESSON_GATE_PLACES = 40;
+
+/** Whether a board entry may take one of the first LESSON_GATE_PLACES places. */
+function passesLessonGate(e) {
+  return e.activeDays >= 1 && e.lessonsDone >= 1;
+}
+
+/**
+ * The leaderboard, best first. The public board and the prizes both use this,
+ * so a winner's prize always matches the rank everyone saw.
+ *
+ * Active days first: distinct days, so a hundred pushes in one afternoon still
+ * counts once. Commits break ties, then lessons. Member ids settle anything
+ * still tied, the same order DynamoDB returns them in, so it never shifts.
+ *
+ * The first LESSON_GATE_PLACES places go to the builders who have started the
+ * lessons, in that order. Everyone else follows, still in that order.
+ */
+function rankEntries(participants) {
+  const gated = [];
+  const rest = [];
+  for (const e of orderByActivity(participants)) {
+    if (gated.length < LESSON_GATE_PLACES && passesLessonGate(e)) gated.push(e);
+    else rest.push(e);
+  }
+  return [...gated, ...rest].map((e, i) => ({ ...e, rank: i + 1 }));
+}
+
+/** Board entries in order of days, commits and lessons alone, unranked. */
+function orderByActivity(participants) {
+  return participants
     .filter((p) => p.repo && !p.repo.unreachable)
     .map((p) => {
       const counted = mergedLessons(p);
@@ -1117,19 +1502,37 @@ async function handleLeaderboard(campaignId) {
         validated: p.status === 'validated',
       };
     })
-    // Active days first — distinct days, so a hundred pushes in one afternoon
-    // still counts once. Commits break ties.
-    .sort((a, b) => b.activeDays - a.activeDays || b.commitCount - a.commitCount)
-    .map((e, i) => ({ ...e, rank: i + 1 }));
+    .sort((a, b) =>
+      b.activeDays - a.activeDays ||
+      b.commitCount - a.commitCount ||
+      b.lessonsRecorded - a.lessonsRecorded ||
+      (a.userId < b.userId ? -1 : a.userId > b.userId ? 1 : 0));
+}
+
+async function handleLeaderboard(campaignId) {
+  // Once prizes are issued the board is the one they were decided from, frozen
+  // with them. Lesson ticks, repo changes or a late sweep cannot move it.
+  const lock = await getPrizeLock(campaignId);
+  if (lock && Array.isArray(lock.board)) {
+    return res(200, {
+      entries: lock.board,
+      totalItems: lock.board.length,
+      final: true,
+      standingsAsOf: lock.standingsAsOf || lock.issuedAt,
+    });
+  }
+  const entries = rankEntries(await listParticipants(campaignId));
   return res(200, { entries, totalItems: entries.length });
 }
 
 async function handleStats(campaignId) {
-  const all = await listParticipants(campaignId);
+  const [all, prizeLock] = await Promise.all([listParticipants(campaignId), getPrizeLock(campaignId)]);
   return res(200, {
     validatedCount: all.filter((p) => p.status === 'validated').length,
     joinedCount: all.length,
     withRepoCount: all.filter((p) => p.repo && !p.repo.unreachable).length,
+    // Once true the standings are final: the sweep stops refreshing them.
+    prizesIssued: Boolean(prizeLock),
   });
 }
 
@@ -1309,6 +1712,10 @@ async function handleRegisterRepo(event) {
   const who = await resolveRegistrant(event, body);
   if (who.error) return res(who.status, { error: who.error });
   const { campaignId, userId, via } = who;
+  if (isReservedId(userId)) return res(401, { error: 'authentication required' });
+  if (await getPrizeLock(campaignId)) {
+    return res(409, { error: 'This challenge has ended and its standings are final, so repos can no longer be registered.' });
+  }
 
   const participation = await getParticipation(campaignId, userId);
   if (!participation) {
@@ -1384,6 +1791,11 @@ async function handleRegisterRepo(event) {
 async function handleLessons(campaignId, event) {
   const userId = extractUserId(event.headers?.Authorization || event.headers?.authorization);
   if (!userId) return res(401, { error: 'authentication required' });
+  // Lessons break ties on the final leaderboard, and so decide prizes. They
+  // stop changing when entries close.
+  if (Date.now() >= Date.parse(ENTRY_DEADLINE_ISO)) {
+    return res(409, { error: 'Entries have closed, so lessons can no longer be changed.' });
+  }
 
   const body = parseBody(event);
   if (!Array.isArray(body.lessons)) {
@@ -1998,6 +2410,886 @@ async function handleUnsubscribe(campaignId, event) {
   return res(200, { ok: true });
 }
 
+// ── Prizes ────────────────────────────────────────────────────────
+/**
+ * Community prizes by final leaderboard place. Must match PRIZE_TIERS in
+ * src/lib/campaign.ts, which shows them.
+ *
+ * Each winner gets a coupon for one store item: the one whose name matches
+ * `storeMatch`, fixed when prizes are issued. The coupon claims that item and
+ * nothing else. Claiming it creates the order and adds `points` to the
+ * winner's overall points, earned and spent in the same moment, so their
+ * spendable balance does not change and the points cannot go anywhere else.
+ */
+const PRIZE_TIERS = [
+  { id: 'jacket', item: 'Jacket', upTo: 3, points: 2500, storeMatch: /jacket/i },
+  { id: 'power-bank', item: 'Power bank', upTo: 6, points: 2000, storeMatch: /power\s*-?\s*bank/i },
+  { id: 'water-bottle', item: 'Water bottle', upTo: 11, points: 1500, storeMatch: /bottle/i },
+  { id: 't-shirt', item: 'T-shirt', upTo: 31, points: 1000, storeMatch: /t\s*-?\s*shirt/i },
+  { id: 'stickers', item: 'Sticker sheet', upTo: 51, points: 150, storeMatch: /sticker/i },
+];
+const PRIZE_PLACES = PRIZE_TIERS[PRIZE_TIERS.length - 1].upTo;
+
+// Coupon emails per request. Each takes about half a second and API Gateway
+// gives up on a request after 29, so the admin page sends them in batches and
+// keeps asking until none are left.
+const PRIZE_EMAIL_BATCH = 10;
+const PRIZE_EMAIL_TIME_BUDGET_MS = 15 * 1000;
+// A send claimed this long ago without a result is treated as lost and redone.
+const PRIZE_EMAIL_STALE_MS = 5 * 60 * 1000;
+const COUPON_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+function prizeTierForPlace(place) {
+  return PRIZE_TIERS.find((t) => place <= t.upTo) || null;
+}
+
+function prizeTierById(id) {
+  return PRIZE_TIERS.find((t) => t.id === id) || null;
+}
+
+/** "jacket" for "Jacket", to read naturally after "a". */
+function itemInSentence(item) {
+  const s = String(item || '');
+  return s.charAt(0).toLowerCase() + s.slice(1);
+}
+
+/**
+ * KU-XXXX-XXXX. A reference for the member and the organisers, not a secret:
+ * claiming needs the owner's verified sign-in. 32 symbols divide 256 evenly,
+ * so every symbol is equally likely.
+ */
+function couponCode() {
+  const s = Array.from(crypto.randomBytes(8), (b) => COUPON_ALPHABET[b % COUPON_ALPHABET.length]).join('');
+  return `KU-${s.slice(0, 4)}-${s.slice(4)}`;
+}
+
+/** What the member sees of their coupon. */
+function publicPrize(prize) {
+  if (!prize) return null;
+  return {
+    code: prize.code,
+    tier: prize.tier,
+    item: prize.item,
+    points: prize.points,
+    place: prize.place,
+    // Their rank on the public leaderboard. Differs from `place` only when
+    // someone above them was excluded from the prizes.
+    boardRank: prize.boardRank ?? prize.place,
+    // 'issued' until claimed, then 'claimed'.
+    status: prize.status,
+    issuedAt: prize.issuedAt,
+    // The store item the coupon claims.
+    itemId: prize.itemId || null,
+    claimedAt: prize.claimedAt || null,
+    orderId: prize.orderId || null,
+  };
+}
+
+/** What an admin sees of a coupon. */
+function adminCoupon(prize) {
+  if (!prize) return null;
+  return {
+    code: prize.code,
+    status: prize.status,
+    emailStatus: prize.emailStatus || 'pending',
+    emailedAt: prize.emailedAt || null,
+    emailError: prize.emailError || null,
+    claimedAt: prize.claimedAt || null,
+    orderId: prize.orderId || null,
+  };
+}
+
+/** Every store item, to find what each prize is claimed as. */
+async function listStoreItems() {
+  const items = [];
+  let ExclusiveStartKey;
+  do {
+    const r = await docClient.send(new ScanCommand({ TableName: STORE_ITEMS_TABLE, ExclusiveStartKey }));
+    items.push(...(r.Items || []));
+    ExclusiveStartKey = r.LastEvaluatedKey;
+  } while (ExclusiveStartKey);
+  return items;
+}
+
+/**
+ * The physical store item a tier's winners claim. When several match, the
+ * oldest, so adding another one later does not quietly change the prize.
+ */
+function storeItemForTier(tier, items) {
+  return items
+    .filter((i) => i.itemType !== 'virtual' && tier.storeMatch.test(String(i.name || '')))
+    .sort((a, b) =>
+      String(a.createdAt || '').localeCompare(String(b.createdAt || '')) ||
+      String(a.id).localeCompare(String(b.id)))[0] || null;
+}
+
+/**
+ * The store item for each tier: the one fixed when prizes were issued, or,
+ * before that, or if that item has since been deleted, today's match.
+ */
+function tierItemsFor(lock, items) {
+  return PRIZE_TIERS.map((tier) => {
+    const fixedId = lock?.tierItems?.[tier.id]?.itemId;
+    const item = (fixedId && items.find((i) => i.id === fixedId)) || storeItemForTier(tier, items);
+    return { tier, item };
+  });
+}
+
+/** A tier's store item as the admin page shows it, with its stock. */
+function tierItemView({ tier, item }) {
+  return {
+    tier: tier.id,
+    itemId: item ? item.id : null,
+    itemName: item ? String(item.name || '').trim() : null,
+    quantity: item && typeof item.quantity === 'number' ? item.quantity : null,
+    inStock: item ? Boolean(item.inStock) : null,
+  };
+}
+
+/**
+ * Tiers that have winners but no store item to claim. Prizes cannot be issued
+ * until there is one for each.
+ */
+function missingPrizeItems(winners, tierItems) {
+  const withWinners = new Set(winners.map((w) => w.tier.id));
+  return tierItems.filter(({ tier, item }) => !item && withWinners.has(tier.id)).map(({ tier }) => tier.item);
+}
+
+/**
+ * The frozen allocation, once prizes are issued. Only a record with an
+ * allocation counts, so nothing else at this key can pass for issued prizes.
+ */
+async function getPrizeLock(campaignId) {
+  const r = await docClient.send(
+    new GetCommand({ TableName: PARTICIPATION_TABLE, Key: { campaignId, userId: PRIZES_KEY } }),
+  );
+  const lock = r.Item;
+  return lock && Array.isArray(lock.allocation) && lock.issuedAt ? lock : null;
+}
+
+/**
+ * Identifies an allocation and the store items it is claimed as, so issuing
+ * freezes exactly the list the admin reviewed.
+ */
+function allocationFingerprint(winners, tierItems) {
+  const items = tierItems.map(({ tier, item }) => `${tier.id}=${item ? item.id : ''}`).join(',');
+  return crypto
+    .createHash('sha256')
+    .update(`${winners.map((w) => `${w.userId}:${w.tier.id}`).join('|')}#${items}`)
+    .digest('hex')
+    .slice(0, 16);
+}
+
+/**
+ * Prize places from the current standings. A member an admin excluded gives up
+ * their place, and everyone below moves up one. So does anyone with no active
+ * day in the challenge window: there is no work in it to reward.
+ */
+function allocatePrizes(participants) {
+  const excludedIds = new Set(participants.filter((p) => p.prizeExcluded === true).map((p) => p.userId));
+  const board = rankEntries(participants);
+  const eligible = board.filter((e) => !excludedIds.has(e.userId) && e.activeDays >= 1);
+  const winners = eligible.slice(0, PRIZE_PLACES).map((e, i) => ({
+    ...e,
+    place: i + 1,
+    tier: prizeTierForPlace(i + 1),
+  }));
+
+  // Ties across a prize boundary: same days and commits, so lessons or, failing
+  // that, member ids decided who got the better prize. Admins see these.
+  const ties = [];
+  for (const t of PRIZE_TIERS) {
+    const above = eligible[t.upTo - 1];
+    const below = eligible[t.upTo];
+    if (!above || !below) continue;
+    if (above.activeDays !== below.activeDays || above.commitCount !== below.commitCount) continue;
+    ties.push({
+      place: t.upTo,
+      aboveUserId: above.userId,
+      aboveName: above.displayName,
+      belowUserId: below.userId,
+      belowName: below.displayName,
+      decidedBy: above.lessonsRecorded !== below.lessonsRecorded ? 'lessons' : 'member id',
+    });
+  }
+
+  // Builders ranked lower than their days and commits alone would put them,
+  // because they had no lesson for the places that need one.
+  const activityRank = new Map(orderByActivity(participants).map((e, i) => [e.userId, i + 1]));
+  const movedForLessons = board
+    .filter((e) => e.rank > activityRank.get(e.userId))
+    .map((e) => ({ ...e, activityRank: activityRank.get(e.userId) }));
+
+  return {
+    board,
+    winners,
+    ties,
+    excluded: board.filter((e) => excludedIds.has(e.userId)),
+    // On the board, but without a single active day.
+    inactive: board.filter((e) => !excludedIds.has(e.userId) && e.activeDays < 1),
+    movedForLessons,
+  };
+}
+
+/**
+ * Ranked members whose repo the last refresh could not read in full, so their
+ * days, commits or lessons may be short until the next one.
+ */
+function incompleteRepos(participants) {
+  return participants
+    .filter((p) => p.repoFullName && p.repo && !p.repo.unreachable && p.repo.complete === false)
+    .map((p) => ({ userId: p.userId, name: p.displayName || 'Builder', repoFullName: p.repoFullName }));
+}
+
+/**
+ * Members with a linked repo that GitHub would not show on the last refresh.
+ * They are not ranked, so without this list they would miss out silently.
+ */
+function unreachableRepos(participants) {
+  return participants
+    .filter((p) => p.repoFullName && p.repo && p.repo.unreachable)
+    .map((p) => ({ userId: p.userId, name: p.displayName || 'Builder', repoFullName: p.repoFullName }));
+}
+
+/** The part of a winner that is frozen when prizes are issued. */
+function allocationEntry(w) {
+  return {
+    userId: w.userId,
+    place: w.place,
+    boardRank: w.rank,
+    tier: w.tier.id,
+    activeDays: w.activeDays,
+    commitCount: w.commitCount,
+    lessonsDone: w.lessonsDone,
+    bonusLessonsDone: w.bonusLessonsDone,
+  };
+}
+
+/** Name and email for many members at once, keyed by userId. */
+function getContacts(userIds) {
+  return batchGetAll(USERS_TABLE, 'userId', userIds, '#u, #n, #e', {
+    '#u': 'userId', '#n': 'name', '#e': 'email',
+  });
+}
+
+function adminDenied(who) {
+  return res(who.status, { error: who.status === 401 ? 'Sign in again to continue.' : 'admin only' });
+}
+
+/**
+ * The prize list for the admin page: a preview from the live standings until
+ * prizes are issued, then the frozen allocation with each coupon's state.
+ * Admin only, on a verified token, because it returns members' emails.
+ */
+async function handleAdminPrizes(campaignId, event) {
+  const who = await verifiedAdmin(event);
+  if (who.status) return adminDenied(who);
+
+  const [participants, lock, sweep, storeItems] = await Promise.all([
+    listParticipants(campaignId), getPrizeLock(campaignId), getSweepStatus(campaignId), listStoreItems(),
+  ]);
+  const byId = new Map(participants.map((p) => [p.userId, p]));
+  const tierItems = tierItemsFor(lock, storeItems);
+
+  let rows;
+  let ties = [];
+  let excluded = [];
+  let inactive = [];
+  let unreachable = [];
+  let movedForLessons = [];
+  let incomplete = [];
+  let missingItems = [];
+  let fingerprint = null;
+  if (lock) {
+    rows = lock.allocation.map((a) => ({ ...a, coupon: adminCoupon(byId.get(a.userId)?.prize) }));
+  } else {
+    const allocation = allocatePrizes(participants);
+    rows = allocation.winners.map((w) => ({ ...allocationEntry(w), coupon: null }));
+    ties = allocation.ties;
+    excluded = allocation.excluded.map((e) => ({ userId: e.userId, boardRank: e.rank, name: e.displayName }));
+    inactive = allocation.inactive.map((e) => ({ userId: e.userId, boardRank: e.rank, name: e.displayName }));
+    movedForLessons = allocation.movedForLessons.map((e) => ({
+      userId: e.userId, name: e.displayName, activityRank: e.activityRank, boardRank: e.rank,
+    }));
+    unreachable = unreachableRepos(participants);
+    incomplete = incompleteRepos(participants);
+    missingItems = missingPrizeItems(allocation.winners, tierItems);
+    fingerprint = allocationFingerprint(allocation.winners, tierItems);
+  }
+
+  const contacts = await getContacts([
+    ...rows.map((r) => r.userId),
+    ...excluded.map((e) => e.userId),
+    ...inactive.map((e) => e.userId),
+    ...movedForLessons.map((e) => e.userId),
+    ...unreachable.map((u) => u.userId),
+    ...incomplete.map((u) => u.userId),
+    ...ties.flatMap((t) => [t.aboveUserId, t.belowUserId]),
+    lock?.issuedBy,
+  ]);
+  const nameOf = (userId, fallback) => contacts.get(userId)?.name || fallback || 'Unnamed member';
+  const deadlinePassed = Date.now() >= Date.parse(ENTRY_DEADLINE_ISO);
+
+  return res(200, {
+    deadlinePassed,
+    issued: Boolean(lock),
+    issuedAt: lock?.issuedAt || null,
+    issuedByName: lock ? nameOf(lock.issuedBy, 'an admin') : null,
+    // When the board the prizes come from was last read from GitHub.
+    standingsAsOf: lock ? lock.standingsAsOf || lock.issuedAt : sweep?.completedAt || null,
+    // Why issuing has to wait, if it does.
+    sweepBlocker: !lock && deadlinePassed ? sweepBlocker(sweep, participants) : null,
+    fingerprint,
+    rows: rows.map((r) => {
+      const p = byId.get(r.userId);
+      return {
+        ...r,
+        name: nameOf(r.userId, p?.displayName),
+        email: contacts.get(r.userId)?.email || null,
+        // false means the repo has commits from before the challenge window.
+        repoEligible: p?.repo?.eligible ?? null,
+        // How far they got: building, submitted on kiro.dev, or validated.
+        stage: p ? participantStage(p) : null,
+      };
+    }),
+    excluded: excluded.map((e) => ({ ...e, name: nameOf(e.userId, e.name) })),
+    inactive: inactive.map((e) => ({ ...e, name: nameOf(e.userId, e.name) })),
+    // Ranked below the places that need a lesson, for having none.
+    movedForLessons: movedForLessons.map((e) => ({ ...e, name: nameOf(e.userId, e.name) })),
+    unreachable: unreachable.map((u) => ({ ...u, name: nameOf(u.userId, u.name) })),
+    // Read only in part on the last refresh: a refresh usually fixes these.
+    incomplete: incomplete.map((u) => ({ ...u, name: nameOf(u.userId, u.name) })),
+    ties: ties.map((t) => ({
+      place: t.place,
+      aboveName: nameOf(t.aboveUserId, t.aboveName),
+      belowName: nameOf(t.belowUserId, t.belowName),
+      decidedBy: t.decidedBy,
+    })),
+    // The store item each prize claims, and its stock.
+    tierItems: tierItems.map(tierItemView),
+    // Before issuing: prizes with winners but no store item to claim.
+    missingItems,
+  });
+}
+
+/** Take a member out of the prizes, or put them back, until prizes are issued. */
+async function handleExcludeFromPrizes(campaignId, event) {
+  const who = await verifiedAdmin(event);
+  if (who.status) return adminDenied(who);
+
+  const { userId, excluded } = parseBody(event);
+  if (typeof userId !== 'string' || !userId || userId.startsWith('__') || typeof excluded !== 'boolean') {
+    return res(400, { error: 'userId and excluded (true or false) are required' });
+  }
+  if (await getPrizeLock(campaignId)) {
+    return res(409, { error: 'Prizes are already issued, so the list is final.' });
+  }
+
+  const update = {
+    TableName: PARTICIPATION_TABLE,
+    Key: { campaignId, userId },
+    ConditionExpression: 'attribute_exists(userId)',
+  };
+  if (excluded) {
+    update.UpdateExpression = 'SET prizeExcluded = :t, prizeExcludedBy = :by, prizeExcludedAt = :n';
+    update.ExpressionAttributeValues = { ':t': true, ':by': who.userId, ':n': new Date().toISOString() };
+  } else {
+    update.UpdateExpression = 'REMOVE prizeExcluded, prizeExcludedBy, prizeExcludedAt';
+  }
+  try {
+    await docClient.send(new UpdateCommand(update));
+  } catch (err) {
+    if (err.name === 'ConditionalCheckFailedException') return res(404, { error: 'participation not found' });
+    throw err;
+  }
+
+  console.log('prize exclusion', { by: who.userId, userId, excluded });
+  return res(200, { userId, excluded });
+}
+
+/**
+ * Freeze the standings and give each winner a coupon. No points move here:
+ * the winner adds them by redeeming the coupon from their profile.
+ *
+ * The allocation is written once, conditionally, before any coupon. A re-run,
+ * after a timeout or from a second admin, reuses it and only fills in missing
+ * coupons, so nobody's prize can change and nobody gets two.
+ */
+async function handleIssuePrizes(campaignId, event) {
+  const who = await verifiedAdmin(event);
+  if (who.status) return adminDenied(who);
+  if (Date.now() < Date.parse(ENTRY_DEADLINE_ISO)) {
+    return res(409, { error: `Entries are still open. Prizes can be issued after ${DEADLINE_LABEL_IST}.` });
+  }
+
+  const participants = await listParticipants(campaignId);
+  let lock = await getPrizeLock(campaignId);
+  if (!lock) {
+    const sweep = await getSweepStatus(campaignId);
+    const blocker = sweepBlocker(sweep, participants);
+    if (blocker) return res(409, { error: blocker });
+
+    const { board, winners } = allocatePrizes(participants);
+    if (!winners.length) return res(409, { error: 'Nobody is on the leaderboard, so there is nobody to award.' });
+    // Every prize needs a store item to be claimed as.
+    const tierItems = tierItemsFor(null, await listStoreItems());
+    const missing = missingPrizeItems(winners, tierItems);
+    if (missing.length) {
+      return res(409, { error: `Add a store item for: ${missing.join(', ')}. Winners claim their prize as that item.` });
+    }
+    // The list must be the one the admin reviewed: a refresh, an exclusion or
+    // a store change since they loaded it would otherwise change prizes
+    // without them seeing.
+    const { fingerprint } = parseBody(event);
+    if (fingerprint !== allocationFingerprint(winners, tierItems)) {
+      return res(409, { error: 'The prize list has changed since you loaded it. Review the updated list, then issue again.' });
+    }
+    const item = {
+      campaignId,
+      userId: PRIZES_KEY,
+      issuedAt: new Date().toISOString(),
+      issuedBy: who.userId,
+      standingsAsOf: sweep.completedAt,
+      allocation: winners.map(allocationEntry),
+      // The store item each prize claims, fixed now so renaming or adding
+      // items later cannot change what a coupon gets.
+      tierItems: Object.fromEntries(tierItems
+        .filter(({ item: storeItem }) => storeItem)
+        .map(({ tier, item: storeItem }) => [tier.id, { itemId: storeItem.id, itemName: String(storeItem.name || '').trim() }])),
+      // The public leaderboard, frozen with the prizes it decided.
+      board,
+    };
+    try {
+      await docClient.send(
+        new PutCommand({
+          TableName: PARTICIPATION_TABLE,
+          Item: item,
+          // A row here without an allocation is not a lock (see getPrizeLock),
+          // so it is replaced rather than allowed to block issuing.
+          ConditionExpression: 'attribute_not_exists(userId) OR attribute_not_exists(#al)',
+          ExpressionAttributeNames: { '#al': 'allocation' },
+        }),
+      );
+      lock = item;
+    } catch (err) {
+      if (err.name !== 'ConditionalCheckFailedException') throw err;
+      lock = await getPrizeLock(campaignId); // another admin got there first: finish theirs
+      if (!lock) return res(409, { error: 'Another admin is issuing the prizes. Reload the list in a moment.' });
+    }
+  }
+
+  const byId = new Map(participants.map((p) => [p.userId, p]));
+  let created = 0;
+  let skipped = 0;
+  const queue = [...lock.allocation];
+  const worker = async () => {
+    while (queue.length) {
+      const a = queue.shift();
+      const tier = prizeTierById(a.tier);
+      if (!tier || byId.get(a.userId)?.prize) {
+        skipped++;
+        continue;
+      }
+      const prize = {
+        code: couponCode(),
+        tier: tier.id,
+        item: tier.item,
+        points: tier.points,
+        // The one store item this coupon claims.
+        itemId: lock.tierItems?.[tier.id]?.itemId || null,
+        place: a.place,
+        boardRank: a.boardRank,
+        status: 'issued',
+        issuedAt: lock.issuedAt,
+        issuedBy: lock.issuedBy,
+        emailStatus: 'pending',
+        emailAttempts: 0,
+      };
+      try {
+        await docClient.send(
+          new UpdateCommand({
+            TableName: PARTICIPATION_TABLE,
+            Key: { campaignId, userId: a.userId },
+            UpdateExpression: 'SET #pz = :prize, updatedAt = :n',
+            ConditionExpression: 'attribute_exists(userId) AND attribute_not_exists(#pz)',
+            ExpressionAttributeNames: { '#pz': 'prize' },
+            ExpressionAttributeValues: { ':prize': prize, ':n': new Date().toISOString() },
+          }),
+        );
+        created++;
+      } catch (err) {
+        // Already has one (a parallel run), or the participation is gone.
+        if (err.name !== 'ConditionalCheckFailedException') throw err;
+        skipped++;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(5, queue.length) }, worker));
+
+  console.log('prizes issued', { campaignId, by: who.userId, created, skipped, total: lock.allocation.length });
+  return res(200, { issuedAt: lock.issuedAt, created, skipped, total: lock.allocation.length });
+}
+
+function buildPrizeEmail({ name, prize, test = false }) {
+  const points = Number(prize.points).toLocaleString('en-IN');
+  const item = htmlEscape(itemInSentence(prize.item));
+  // The rank they can see on the public leaderboard.
+  const place = Number(prize.boardRank ?? prize.place);
+  const bodyHtml = [
+    `<p style="margin:0 0 16px;">Hi ${htmlEscape(greetingName(name))},</p>`,
+    `<p style="margin:0 0 16px;">Kiro University has wrapped up, and you finished <strong>#${place}</strong> on the AWS User Group Madurai leaderboard. Thank you for building with us.</p>`,
+    `<p style="margin:0 0 16px;">You won a <strong>${item}</strong>. Here is your prize coupon:</p>`,
+    '<p style="margin:0 0 20px; padding:16px; background:#f4f5f7; border:1px dashed #c2c7d0; border-radius:8px; ' +
+      'font-family:Menlo,Consolas,monospace; font-size:20px; font-weight:700; letter-spacing:2px; text-align:center;">' +
+      `${htmlEscape(prize.code)}</p>`,
+    '<p style="margin:0 0 8px;"><strong>How to claim your prize</strong></p>',
+    '<ol style="margin:0 0 16px; padding-left:20px;">' +
+      `<li style="margin-bottom:6px;">Sign in and open your profile. Your coupon is there, ready to use. There is no code to type.</li>` +
+      `<li style="margin-bottom:6px;">Press <strong>Claim my ${item}</strong>, and choose shipping, in November and December, or collecting it at our next in-person event.</li>` +
+      `<li>That's it. Your ${item} is free, and the coupon also adds ${points} points to your overall points.</li>` +
+      '</ol>',
+    '<p style="margin:0 0 8px; color:#8a8a8a; font-size:13px;">The coupon works only on your own account, for this prize.</p>',
+  ].join('\n');
+  return {
+    subject: `${test ? '[TEST] ' : ''}Your Kiro University prize: ${prize.item}`,
+    html: renderEmail({
+      heading: `You finished #${place} in Kiro University`,
+      bodyHtml,
+      cta: { label: `Claim my ${itemInSentence(prize.item)}`, url: `${APP_URL}/profile` },
+    }),
+  };
+}
+
+/** Whether a coupon's email should go out now. */
+function isPrizeEmailDue(prize, nowMs) {
+  if (!prize) return false;
+  if (!prize.emailStatus || prize.emailStatus === 'pending') return true;
+  if (prize.emailStatus !== 'sending') return false;
+  const claimed = Date.parse(prize.emailClaimedAt || '');
+  return !(claimed > nowMs - PRIZE_EMAIL_STALE_MS);
+}
+
+async function recordPrizeEmail(campaignId, userId, { ok, error }) {
+  const names = { '#pz': 'prize', '#es': 'emailStatus', '#ea': 'emailAttempts' };
+  await docClient.send(
+    new UpdateCommand({
+      TableName: PARTICIPATION_TABLE,
+      Key: { campaignId, userId },
+      UpdateExpression: ok
+        ? 'SET #pz.#es = :s, #pz.#ea = if_not_exists(#pz.#ea, :zero) + :one, #pz.emailedAt = :now REMOVE #pz.emailError'
+        : 'SET #pz.#es = :s, #pz.#ea = if_not_exists(#pz.#ea, :zero) + :one, #pz.emailError = :err',
+      ExpressionAttributeNames: names,
+      ExpressionAttributeValues: ok
+        ? { ':s': 'sent', ':zero': 0, ':one': 1, ':now': new Date().toISOString() }
+        : { ':s': 'failed', ':zero': 0, ':one': 1, ':err': String(error || 'unknown error').slice(0, 300) },
+    }),
+  );
+}
+
+/** Claim, send and record one coupon email. Returns 'sent', 'failed' or 'skipped'. */
+async function sendPrizeEmail(campaignId, p, nowMs) {
+  // Claim before sending, so a double click or a second admin cannot send it twice.
+  try {
+    await docClient.send(
+      new UpdateCommand({
+        TableName: PARTICIPATION_TABLE,
+        Key: { campaignId, userId: p.userId },
+        UpdateExpression: 'SET #pz.#es = :sending, #pz.#ec = :now',
+        ConditionExpression:
+          'attribute_exists(#pz) AND (attribute_not_exists(#pz.#es) OR #pz.#es = :pending OR ' +
+          '(#pz.#es = :sending AND (attribute_not_exists(#pz.#ec) OR #pz.#ec < :stale)))',
+        ExpressionAttributeNames: { '#pz': 'prize', '#es': 'emailStatus', '#ec': 'emailClaimedAt' },
+        ExpressionAttributeValues: {
+          ':sending': 'sending',
+          ':pending': 'pending',
+          ':now': new Date().toISOString(),
+          ':stale': new Date(nowMs - PRIZE_EMAIL_STALE_MS).toISOString(),
+        },
+      }),
+    );
+  } catch (err) {
+    if (err.name === 'ConditionalCheckFailedException') return 'skipped';
+    throw err;
+  }
+
+  const contact = await getUserContact(p.userId);
+  if (!contact?.email) {
+    await recordPrizeEmail(campaignId, p.userId, { ok: false, error: 'No email address on their profile.' });
+    return 'failed';
+  }
+  const { subject, html } = buildPrizeEmail({ name: contact.name || p.displayName, prize: p.prize });
+  const r = await sendEmail({ to: contact.email, subject, html });
+  await recordPrizeEmail(campaignId, p.userId, r);
+  return r.ok ? 'sent' : 'failed';
+}
+
+/**
+ * Email the coupons, one batch per request. The admin page calls this until
+ * `remaining` is 0. `retryFailed` first puts failed sends back in the queue.
+ */
+async function handleEmailPrizes(campaignId, event) {
+  const who = await verifiedAdmin(event);
+  if (who.status) return adminDenied(who);
+  if (!(await getPrizeLock(campaignId))) return res(409, { error: 'Issue the coupons first.' });
+
+  const started = Date.now();
+  const participants = await listParticipants(campaignId);
+
+  if (parseBody(event).retryFailed === true) {
+    for (const p of participants) {
+      if (p.prize?.emailStatus !== 'failed') continue;
+      try {
+        await docClient.send(
+          new UpdateCommand({
+            TableName: PARTICIPATION_TABLE,
+            Key: { campaignId, userId: p.userId },
+            UpdateExpression: 'SET #pz.#es = :pending',
+            ConditionExpression: '#pz.#es = :failed',
+            ExpressionAttributeNames: { '#pz': 'prize', '#es': 'emailStatus' },
+            ExpressionAttributeValues: { ':pending': 'pending', ':failed': 'failed' },
+          }),
+        );
+        p.prize.emailStatus = 'pending';
+      } catch (err) {
+        if (err.name !== 'ConditionalCheckFailedException') throw err;
+      }
+    }
+  }
+
+  const due = participants
+    .filter((p) => isPrizeEmailDue(p.prize, started))
+    .sort((a, b) => a.prize.place - b.prize.place);
+
+  let sent = 0;
+  let failed = 0;
+  let attempted = 0;
+  for (const p of due) {
+    if (attempted >= PRIZE_EMAIL_BATCH || Date.now() - started > PRIZE_EMAIL_TIME_BUDGET_MS) break;
+    attempted++;
+    const outcome = await sendPrizeEmail(campaignId, p, started);
+    if (outcome === 'sent') sent++;
+    if (outcome === 'failed') failed++;
+    if (outcome !== 'skipped') await sleep(REMINDER_SEND_DELAY_MS);
+  }
+
+  console.log('prize emails', { campaignId, by: who.userId, sent, failed, remaining: due.length - attempted });
+  return res(200, { sent, failed, remaining: due.length - attempted });
+}
+
+/** One sample coupon email to the admin who asks for it. Records nothing. */
+async function handleTestPrizeEmail(campaignId, event) {
+  const who = await verifiedAdmin(event);
+  if (who.status) return adminDenied(who);
+
+  const tier = prizeTierById(parseBody(event).tier) || PRIZE_TIERS[0];
+  const index = PRIZE_TIERS.indexOf(tier);
+  const contact = await getUserContact(who.userId);
+  if (!contact?.email) return res(400, { error: 'Your profile has no email address to send the test to.' });
+
+  const place = index <= 0 ? 1 : PRIZE_TIERS[index - 1].upTo + 1;
+  const { subject, html } = buildPrizeEmail({
+    name: contact.name,
+    prize: { code: 'KU-TEST-TEST', item: tier.item, points: tier.points, place, boardRank: place },
+    test: true,
+  });
+  const r = await sendEmail({ to: contact.email, subject, html });
+  if (!r.ok) return res(502, { error: `The test email could not be sent: ${r.error}` });
+  return res(200, { ok: true, sentTo: maskEmail(contact.email) });
+}
+
+/**
+ * The store item a coupon claims: the one fixed when prizes were issued, or,
+ * for a coupon from before items were fixed, or one whose item has since been
+ * deleted, the tier's match in today's store.
+ */
+async function prizeStoreItem(prize) {
+  if (prize.itemId) {
+    const r = await docClient.send(new GetCommand({ TableName: STORE_ITEMS_TABLE, Key: { id: prize.itemId } }));
+    if (r.Item) return r.Item;
+  }
+  const tier = prizeTierById(prize.tier);
+  return tier ? storeItemForTier(tier, await listStoreItems()) : null;
+}
+
+/**
+ * The winner claims their prize: the one store item their coupon is for, and
+ * nothing else. One transaction writes the order, marks the coupon claimed and
+ * adds the coupon's points to the winner's overall points, so a double click
+ * cannot claim twice and a failure leaves nothing half done.
+ *
+ * The points are earned and spent on the prize in the same moment: they count
+ * towards overall points and the leaderboard, but never reach the spendable
+ * balance, so they cannot buy anything else. Stock is taken when there is
+ * some. A prize is never refused for stock: the organisers keep it topped up,
+ * and a winner must not lose their prize to a late restock.
+ *
+ * On a verified token, because this creates an order and moves points:
+ * extractUserId accepts a hand-made token, and member ids are public.
+ */
+async function handleClaimPrize(campaignId, event) {
+  const claims = await verifyIdToken(event.headers?.Authorization || event.headers?.authorization);
+  if (!claims) return res(401, { error: 'Sign in again to claim your prize.' });
+  const userId = claims.sub;
+
+  const p = await getParticipation(campaignId, userId);
+  const prize = p?.prize;
+  if (!prize) return res(404, { error: 'You do not have a prize coupon for this challenge.' });
+  if (prize.status === 'claimed') {
+    return res(409, { error: 'You have already claimed your prize.', prize: publicPrize(prize) });
+  }
+
+  const item = await prizeStoreItem(prize);
+  if (!item) {
+    return res(409, { error: 'Your prize is not set up in the store yet. The organisers have been told; try again later.' });
+  }
+  const checkout = validateCheckout('physical', parseBody(event));
+  if (checkout.error) return res(400, { error: checkout.error });
+
+  const u = await docClient.send(new GetCommand({ TableName: USERS_TABLE, Key: { userId } }));
+  if (!u.Item) return res(404, { error: 'Your profile could not be found. Sign out and back in, then try again.' });
+
+  const now = new Date().toISOString();
+  const points = Number(prize.points) || 0;
+  const itemName = String(item.name || prize.item).trim();
+  const order = {
+    id: `order_${Date.now()}_${crypto.randomBytes(5).toString('hex')}`,
+    userId,
+    itemId: item.id,
+    itemName,
+    itemType: 'physical',
+    // What the coupon covers. The member pays nothing.
+    points,
+    status: 'pending',
+    fulfillmentMethod: checkout.method,
+    shippingAddress: checkout.contact,
+    ...(checkout.notes ? { customerNotes: checkout.notes } : {}),
+    // Marks this order as a prize, claimed with this coupon.
+    prizeCode: prize.code,
+    prizeCampaignId: campaignId,
+    createdAt: now,
+    updatedAt: now,
+  };
+  const reason = `Kiro University prize coupon ${prize.code}: #${prize.boardRank ?? prize.place}, ${prize.item}`;
+
+  const transactItems = [
+    {
+      Update: {
+        TableName: PARTICIPATION_TABLE,
+        Key: { campaignId, userId },
+        UpdateExpression: 'SET #pz.#st = :claimed, #pz.#ca = :now, #pz.#oi = :oid, updatedAt = :now',
+        // 'issued' only: a coupon already claimed, or redeemed under the old
+        // flow, cannot claim again.
+        ConditionExpression: '#pz.#st = :issued',
+        ExpressionAttributeNames: { '#pz': 'prize', '#st': 'status', '#ca': 'claimedAt', '#oi': 'orderId' },
+        ExpressionAttributeValues: { ':claimed': 'claimed', ':issued': 'issued', ':now': now, ':oid': order.id },
+      },
+    },
+    {
+      Update: {
+        TableName: USERS_TABLE,
+        Key: { userId },
+        // Overall points only. A profile with no redeemablePoints yet gets its
+        // current balance written down (its total, as the store reads it), so
+        // the added overall points are not read back later as spendable.
+        UpdateExpression:
+          'SET #pt = if_not_exists(#pt, :zero) + :pts, #rp = if_not_exists(#rp, :base), ' +
+          '#pa = list_append(if_not_exists(#pa, :empty), :pa), ' +
+          '#ac = list_append(if_not_exists(#ac, :empty), :ac), #ua = :now',
+        ConditionExpression: 'attribute_exists(userId)',
+        ExpressionAttributeNames: {
+          '#pt': 'points', '#rp': 'redeemablePoints', '#pa': 'pointActivities',
+          '#ac': 'activities', '#ua': 'updatedAt',
+        },
+        ExpressionAttributeValues: {
+          ':zero': 0,
+          ':pts': points,
+          ':base': Number(u.Item.points) || 0,
+          ':empty': [],
+          ':pa': [{
+            id: `pa-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
+            userId,
+            points,
+            reason,
+            type: 'coupon',
+            awardedBy: 'system',
+            awardedAt: now,
+          }],
+          ':ac': [
+            { type: 'points_awarded', points, reason, pointType: 'coupon', awardedBy: 'system', timestamp: now },
+            {
+              type: 'store_redeemed',
+              itemId: item.id,
+              itemName,
+              points,
+              orderId: order.id,
+              prizeCode: prize.code,
+              timestamp: now,
+            },
+          ],
+          ':now': now,
+        },
+      },
+    },
+    {
+      Put: {
+        TableName: ORDERS_TABLE,
+        Item: order,
+        ConditionExpression: 'attribute_not_exists(#id)',
+        ExpressionAttributeNames: { '#id': 'id' },
+      },
+    },
+  ];
+  // One from stock, guarded on the quantity read, when there is any.
+  const takesStock = typeof item.quantity === 'number' && item.quantity > 0;
+  if (takesStock) {
+    const left = item.quantity - 1;
+    transactItems.push({
+      Update: {
+        TableName: STORE_ITEMS_TABLE,
+        Key: { id: item.id },
+        UpdateExpression: 'SET #q = :left, #is = :inStock',
+        ConditionExpression: '#q = :q',
+        ExpressionAttributeNames: { '#q': 'quantity', '#is': 'inStock' },
+        ExpressionAttributeValues: { ':left': left, ':inStock': left > 0, ':q': item.quantity },
+      },
+    });
+  }
+
+  try {
+    await docClient.send(new TransactWriteCommand({ TransactItems: transactItems }));
+  } catch (err) {
+    if (err.name === 'TransactionCanceledException') {
+      const reasons = (err.CancellationReasons || []).map((r) => r && r.Code);
+      if (reasons[0] === 'ConditionalCheckFailed') {
+        return res(409, { error: 'You have already claimed your prize.' });
+      }
+      // Someone took one from stock at the same moment. Nothing was written.
+      return res(409, { error: 'Your claim could not be completed just now. Try again in a moment.' });
+    }
+    throw err;
+  }
+  if (!takesStock) {
+    console.warn('prize claimed with no stock left', { campaignId, itemId: item.id, orderId: order.id });
+  }
+
+  const after = await docClient.send(
+    new GetCommand({
+      TableName: USERS_TABLE,
+      Key: { userId },
+      ProjectionExpression: '#pt, #rp',
+      ExpressionAttributeNames: { '#pt': 'points', '#rp': 'redeemablePoints' },
+    }),
+  );
+  console.log('prize claimed', { campaignId, userId, code: prize.code, orderId: order.id, points });
+  return res(200, {
+    prize: publicPrize({ ...prize, status: 'claimed', claimedAt: now, orderId: order.id }),
+    order,
+    added: points,
+    points: after.Item?.points ?? null,
+    redeemablePoints: after.Item?.redeemablePoints ?? null,
+  });
+}
+
 // ── The sweep (EventBridge) ───────────────────────────────────────
 /**
  * Refresh GitHub stats for every registered repo. Runs on a schedule rather
@@ -2009,7 +3301,75 @@ async function handleUnsubscribe(campaignId, event) {
 // clear of GitHub's secondary rate limits on concurrent requests.
 const SWEEP_CONCURRENCY = 4;
 
+/** When the sweep last started and finished. */
+async function getSweepStatus(campaignId) {
+  const r = await docClient.send(
+    new GetCommand({ TableName: PARTICIPATION_TABLE, Key: { campaignId, userId: SWEEP_KEY } }),
+  );
+  return r.Item || null;
+}
+
+async function recordSweep(campaignId, fields) {
+  const names = {};
+  const values = {};
+  const sets = Object.entries(fields).map(([k, v], i) => {
+    names[`#f${i}`] = k;
+    values[`:v${i}`] = v;
+    return `#f${i} = :v${i}`;
+  });
+  await docClient.send(
+    new UpdateCommand({
+      TableName: PARTICIPATION_TABLE,
+      Key: { campaignId, userId: SWEEP_KEY },
+      UpdateExpression: `SET ${sets.join(', ')}`,
+      ExpressionAttributeNames: names,
+      ExpressionAttributeValues: values,
+    }),
+  );
+}
+
+/**
+ * Why prizes cannot be issued from the current board yet, or null when they
+ * can: a sweep that started after entries closed has to have finished under
+ * the current counting rules (ACTIVITY_VERSION), none may be part-way through
+ * updating repos, and every ranked repo must have been counted that way.
+ */
+function sweepBlocker(sweep, participants, nowMs = Date.now()) {
+  const deadline = Date.parse(ENTRY_DEADLINE_ISO);
+  const started = Date.parse(sweep?.startedAt || '');
+  const completed = Date.parse(sweep?.completedAt || '');
+  const running = started > (completed || 0) && nowMs - started < SWEEP_MAX_RUN_MS;
+  if (running) return 'The leaderboard is refreshing from GitHub right now. Try again in a few minutes.';
+  if (!(completed >= deadline) || !(Date.parse(sweep?.completedStartedAt || '') >= deadline)) {
+    return 'The leaderboard has not been refreshed since entries closed. Run "Refresh from GitHub" first.';
+  }
+  if (sweep.completedActivityVersion !== ACTIVITY_VERSION) {
+    return 'The way repos are counted has changed since the last refresh. Run "Refresh from GitHub" first.';
+  }
+  // Only repos the sweep recounts (it reads repoFullName), so a record it can
+  // never reach cannot hold up the prizes for good.
+  const stale = participants.filter((p) =>
+    p.repoFullName && p.repo && !p.repo.unreachable && p.repo.activityVersion !== ACTIVITY_VERSION).length;
+  if (stale) {
+    return `${stale} ${stale === 1 ? 'repo has' : 'repos have'} not been recounted under the current rules yet. Run "Refresh from GitHub" again.`;
+  }
+  return null;
+}
+
+// The Lambda's own timeout. A sweep that started longer ago than this has
+// stopped, whether or not it recorded finishing.
+const SWEEP_MAX_RUN_MS = 300 * 1000;
+
 async function runSweep(campaignId) {
+  // Once prizes are issued the standings are final. Refreshing repos after
+  // that could move the board away from the prizes it decided.
+  if (await getPrizeLock(campaignId)) {
+    console.log('sweep skipped: prizes are issued, so the standings are final');
+    return { skipped: 'prizes issued' };
+  }
+  const startedAt = new Date().toISOString();
+  await recordSweep(campaignId, { startedAt });
+
   const participants = await listParticipants(campaignId);
   const withRepo = participants.filter((p) => p.repoFullName);
   console.log(`sweep: ${withRepo.length} repos of ${participants.length} participants`);
@@ -2017,6 +3377,7 @@ async function runSweep(campaignId) {
   let updated = 0;
   let unreachable = 0;
   let unchanged = 0;
+  let stoppedForPrizes = false;
 
   const queue = [...withRepo];
   const worker = async () => {
@@ -2034,6 +3395,10 @@ async function runSweep(campaignId) {
             TableName: PARTICIPATION_TABLE,
             Key: { campaignId, userId: p.userId },
             UpdateExpression: 'SET repo = :repo, repoFullName = :rl, updatedAt = :n',
+            // A prize issued while this sweep runs freezes the member's
+            // standing: leave their repo as the prize saw it.
+            ConditionExpression: 'attribute_not_exists(#pz)',
+            ExpressionAttributeNames: { '#pz': 'prize' },
             ExpressionAttributeValues: {
               ':repo': stats,
               ':rl': nextFullName,
@@ -2043,12 +3408,31 @@ async function runSweep(campaignId) {
         );
         updated++;
       } catch (err) {
+        if (err.name === 'ConditionalCheckFailedException') {
+          stoppedForPrizes = true;
+          queue.length = 0; // prizes are out: stop refreshing everyone else too
+          continue;
+        }
         // One bad repo must never abort the sweep for everyone else.
         console.error(`sweep failed for ${p.userId} (${p.repoFullName}):`, err.message);
       }
     }
   };
   await Promise.all(Array.from({ length: Math.min(SWEEP_CONCURRENCY, queue.length) }, worker));
+
+  // Recorded only for a sweep that ran to the end, so issuing prizes can wait
+  // for one that started after entries closed.
+  if (!stoppedForPrizes) {
+    await recordSweep(campaignId, {
+      completedAt: new Date().toISOString(),
+      completedStartedAt: startedAt,
+      // The counting rules this sweep used, so prizes wait for a recount
+      // when they change.
+      completedActivityVersion: ACTIVITY_VERSION,
+      lastRepoCount: withRepo.length,
+      lastUnreachable: unreachable,
+    });
+  }
 
   console.log(`sweep done: ${updated} updated (${unchanged} unchanged since last push), ${unreachable} unreachable`);
   return { updated, unchanged, unreachable, total: withRepo.length };
@@ -2098,8 +3482,20 @@ exports.handler = async (event) => {
       if (method === 'GET' && action === 'admin' && r[2] === 'participants') {
         return await handleAdminParticipants(campaignId, event);
       }
+      if (method === 'POST' && action === 'prize' && r[2] === 'claim') {
+        return await handleClaimPrize(campaignId, event);
+      }
+      if (action === 'admin' && r[2] === 'prizes') {
+        if (method === 'GET' && !r[3]) return await handleAdminPrizes(campaignId, event);
+        if (method === 'POST' && r[3] === 'issue') return await handleIssuePrizes(campaignId, event);
+        if (method === 'POST' && r[3] === 'email') return await handleEmailPrizes(campaignId, event);
+        if (method === 'POST' && r[3] === 'test-email') return await handleTestPrizeEmail(campaignId, event);
+        if (method === 'POST' && r[3] === 'exclude') return await handleExcludeFromPrizes(campaignId, event);
+      }
       if (method === 'POST' && action === 'sweep') {
-        if (!(await isAdmin(event))) return res(403, { error: 'admin only' });
+        // Verified, because the result decides who wins prizes.
+        const who = await verifiedAdmin(event);
+        if (who.status) return adminDenied(who);
         return res(200, await runSweep(campaignId));
       }
       if (method === 'POST' && action === 'reminders') return await handleReminders(campaignId, event);

@@ -24,9 +24,12 @@ import { getUserProfile, getAllUsers, updateUserProfile } from '@/lib/userProfil
 import { getAllColleges, College } from '@/lib/colleges';
 import { getUserRoles } from '@/lib/userRoles';
 import { format, parseISO } from 'date-fns';
-import { getOrders, type Order } from '@/lib/store';
+import { getOrders, SHIPPING_WINDOW, type Order, type RedeemRequest } from '@/lib/store';
 import { getMeetups } from '@/lib/meetups';
 import { useQuery } from '@tanstack/react-query';
+import { PrizeCouponCard } from '@/components/profile/PrizeCouponCard';
+import { CheckoutDialog } from '@/components/store/CheckoutDialog';
+import { usePrizeClaim } from '@/hooks/usePrizeClaim';
 import { useAuth } from '@/contexts/AuthContext';
 import { ShareButton } from '@/components/common/ShareButton';
 import { generateBadgeShare, generateProfileActivityShare, generateMeetupAttendanceShare } from '@/lib/sharing';
@@ -45,6 +48,10 @@ export default function Profile() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const { user: authUser, isLoading: authLoading, deleteAccount } = useAuth();
+  // The signed-in member's Kiro University prize coupon, if they won one.
+  const prizeClaim = usePrizeClaim();
+  // Bumped after a prize is claimed, so the activity history refetches.
+  const [pointActivitiesVersion, setPointActivitiesVersion] = useState(0);
   const [sprints, setSprints] = useState<any[]>([]);
   const [loadingSprints, setLoadingSprints] = useState(true);
   const [userCommunityRoles, setUserCommunityRoles] = useState<CommunityRole[]>([]);
@@ -70,6 +77,8 @@ export default function Profile() {
     queryKey: ['meetups'],
     queryFn: () => getMeetups(),
   });
+
+
 
   // Fetch sprints from backend
   useEffect(() => {
@@ -194,7 +203,7 @@ export default function Profile() {
     };
 
     fetchPointActivities();
-  }, [profileUser?.id]);
+  }, [profileUser?.id, pointActivitiesVersion]);
 
   // Fetch colleges for champ captain check
   useEffect(() => {
@@ -340,6 +349,31 @@ export default function Profile() {
     eventsAttended: (user.activities?.filter(a => a.type === 'meetup_attended' || a.type === 'meetup_organized').length || 0) + userSprintsParticipated.length,
   };
 
+  // Claim the Kiro University prize: the order for the prize item, and the
+  // coupon's points on overall points. Throws to keep the dialog open.
+  const handleClaimPrize = async (request: RedeemRequest) => {
+    const result = await prizeClaim.claim(request);
+    setProfileUser((prev) => prev ? {
+      ...prev,
+      points: result.points ?? (prev.points || 0) + result.added,
+      redeemablePoints: result.redeemablePoints ?? prev.redeemablePoints,
+      // Shows the claim in the activity history straight away.
+      activities: [
+        ...(prev.activities || []),
+        {
+          type: 'store_redeemed',
+          itemId: result.order.itemId,
+          itemName: result.order.itemName,
+          points: result.order.points,
+          orderId: result.order.id,
+          prizeCode: result.prize.code,
+          timestamp: result.order.createdAt,
+        },
+      ],
+    } : prev);
+    setPointActivitiesVersion((v) => v + 1);
+  };
+
   // Handle store_redeemed activity click - fetch order details and show modal
   const handleStoreActivityClick = async (activity: ActivityHistoryItem) => {
     if (!activity.metadata?.itemId || !user) return;
@@ -347,9 +381,11 @@ export default function Profile() {
     setShowOrderDetailDialog(true);
     try {
       const orders = await getOrders(user.id);
-      // Find the matching order by itemId and closest timestamp
+      // Newer redemptions record their order id. Older ones are matched on the
+      // item and the closest timestamp.
       const activityDate = new Date(activity.date).getTime();
-      const matchingOrder = orders
+      const orderId = activity.metadata.orderId;
+      const matchingOrder = (orderId && orders.find(o => o.id === orderId)) || orders
         .filter(o => o.itemId === activity.metadata!.itemId)
         .sort((a, b) => {
           const diffA = Math.abs(new Date(a.createdAt).getTime() - activityDate);
@@ -380,6 +416,7 @@ export default function Profile() {
       itemId?: string;
       itemName?: string;
       points?: number;
+      orderId?: string;
     };
   }
 
@@ -560,8 +597,10 @@ export default function Profile() {
           activities.push({
             id: `store-${activity.itemId}-${activity.timestamp}`,
             type: 'store_redeemed',
-            title: `Redeemed ${activity.itemName}`,
-            description: `Spent ${activity.points} points`,
+            title: activity.prizeCode ? `Claimed ${activity.itemName}` : `Redeemed ${activity.itemName}`,
+            description: activity.prizeCode
+              ? 'Kiro University prize, free with your coupon'
+              : `Spent ${activity.points} points`,
             date: activity.timestamp,
             link: '/store',
             icon: <ShoppingBag className="h-4 w-4" />,
@@ -569,6 +608,7 @@ export default function Profile() {
               itemId: activity.itemId,
               itemName: activity.itemName,
               points: activity.points,
+              orderId: activity.orderId,
             }
           });
         });
@@ -781,6 +821,31 @@ export default function Profile() {
               </CardContent>
             </Card>
           </motion.div>
+        )}
+
+        {/* Only until the prize is claimed. After that the order is in the
+            activity history, like any other store order. */}
+        {isOwnProfile && prizeClaim.canClaim && prizeClaim.prize && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.25 }}
+            className="mb-8"
+          >
+            <PrizeCouponCard prize={prizeClaim.prize} onClaim={prizeClaim.openDialog} />
+          </motion.div>
+        )}
+
+        {/* Stays mounted after the claim, so the dialog can close normally. */}
+        {isOwnProfile && prizeClaim.prize && (
+          <CheckoutDialog
+            open={prizeClaim.dialogOpen}
+            onOpenChange={prizeClaim.setDialogOpen}
+            item={{ name: prizeClaim.prize.item, points: prizeClaim.prize.points, itemType: 'physical' }}
+            coupon={{ code: prizeClaim.prize.code }}
+            defaultName={user.name}
+            onSubmit={handleClaimPrize}
+          />
         )}
 
         <Tabs defaultValue="badges" className="space-y-6">
@@ -1049,7 +1114,9 @@ export default function Profile() {
                                 <ExternalLink className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-1" />
                               </div>
                             </a>
-                          ) : activity.type === 'store_redeemed' ? (
+                          ) : activity.type === 'store_redeemed' && isOwnProfile ? (
+                            // Order details are the member's own: other people's
+                            // profiles link to the store instead.
                             <button
                               type="button"
                               onClick={() => handleStoreActivityClick(activity)}
@@ -1425,7 +1492,7 @@ export default function Profile() {
               Order Details
             </DialogTitle>
             <DialogDescription>
-              Details for your store redemption
+              {selectedOrderDetail?.prizeCode ? 'Your Kiro University prize' : 'Details for your store redemption'}
             </DialogDescription>
           </DialogHeader>
           {loadingOrderDetail ? (
@@ -1459,10 +1526,17 @@ export default function Profile() {
                     {selectedOrderDetail.status.charAt(0).toUpperCase() + selectedOrderDetail.status.slice(1)}
                   </Badge>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Points Spent</span>
-                  <span className="font-semibold">{selectedOrderDetail.points}</span>
-                </div>
+                {selectedOrderDetail.prizeCode ? (
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Prize coupon</span>
+                    <code className="bg-muted px-2 py-1 rounded text-xs font-mono">{selectedOrderDetail.prizeCode}</code>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Points Spent</span>
+                    <span className="font-semibold">{selectedOrderDetail.points}</span>
+                  </div>
+                )}
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Date</span>
                   <span>{format(parseISO(selectedOrderDetail.createdAt), 'MMM d, yyyy')}</span>
@@ -1473,16 +1547,38 @@ export default function Profile() {
                     <code className="bg-muted px-2 py-1 rounded text-xs font-mono">{selectedOrderDetail.code}</code>
                   </div>
                 )}
-                {selectedOrderDetail.shippingAddress && selectedOrderDetail.itemType === 'physical' && (
+                {selectedOrderDetail.itemType === 'physical' && (
+                  selectedOrderDetail.fulfillmentMethod === 'pickup' ? (
+                    <div className="pt-2 border-t">
+                      <p className="text-muted-foreground mb-1">Collect at our next in-person event</p>
+                      <p className="text-xs">
+                        {selectedOrderDetail.shippingAddress?.name && <>{selectedOrderDetail.shippingAddress.name}<br /></>}
+                        {selectedOrderDetail.shippingAddress?.phone}
+                      </p>
+                    </div>
+                  ) : selectedOrderDetail.shippingAddress && (
+                    <div className="pt-2 border-t">
+                      <p className="text-muted-foreground mb-1">Shipping Address</p>
+                      <p className="text-xs">
+                        {selectedOrderDetail.shippingAddress.name && <>{selectedOrderDetail.shippingAddress.name}<br /></>}
+                        {selectedOrderDetail.shippingAddress.address && <>{selectedOrderDetail.shippingAddress.address}<br /></>}
+                        {selectedOrderDetail.shippingAddress.city && <>{selectedOrderDetail.shippingAddress.city}, </>}
+                        {selectedOrderDetail.shippingAddress.state} {selectedOrderDetail.shippingAddress.zipCode}
+                        {selectedOrderDetail.shippingAddress.phone && <><br />{selectedOrderDetail.shippingAddress.phone}</>}
+                      </p>
+                      {selectedOrderDetail.fulfillmentMethod === 'ship' &&
+                        (selectedOrderDetail.status === 'pending' || selectedOrderDetail.status === 'processing') && (
+                          <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">
+                            Shipping happens in {SHIPPING_WINDOW}.
+                          </p>
+                        )}
+                    </div>
+                  )
+                )}
+                {selectedOrderDetail.customerNotes && (
                   <div className="pt-2 border-t">
-                    <p className="text-muted-foreground mb-1">Shipping Address</p>
-                    <p className="text-xs">
-                      {selectedOrderDetail.shippingAddress.name && <>{selectedOrderDetail.shippingAddress.name}<br /></>}
-                      {selectedOrderDetail.shippingAddress.address && <>{selectedOrderDetail.shippingAddress.address}<br /></>}
-                      {selectedOrderDetail.shippingAddress.city && <>{selectedOrderDetail.shippingAddress.city}, </>}
-                      {selectedOrderDetail.shippingAddress.state} {selectedOrderDetail.shippingAddress.zipCode}
-                      {selectedOrderDetail.shippingAddress.phone && <><br />{selectedOrderDetail.shippingAddress.phone}</>}
-                    </p>
+                    <p className="text-muted-foreground mb-1">Your note</p>
+                    <p className="text-xs">{selectedOrderDetail.customerNotes}</p>
                   </div>
                 )}
                 {selectedOrderDetail.adminNotes && (

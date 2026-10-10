@@ -8,10 +8,83 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Edit, Trash2, Package, ShoppingBag, Loader2, Upload, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Edit, Trash2, Package, ShoppingBag, Loader2, Upload, ChevronDown, ChevronUp, Truck, MapPin, Gift } from 'lucide-react';
 import { toast } from 'sonner';
-import { getStoreItems, createStoreItem, updateStoreItem, deleteStoreItem, getOrders, assignCodeToOrder, updateOrderStatus, type StoreItem, type Order } from '@/lib/store';
+import { getStoreItems, createStoreItem, updateStoreItem, deleteStoreItem, getOrders, assignCodeToOrder, updateOrderStatus, fulfillmentOf, SHIPPING_WINDOW, type FulfillmentMethod, type StoreItem, type Order } from '@/lib/store';
 import { uploadFileToS3 } from '@/lib/s3Upload';
+import { getUserProfile } from '@/lib/userProfile';
+
+type FulfillmentFilter = 'all' | FulfillmentMethod;
+
+/** Ship or collect, for a physical order, and whether it is a prize. */
+function FulfillmentBadge({ order }: { order: Order }) {
+  const method = fulfillmentOf(order);
+  if (!method) return null;
+  return (
+    <>
+      {order.prizeCode && (
+        <Badge className="gap-1 border-transparent bg-orange-500 text-white hover:bg-orange-500">
+          <Gift className="h-3 w-3" aria-hidden="true" />
+          Prize
+        </Badge>
+      )}
+      {method === 'pickup' ? (
+        <Badge variant="outline" className="gap-1 border-sky-500/50 text-sky-700 dark:text-sky-400">
+          <MapPin className="h-3 w-3" aria-hidden="true" />
+          Collect at event
+        </Badge>
+      ) : (
+        <Badge variant="outline" className="gap-1 border-amber-500/50 text-amber-700 dark:text-amber-400">
+          <Truck className="h-3 w-3" aria-hidden="true" />
+          Ship
+        </Badge>
+      )}
+    </>
+  );
+}
+
+/** What an order cost: points, or a Kiro University prize coupon. */
+function OrderCost({ order }: { order: Order }) {
+  return order.prizeCode ? (
+    <div className="flex items-center justify-between">
+      <span className="text-muted-foreground">Prize coupon:</span>
+      <code className="text-xs bg-muted px-2 py-1 rounded">{order.prizeCode}</code>
+    </div>
+  ) : (
+    <div className="flex items-center justify-between">
+      <span className="text-muted-foreground">Points:</span>
+      <span className="font-semibold">{order.points}</span>
+    </div>
+  );
+}
+
+/** How a physical order reaches the member, and how to reach them. */
+function OrderDelivery({ order }: { order: Order }) {
+  const method = fulfillmentOf(order);
+  if (!method) return null;
+  const a = order.shippingAddress || {};
+  const place = [a.city, a.state].filter(Boolean).join(', ');
+  return (
+    <div className="text-sm pt-2 border-t space-y-1">
+      <p className="font-semibold">
+        {method === 'pickup' ? 'Collect at our next in-person event' : `Ship to (ships in ${SHIPPING_WINDOW})`}
+      </p>
+      <p className="text-muted-foreground text-xs">
+        {a.name && <>{a.name}<br /></>}
+        {method === 'ship' && a.address && <>{a.address}<br /></>}
+        {method === 'ship' && (place || a.zipCode) && <>{place} {a.zipCode}<br /></>}
+        {a.phone
+          ? <>Mobile: <a href={`tel:${a.phone}`} className="underline underline-offset-2">{a.phone}</a></>
+          : <span className="text-amber-600 dark:text-amber-400">No mobile number given</span>}
+      </p>
+      {order.customerNotes && (
+        <p className="text-xs">
+          <span className="font-medium">Member&apos;s note:</span> {order.customerNotes}
+        </p>
+      )}
+    </div>
+  );
+}
 
 export default function StoreManagement() {
   const [items, setItems] = useState<StoreItem[]>([]);
@@ -26,6 +99,7 @@ export default function StoreManagement() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [uploadingEmailImage, setUploadingEmailImage] = useState(false);
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
+  const [fulfillmentFilter, setFulfillmentFilter] = useState<FulfillmentFilter>('all');
 
   const [itemForm, setItemForm] = useState({
     name: '',
@@ -53,11 +127,19 @@ export default function StoreManagement() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [itemsData, ordersData] = await Promise.all([
+      // Separately, so one failing (orders need an organiser's sign-in) does
+      // not leave the other tab empty too.
+      const [itemsResult, ordersResult] = await Promise.allSettled([
         getStoreItems(),
         getOrders()
       ]);
-      setItems(itemsData);
+      if (itemsResult.status === 'fulfilled') setItems(itemsResult.value);
+      else toast.error('Failed to load store items');
+      if (ordersResult.status === 'rejected') {
+        toast.error(ordersResult.reason instanceof Error ? ordersResult.reason.message : 'Failed to load orders');
+        return;
+      }
+      const ordersData = ordersResult.value;
       setOrders(ordersData);
       
       // Fetch user details for all orders
@@ -67,14 +149,13 @@ export default function StoreManagement() {
       await Promise.all(
         uniqueUserIds.map(async (userId) => {
           try {
-            const response = await fetch(`${import.meta.env.VITE_API_ENDPOINT}/users/${userId}`);
-            if (response.ok) {
-              const user = await response.json();
-              userDetailsMap[userId] = {
-                name: user.name || 'Unknown User',
-                email: user.email || ''
-              };
-            }
+            // Signed in as an organiser, so the profile comes back with the
+            // member's email. Without the token it was always left out.
+            const user = await getUserProfile(userId);
+            userDetailsMap[userId] = {
+              name: user.name || 'Unknown User',
+              email: user.email || ''
+            };
           } catch (error) {
             console.error(`Failed to fetch user ${userId}:`, error);
             userDetailsMap[userId] = { name: 'Unknown User', email: '' };
@@ -165,7 +246,36 @@ export default function StoreManagement() {
     try {
       setSaving(true);
       if (editingItem) {
-        await updateStoreItem(editingItem.id, itemForm);
+        // Only what was edited. Saving the whole form wrote back the stock and
+        // codes as they were when the dialog opened, undoing any redemption
+        // made in the meantime. And when the item loaded without its codes,
+        // saving them would have emptied the code pool.
+        const before = {
+          ...itemForm,
+          ...editingItem,
+          category: editingItem.category || 'general',
+          quantity: editingItem.quantity || 0,
+          availableCodes: editingItem.availableCodes || [],
+          emailSubject: editingItem.emailSubject || '',
+          emailMessage: editingItem.emailMessage || '',
+          emailImageUrl: editingItem.emailImageUrl || '',
+        };
+        const changes: Partial<StoreItem> = {};
+        for (const key of Object.keys(itemForm) as (keyof typeof itemForm)[]) {
+          if (JSON.stringify(itemForm[key]) !== JSON.stringify(before[key])) {
+            (changes as Record<string, unknown>)[key] = itemForm[key];
+          }
+        }
+        if (!Array.isArray(editingItem.availableCodes) && changes.availableCodes) {
+          toast.error('The codes for this item did not load, so they were not saved. Reload the page and try again.');
+          delete changes.availableCodes;
+        }
+        if (Object.keys(changes).length === 0) {
+          toast.message('Nothing to save');
+          setShowItemDialog(false);
+          return;
+        }
+        await updateStoreItem(editingItem.id, changes);
         toast.success('Item updated successfully');
       } else {
         await createStoreItem(itemForm);
@@ -250,14 +360,22 @@ export default function StoreManagement() {
     }
   };
 
-  const pendingOrders = orders
-    .filter(o => o.status === 'pending' || o.status === 'processing')
+  const allPendingOrders = orders.filter(o => o.status === 'pending' || o.status === 'processing');
+  const pendingToShip = allPendingOrders.filter(o => fulfillmentOf(o) === 'ship').length;
+  const pendingToCollect = allPendingOrders.filter(o => fulfillmentOf(o) === 'pickup').length;
+  const matchesFulfillment = (o: Order) =>
+    fulfillmentFilter === 'all' || fulfillmentOf(o) === fulfillmentFilter;
+
+  const pendingOrders = allPendingOrders
+    .filter(matchesFulfillment)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   const completedOrders = orders
     .filter(o => o.status === 'completed')
+    .filter(matchesFulfillment)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   const otherOrders = orders
     .filter(o => o.status !== 'pending' && o.status !== 'completed' && o.status !== 'processing')
+    .filter(matchesFulfillment)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   return (
@@ -266,7 +384,7 @@ export default function StoreManagement() {
         <TabsList>
           <TabsTrigger value="items">Store Items</TabsTrigger>
           <TabsTrigger value="orders">
-            Orders {pendingOrders.length > 0 && <Badge className="ml-2">{pendingOrders.length}</Badge>}
+            Orders {allPendingOrders.length > 0 && <Badge className="ml-2">{allPendingOrders.length}</Badge>}
           </TabsTrigger>
         </TabsList>
 
@@ -354,9 +472,23 @@ export default function StoreManagement() {
         </TabsContent>
 
         <TabsContent value="orders" className="space-y-4">
-          <div>
-            <h3 className="text-lg font-semibold">Pending Orders</h3>
-            <p className="text-sm text-muted-foreground">Orders awaiting processing</p>
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-semibold">Pending Orders</h3>
+              <p className="text-sm text-muted-foreground">
+                Orders awaiting processing · {pendingToShip} to ship · {pendingToCollect} to collect at the event
+              </p>
+            </div>
+            <Select value={fulfillmentFilter} onValueChange={(v) => setFulfillmentFilter(v as FulfillmentFilter)}>
+              <SelectTrigger className="w-[13rem]" aria-label="Filter orders by delivery">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All orders</SelectItem>
+                <SelectItem value="ship">To ship</SelectItem>
+                <SelectItem value="pickup">Collect at event</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           {loading ? (
@@ -393,6 +525,7 @@ export default function StoreManagement() {
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
+                        <FulfillmentBadge order={order} />
                         <Badge variant={order.status === 'processing' ? 'secondary' : 'default'}>
                           {order.status === 'processing' ? 'Processing' : order.itemType}
                         </Badge>
@@ -416,25 +549,12 @@ export default function StoreManagement() {
                               <span className="text-xs">{userDetails[order.userId].email}</span>
                             </div>
                           )}
-                          <div className="flex items-center justify-between">
-                            <span className="text-muted-foreground">Points:</span>
-                            <span className="font-semibold">{order.points}</span>
-                          </div>
+                          <OrderCost order={order} />
                           <div className="flex items-center justify-between">
                             <span className="text-muted-foreground">Type:</span>
                             <Badge variant="outline">{order.itemType}</Badge>
                           </div>
-                          {order.itemType === 'physical' && order.shippingAddress && (
-                            <div className="text-sm pt-2 border-t">
-                              <p className="font-semibold mb-1">Shipping Address:</p>
-                              <p className="text-muted-foreground text-xs">
-                                {order.shippingAddress.name}<br />
-                                {order.shippingAddress.address}<br />
-                                {order.shippingAddress.city}, {order.shippingAddress.state} {order.shippingAddress.zipCode}<br />
-                                {order.shippingAddress.phone}
-                              </p>
-                            </div>
-                          )}
+                          <OrderDelivery order={order} />
                           <Button className="w-full mt-2" onClick={(e) => { e.stopPropagation(); handleViewOrder(order); }}>
                             Process Order
                           </Button>
@@ -479,6 +599,7 @@ export default function StoreManagement() {
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
+                          <FulfillmentBadge order={order} />
                           <Badge variant="secondary">Completed</Badge>
                           {isExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
                         </div>
@@ -500,10 +621,7 @@ export default function StoreManagement() {
                                 <span className="text-xs">{userDetails[order.userId].email}</span>
                               </div>
                             )}
-                            <div className="flex items-center justify-between">
-                              <span className="text-muted-foreground">Points:</span>
-                              <span className="font-semibold">{order.points}</span>
-                            </div>
+                            <OrderCost order={order} />
                             <div className="flex items-center justify-between">
                               <span className="text-muted-foreground">Type:</span>
                               <Badge variant="outline">{order.itemType}</Badge>
@@ -514,17 +632,7 @@ export default function StoreManagement() {
                                 <code className="text-xs bg-muted px-2 py-1 rounded">{order.code}</code>
                               </div>
                             )}
-                            {order.itemType === 'physical' && order.shippingAddress && (
-                              <div className="text-sm pt-2 border-t">
-                                <p className="font-semibold mb-1">Shipping Address:</p>
-                                <p className="text-muted-foreground text-xs">
-                                  {order.shippingAddress.name}<br />
-                                  {order.shippingAddress.address}<br />
-                                  {order.shippingAddress.city}, {order.shippingAddress.state} {order.shippingAddress.zipCode}<br />
-                                  {order.shippingAddress.phone}
-                                </p>
-                              </div>
-                            )}
+                            <OrderDelivery order={order} />
                             {order.adminNotes && (
                               <div className="text-sm pt-2 border-t">
                                 <p className="font-semibold mb-1">Admin Notes:</p>
@@ -574,6 +682,7 @@ export default function StoreManagement() {
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
+                          <FulfillmentBadge order={order} />
                           <Badge variant={order.status === 'cancelled' ? 'destructive' : 'secondary'} className="capitalize">
                             {order.status}
                           </Badge>
@@ -597,10 +706,7 @@ export default function StoreManagement() {
                                 <span className="text-xs">{userDetails[order.userId].email}</span>
                               </div>
                             )}
-                            <div className="flex items-center justify-between">
-                              <span className="text-muted-foreground">Points:</span>
-                              <span className="font-semibold">{order.points}</span>
-                            </div>
+                            <OrderCost order={order} />
                             <div className="flex items-center justify-between">
                               <span className="text-muted-foreground">Type:</span>
                               <Badge variant="outline">{order.itemType}</Badge>
@@ -611,17 +717,7 @@ export default function StoreManagement() {
                                 <code className="text-xs bg-muted px-2 py-1 rounded">{order.code}</code>
                               </div>
                             )}
-                            {order.itemType === 'physical' && order.shippingAddress && (
-                              <div className="text-sm pt-2 border-t">
-                                <p className="font-semibold mb-1">Shipping Address:</p>
-                                <p className="text-muted-foreground text-xs">
-                                  {order.shippingAddress.name}<br />
-                                  {order.shippingAddress.address}<br />
-                                  {order.shippingAddress.city}, {order.shippingAddress.state} {order.shippingAddress.zipCode}<br />
-                                  {order.shippingAddress.phone}
-                                </p>
-                              </div>
-                            )}
+                            <OrderDelivery order={order} />
                             {order.adminNotes && (
                               <div className="text-sm pt-2 border-t">
                                 <p className="font-semibold mb-1">Admin Notes:</p>
@@ -886,23 +982,26 @@ export default function StoreManagement() {
               </>
             ) : (
               <>
-                <div className="grid gap-2">
-                  <Label>Shipping Address</Label>
-                  <div className="text-sm bg-muted p-3 rounded">
-                    <p>{selectedOrder?.shippingAddress?.name}</p>
-                    <p>{selectedOrder?.shippingAddress?.address}</p>
-                    <p>{selectedOrder?.shippingAddress?.city}, {selectedOrder?.shippingAddress?.state} {selectedOrder?.shippingAddress?.zipCode}</p>
-                    <p>{selectedOrder?.shippingAddress?.phone}</p>
+                {selectedOrder && (
+                  <div className="rounded bg-muted px-3 pb-3">
+                    <OrderDelivery order={selectedOrder} />
                   </div>
-                </div>
+                )}
                 <div className="grid gap-2">
                   <Label htmlFor="notes">Admin Notes</Label>
                   <Textarea
                     id="notes"
                     value={adminNotes}
                     onChange={(e) => setAdminNotes(e.target.value)}
-                    placeholder="Add notes about shipping, tracking, etc."
+                    placeholder={selectedOrder?.fulfillmentMethod === 'pickup'
+                      ? 'For example, collected at the November meetup'
+                      : 'For example, the courier and tracking number'}
                   />
+                  <p className="text-xs text-muted-foreground">
+                    {selectedOrder?.fulfillmentMethod === 'pickup'
+                      ? 'Mark it collected when the member picks it up. They get an email with your notes.'
+                      : 'Mark it shipped once it is posted. The member gets an email with your notes, so add the tracking number.'}
+                  </p>
                 </div>
               </>
             )}
@@ -921,7 +1020,7 @@ export default function StoreManagement() {
                 </Button>
                 <Button onClick={() => handleUpdateOrderStatus('completed')} disabled={saving}>
                   {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                  Mark Completed
+                  {selectedOrder?.fulfillmentMethod === 'pickup' ? 'Mark Collected' : 'Mark Shipped'}
                 </Button>
               </div>
             )}

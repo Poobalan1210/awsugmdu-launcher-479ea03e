@@ -1,6 +1,7 @@
 import { callApi } from './api';
 
-export type PointActivityType = 'adhoc' | 'submission' | 'badge' | 'event';
+/** 'coupon' is written only by redeeming a prize coupon, never by an admin award. */
+export type PointActivityType = 'adhoc' | 'submission' | 'badge' | 'event' | 'coupon';
 
 export interface PointActivity {
   id: string;
@@ -16,7 +17,7 @@ export interface AwardPointsData {
   userId: string;
   points: number;
   reason: string;
-  type: PointActivityType;
+  type: Exclude<PointActivityType, 'coupon'>;
   awardedBy: string;
 }
 

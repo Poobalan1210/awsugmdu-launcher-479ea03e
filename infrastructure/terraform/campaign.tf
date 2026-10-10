@@ -169,10 +169,23 @@ resource "aws_iam_role_policy" "lambda_campaign" {
         ]
       },
       {
-        # Read-only: display names for the leaderboard and admin role checks.
+        # Display names and admin role checks, and UpdateItem to add a claimed
+        # prize coupon's points (handleClaimPrize, in a transaction).
         Effect   = "Allow"
-        Action   = ["dynamodb:GetItem"]
+        Action   = ["dynamodb:GetItem", "dynamodb:UpdateItem"]
         Resource = [aws_dynamodb_table.users.arn]
+      },
+      {
+        # A prize is claimed as a store order for the winner's prize item:
+        # read the items, take one from stock, write the order.
+        Effect   = "Allow"
+        Action   = ["dynamodb:GetItem", "dynamodb:Scan", "dynamodb:UpdateItem"]
+        Resource = [aws_dynamodb_table.store_items.arn]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["dynamodb:PutItem"]
+        Resource = [aws_dynamodb_table.orders.arn]
       },
     ]
   })
@@ -219,6 +232,9 @@ resource "aws_lambda_function" "campaign_crud" {
       # Lets admin routes verify the sign-in token's signature, not just read it.
       COGNITO_USER_POOL_ID = aws_cognito_user_pool.user_pool.id
       COGNITO_CLIENT_ID    = aws_cognito_user_pool_client.web_client.id
+      # Prize coupons are claimed as store orders for the prize item.
+      STORE_ITEMS_TABLE_NAME = aws_dynamodb_table.store_items.name
+      ORDERS_TABLE_NAME      = aws_dynamodb_table.orders.name
     }
   }
 

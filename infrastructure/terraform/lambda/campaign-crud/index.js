@@ -2496,6 +2496,9 @@ function adminCoupon(prize) {
     emailError: prize.emailError || null,
     claimedAt: prize.claimedAt || null,
     orderId: prize.orderId || null,
+    // The confirmation emailed when they claimed: 'sent', 'failed', or null.
+    claimEmailStatus: prize.claimEmailStatus || null,
+    claimEmailError: prize.claimEmailError || null,
   };
 }
 
@@ -2930,34 +2933,238 @@ async function handleIssuePrizes(campaignId, event) {
   return res(200, { issuedAt: lock.issuedAt, created, skipped, total: lock.allocation.length });
 }
 
-function buildPrizeEmail({ name, prize, test = false }) {
+// Prizes that come in sizes. Their winners give their size in the claim's note.
+const SIZED_PRIZE_TIERS = new Set(['jacket', 't-shirt']);
+
+// When shipped prizes go out, worded the same way in every email: "shipped by
+// November".
+const PRIZE_SHIPS_BY = 'November';
+
+// Where winners make a social media post about their win: the community's post
+// generator on PartyRock, behind the organisers' short link.
+const PRIZE_SHARE_URL = 'https://bit.ly/4enYPpZ';
+
+/**
+ * The coupon email. It says plainly that the coupon claims the winner's prize
+ * item and nothing else, and walks them from the site to the claim, using the
+ * labels the site shows. `email` is the address it goes to, which is also the
+ * one they log in with: members cannot change it on their profile.
+ */
+function buildPrizeEmail({ name, email, prize, test = false }) {
   const points = Number(prize.points).toLocaleString('en-IN');
+  // "sticker sheet" in a sentence. The claim button reads "Claim Sticker sheet".
   const item = htmlEscape(itemInSentence(prize.item));
+  const itemLabel = htmlEscape(String(prize.item || ''));
   // The rank they can see on the public leaderboard.
   const place = Number(prize.boardRank ?? prize.place);
+  const site = APP_URL.replace(/^https?:\/\//, '');
+  // Opens their profile, after logging in if they are not already.
+  const profileUrl = `${APP_URL}/profile`;
+  const link = (url, text) => `<a href="${htmlEscape(url)}" style="color:#0b63c5;">${htmlEscape(text)}</a>`;
+  const logInWith = email
+    ? `log in with <strong>${htmlEscape(email)}</strong>, the address this email was sent to`
+    : 'log in with the address this email was sent to';
+
+  const steps = [
+    `Go to ${link(APP_URL, site)} and ${logInWith}. On a phone, <strong>Log in</strong> is in the ☰ menu.`,
+    'Click your profile icon at the top right, then <strong>Profile</strong>.',
+    `Near the top of your profile is your <strong>Kiro University prize</strong> card. Press <strong>Claim my ${item}</strong>. ` +
+      'There is no code to type: the coupon is already on your account.',
+    `Choose how you want it: <strong>Ship it to me</strong> (it will be shipped by ${PRIZE_SHIPS_BY}), or ` +
+      '<strong>Collect it at our next in-person event</strong>.',
+    'Enter your full name and mobile number. For shipping, also enter your address, city, state and PIN code.' +
+      (SIZED_PRIZE_TIERS.has(prize.tier) ? ' Put your size in the <strong>Note for the organisers</strong> box.' : ''),
+    `Press <strong>Claim ${itemLabel}</strong>. You'll see a confirmation on screen and get a confirmation email ` +
+      'with all your claim details, and the claim then shows under <strong>Activity</strong> on your profile.',
+  ];
+
   const bodyHtml = [
     `<p style="margin:0 0 16px;">Hi ${htmlEscape(greetingName(name))},</p>`,
     `<p style="margin:0 0 16px;">Kiro University has wrapped up, and you finished <strong>#${place}</strong> on the AWS User Group Madurai leaderboard. Thank you for building with us.</p>`,
     `<p style="margin:0 0 16px;">You won a <strong>${item}</strong>. Here is your prize coupon:</p>`,
-    '<p style="margin:0 0 20px; padding:16px; background:#f4f5f7; border:1px dashed #c2c7d0; border-radius:8px; ' +
+    '<p style="margin:0 0 16px; padding:16px; background:#f4f5f7; border:1px dashed #c2c7d0; border-radius:8px; ' +
       'font-family:Menlo,Consolas,monospace; font-size:20px; font-weight:700; letter-spacing:2px; text-align:center;">' +
       `${htmlEscape(prize.code)}</p>`,
-    '<p style="margin:0 0 8px;"><strong>How to claim your prize</strong></p>',
-    '<ol style="margin:0 0 16px; padding-left:20px;">' +
-      `<li style="margin-bottom:6px;">Sign in and open your profile. Your coupon is there, ready to use. There is no code to type.</li>` +
-      `<li style="margin-bottom:6px;">Press <strong>Claim my ${item}</strong>, and choose shipping, in November and December, or collecting it at our next in-person event.</li>` +
-      `<li>That's it. Your ${item} is free, and the coupon also adds ${points} points to your overall points.</li>` +
-      '</ol>',
-    '<p style="margin:0 0 8px; color:#8a8a8a; font-size:13px;">The coupon works only on your own account, for this prize.</p>',
+    '<p style="margin:0 0 24px; padding:14px 16px; background:#fff7e6; border-left:4px solid #ff9900; border-radius:4px;">' +
+      `<strong>You can redeem this coupon only for your assigned prize: one ${item}.</strong> ` +
+      'It cannot be used for any other item in the store, and it works only on your own account.</p>',
+    `<p style="margin:0 0 12px; font-size:17px;"><strong>How to claim your ${item}</strong></p>`,
+    ...steps.map((s, i) => `<p style="margin:0 0 12px;"><strong>${i + 1}.</strong> ${s}</p>`),
+    `<p style="margin:20px 0 16px;">Your ${item} is free. Claiming it also adds <strong>${points} points</strong> to your ` +
+      'overall points. They are not added to your redeemable points, so they cannot be spent in the store.</p>',
+    '<p style="margin:0 0 8px;">Or press the button below to go straight to your profile.</p>',
+    // The button is part of the body rather than renderEmail's call to action,
+    // so the share prompt can come after it, at the very end.
+    '<p style="margin:8px 0 28px;">' +
+      `<a href="${htmlEscape(profileUrl)}" style="display:inline-block; background:#ff9900; color:#000000; ` +
+      'text-decoration:none; font-weight:600; font-size:16px; padding:14px 28px; border-radius:8px;">' +
+      `Claim my ${item}</a></p>`,
+    '<p style="margin:0 0 6px; padding-top:20px; border-top:1px solid #eaeaea;">' +
+      '<strong>Share your win on social media</strong></p>',
+    `<p style="margin:0 0 8px;">Tell your network you finished #${place} in Kiro University and won a ${item}. ` +
+      `${link(PRIZE_SHARE_URL, 'Generate your post here')}.</p>`,
   ].join('\n');
   return {
     subject: `${test ? '[TEST] ' : ''}Your Kiro University prize: ${prize.item}`,
     html: renderEmail({
       heading: `You finished #${place} in Kiro University`,
       bodyHtml,
-      cta: { label: `Claim my ${itemInSentence(prize.item)}`, url: `${APP_URL}/profile` },
     }),
   };
+}
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * "12 Oct 2026, 11:45 pm IST". From the fixed offset rather than the locale
+ * data, which formats differently from one Node version to the next.
+ */
+function istDateTime(iso) {
+  const d = new Date(Date.parse(iso) + IST_OFFSET_MS);
+  const h = d.getUTCHours();
+  const minutes = String(d.getUTCMinutes()).padStart(2, '0');
+  return `${d.getUTCDate()} ${MONTH_NAMES[d.getUTCMonth()]} ${d.getUTCFullYear()}, ` +
+    `${h % 12 || 12}:${minutes} ${h < 12 ? 'am' : 'pm'} IST`;
+}
+
+/**
+ * The winner's confirmation of their claim, with every detail they entered,
+ * so they can check it and keep it. Plain text is built from the same rows,
+ * rather than stripped from the HTML, so it reads "Label: value".
+ */
+function buildClaimConfirmationEmail({ name, prize, order, totalPoints }) {
+  const item = itemInSentence(prize.item);
+  const ship = order.fulfillmentMethod === 'ship';
+  const contact = order.shippingAddress || {};
+  const points = Number(prize.points).toLocaleString('en-IN');
+  const total = Number.isFinite(Number(totalPoints)) && totalPoints !== null
+    ? ` (now ${Number(totalPoints).toLocaleString('en-IN')})`
+    : '';
+
+  // { label, lines, mono }. Every value is plain text, escaped when rendered.
+  const rows = [
+    { label: 'Prize', lines: [order.itemName] },
+    { label: 'Coupon', lines: [prize.code], mono: true },
+    { label: 'Order ID', lines: [order.id], mono: true },
+    { label: 'Claimed on', lines: [istDateTime(order.createdAt)] },
+    {
+      label: 'How you get it',
+      lines: [ship ? `Shipped to your address by ${PRIZE_SHIPS_BY}` : 'Collect it at our next in-person event'],
+    },
+    { label: 'Name', lines: [contact.name] },
+    { label: 'Mobile', lines: [contact.phone] },
+    ship && { label: 'Ship to', lines: [contact.address, `${contact.city}, ${contact.state} ${contact.zipCode}`] },
+    order.customerNotes && { label: 'Your note', lines: [order.customerNotes] },
+    { label: 'Cost', lines: ['Free with your coupon'] },
+    { label: 'Points', lines: [`${points} added to your overall points${total}`] },
+  ].filter(Boolean);
+
+  const intro = ship
+    ? `Your claim is confirmed. Your ${item} will be shipped to the address below by ${PRIZE_SHIPS_BY}, ` +
+      "and we'll email you when it's on its way."
+    : `Your claim is confirmed. Collect your ${item} from the organisers at our next in-person event: ` +
+      'show them this email or your coupon code.';
+  const after = "We'll use your mobile number if we need to reach you about it.";
+
+  const cell = 'padding:10px 14px; font-size:14px; line-height:21px; vertical-align:top; border-top:1px solid #eef0f3;';
+  const valueHtml = (r) => {
+    const v = r.lines.map((l) => htmlEscape(l)).join('<br>');
+    return r.mono ? `<span style="font-family:Menlo,Consolas,monospace; word-break:break-all;">${v}</span>` : v;
+  };
+  const table =
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" ' +
+    'style="margin:0 0 20px; border:1px solid #e3e6ea; border-radius:8px; border-collapse:separate;">' +
+    rows.map((r, i) => {
+      const top = i === 0 ? 'border-top:none;' : '';
+      return `<tr><td width="34%" style="${cell}${top} color:#6b7280;">${htmlEscape(r.label)}</td>` +
+        `<td style="${cell}${top} color:#232f3e; font-weight:600;">${valueHtml(r)}</td></tr>`;
+    }).join('') +
+    '</table>';
+
+  const greeting = `Hi ${greetingName(name)},`;
+  const bodyHtml = [
+    `<p style="margin:0 0 16px;">${htmlEscape(greeting)}</p>`,
+    `<p style="margin:0 0 20px;">${htmlEscape(intro)}</p>`,
+    '<p style="margin:0 0 10px;"><strong>Your claim</strong></p>',
+    table,
+    `<p style="margin:0 0 16px;">${htmlEscape(after)}</p>`,
+    '<p style="margin:0 0 8px;">Your claim is also under <strong>Activity</strong> on your profile.</p>',
+  ].join('\n');
+
+  const text = [
+    greeting,
+    '',
+    intro,
+    '',
+    'Your claim',
+    ...rows.map((r) => `${r.label}: ${r.lines.join(', ')}`),
+    '',
+    after,
+    'Your claim is also under Activity on your profile:',
+    `${APP_URL}/profile`,
+    '',
+    'AWS User Group Madurai',
+  ].join('\n');
+
+  return {
+    subject: `Claim confirmed: ${order.itemName} (Kiro University prize)`,
+    html: renderEmail({
+      heading: `Your ${item} is claimed`,
+      bodyHtml,
+      cta: { label: 'Open your profile', url: `${APP_URL}/profile` },
+      footerNote: 'You received this because you claimed your Kiro University prize.',
+    }),
+    text,
+  };
+}
+
+/**
+ * Email the winner the confirmation of their claim, and record on the coupon
+ * whether it went. Never throws: the claim is already saved, and a mail
+ * problem must not fail or undo it. Returns whether the email was sent.
+ */
+async function sendClaimConfirmation(campaignId, { userId, user, name, prize, order, totalPoints }) {
+  let r;
+  try {
+    if (!user?.email) {
+      r = { ok: false, error: 'No email address on their profile.' };
+    } else {
+      const { subject, html, text } = buildClaimConfirmationEmail({ name, prize, order, totalPoints });
+      r = await sendEmail({ to: user.email, subject, html, text });
+    }
+  } catch (err) {
+    r = { ok: false, error: err.message };
+  }
+
+  const names = { '#pz': 'prize', '#cs': 'claimEmailStatus', '#code': 'code', '#oi': 'orderId' };
+  const values = { ':code': prize.code, ':oid': order.id };
+  let update;
+  if (r.ok) {
+    update = 'SET #pz.#cs = :s, #pz.#ca = :now REMOVE #pz.#ce';
+    Object.assign(names, { '#ca': 'claimEmailedAt', '#ce': 'claimEmailError' });
+    Object.assign(values, { ':s': 'sent', ':now': new Date().toISOString() });
+  } else {
+    update = 'SET #pz.#cs = :s, #pz.#ce = :err';
+    names['#ce'] = 'claimEmailError';
+    Object.assign(values, { ':s': 'failed', ':err': String(r.error || 'unknown error').slice(0, 300) });
+  }
+  try {
+    await docClient.send(
+      new UpdateCommand({
+        TableName: PARTICIPATION_TABLE,
+        Key: { campaignId, userId },
+        UpdateExpression: update,
+        // Only on the coupon this claim used.
+        ConditionExpression: '#pz.#code = :code AND #pz.#oi = :oid',
+        ExpressionAttributeNames: names,
+        ExpressionAttributeValues: values,
+      }),
+    );
+  } catch (err) {
+    console.warn('could not record the claim confirmation email:', err.message);
+  }
+  if (!r.ok) console.warn('claim confirmation email not sent', { campaignId, userId, orderId: order.id, error: r.error });
+  return Boolean(r.ok);
 }
 
 /** Whether a coupon's email should go out now. */
@@ -3017,7 +3224,7 @@ async function sendPrizeEmail(campaignId, p, nowMs) {
     await recordPrizeEmail(campaignId, p.userId, { ok: false, error: 'No email address on their profile.' });
     return 'failed';
   }
-  const { subject, html } = buildPrizeEmail({ name: contact.name || p.displayName, prize: p.prize });
+  const { subject, html } = buildPrizeEmail({ name: contact.name || p.displayName, email: contact.email, prize: p.prize });
   const r = await sendEmail({ to: contact.email, subject, html });
   await recordPrizeEmail(campaignId, p.userId, r);
   return r.ok ? 'sent' : 'failed';
@@ -3089,7 +3296,8 @@ async function handleTestPrizeEmail(campaignId, event) {
   const place = index <= 0 ? 1 : PRIZE_TIERS[index - 1].upTo + 1;
   const { subject, html } = buildPrizeEmail({
     name: contact.name,
-    prize: { code: 'KU-TEST-TEST', item: tier.item, points: tier.points, place, boardRank: place },
+    email: contact.email,
+    prize: { code: 'KU-TEST-TEST', tier: tier.id, item: tier.item, points: tier.points, place, boardRank: place },
     test: true,
   });
   const r = await sendEmail({ to: contact.email, subject, html });
@@ -3281,12 +3489,24 @@ async function handleClaimPrize(campaignId, event) {
     }),
   );
   console.log('prize claimed', { campaignId, userId, code: prize.code, orderId: order.id, points });
+
+  // The winner's record of the claim, with everything they entered.
+  const confirmationEmailed = await sendClaimConfirmation(campaignId, {
+    userId,
+    user: u.Item,
+    name: u.Item.name || p.displayName,
+    prize,
+    order,
+    totalPoints: after.Item?.points ?? null,
+  });
+
   return res(200, {
     prize: publicPrize({ ...prize, status: 'claimed', claimedAt: now, orderId: order.id }),
     order,
     added: points,
     points: after.Item?.points ?? null,
     redeemablePoints: after.Item?.redeemablePoints ?? null,
+    confirmationEmailed,
   });
 }
 

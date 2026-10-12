@@ -96,6 +96,14 @@ function ClaimState({ row, claim }: { row: AdminPrizeRow; claim?: Order }) {
             {' '}{method === 'pickup' ? 'collect at event' : 'ship'} · {claim.status}
           </span>
         )}
+        {c.claimEmailStatus === 'sent' && (
+          <span className="mt-0.5 block text-muted-foreground">Confirmation emailed</span>
+        )}
+        {c.claimEmailStatus === 'failed' && (
+          <span className="mt-0.5 block text-destructive">
+            Confirmation email failed{c.claimEmailError ? `: ${c.claimEmailError}` : ''}
+          </span>
+        )}
       </span>
     );
   }

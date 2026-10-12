@@ -407,6 +407,8 @@ export interface ClaimPrizeResult {
   /** Totals after the claim, or null if they could not be read back. */
   points: number | null;
   redeemablePoints: number | null;
+  /** Whether the confirmation email with the claim's details went out. */
+  confirmationEmailed?: boolean;
 }
 
 // ── Types ─────────────────────────────────────────────────────────
@@ -636,6 +638,9 @@ export interface AdminPrizeRow {
     emailError: string | null;
     claimedAt: string | null;
     orderId: string | null;
+    /** The confirmation emailed when they claimed: null before a claim. */
+    claimEmailStatus?: 'sent' | 'failed' | null;
+    claimEmailError?: string | null;
   } | null;
 }
 

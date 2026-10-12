@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, Navigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
@@ -301,6 +301,12 @@ export default function Profile() {
         <Footer />
       </div>
     );
+  }
+
+  // Signed out on their own profile, from the link in a prize email for
+  // instance: log in, then come straight back here.
+  if (!slug && !authUser) {
+    return <Navigate to={`/login?redirect=${encodeURIComponent('/profile')}`} replace />;
   }
 
   if (!user) {

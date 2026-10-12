@@ -30,10 +30,11 @@ export function usePrizeClaim() {
     try {
       const result = await claimPrize(request);
       const item = prizeItemInSentence(result.prize.item);
+      const emailed = result.confirmationEmailed ? " We've emailed you the details." : '';
       toast.success(
         result.order.fulfillmentMethod === 'pickup'
-          ? `Your ${item} is claimed. Collect it at our next in-person event.`
-          : `Your ${item} is claimed. It ships in ${SHIPPING_WINDOW}.`,
+          ? `Your ${item} is claimed. Collect it at our next in-person event.${emailed}`
+          : `Your ${item} is claimed. It ships in ${SHIPPING_WINDOW}.${emailed}`,
       );
       queryClient.setQueryData<MyCampaign | null>(['campaign-me', user?.id], (prev) =>
         prev ? { ...prev, prize: result.prize } : prev,

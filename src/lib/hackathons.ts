@@ -190,19 +190,82 @@ export async function registerForHackathon(
 // Starter kit
 // ---------------------------------------------------------------------------
 
-export interface KitDownloadLink {
+/**
+ * The kit, named for the team ("team-core-decider-hackathon-kit.zip"). Normally
+ * the zip itself, base64-encoded. A kit too big to send that way comes as a
+ * temporary GitHub link instead, which carries GitHub's own file name.
+ */
+export interface KitDownload {
+  fileName: string;
+  /** The zip, base64-encoded. */
+  data?: string;
   /** Temporary GitHub archive link. Open it straight away: it expires in minutes. */
-  url: string;
-  expiresInSeconds: number;
+  url?: string;
+  expiresInSeconds?: number;
 }
 
 /**
  * Ask for a download link for the hackathon's starter kit. The server checks
- * sign-in and Meetup verification itself; the client-side checks are only there
- * to show the right button.
+ * sign-in, Meetup verification and team membership itself; the client-side
+ * checks are only there to show the right button.
  */
-export async function requestHackathonKitDownload(hackathonId: string): Promise<KitDownloadLink> {
-  return callApi<KitDownloadLink>(`/hackathons/${hackathonId}/kit`, { method: 'POST' });
+export async function requestHackathonKitDownload(hackathonId: string): Promise<KitDownload> {
+  return callApi<KitDownload>(`/hackathons/${hackathonId}/kit`, { method: 'POST' });
+}
+
+/** Save a kit returned by requestHackathonKitDownload, under its team file name. */
+export function saveKitDownload(kit: KitDownload): void {
+  if (!kit.data) {
+    // Too big to send inline: GitHub serves the archive as an attachment, so
+    // the browser saves it (with GitHub's name) and stays on the page.
+    if (kit.url) window.location.assign(kit.url);
+    return;
+  }
+  const bytes = Uint8Array.from(atob(kit.data), char => char.charCodeAt(0));
+  const href = URL.createObjectURL(new Blob([bytes], { type: 'application/zip' }));
+  const link = document.createElement('a');
+  link.href = href;
+  link.download = kit.fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  // Give the browser a moment to start saving before the object URL goes away.
+  setTimeout(() => URL.revokeObjectURL(href), 10_000);
+}
+
+/** Decider Cloud limits as returned by its platform API. `null` means unlimited. */
+export interface TeamApiKeyLimits {
+  rpm?: number | null;
+  monthly_decisions?: number | null;
+  [limit: string]: number | null | undefined;
+}
+
+export interface TeamApiKey {
+  /** The team's Decider Cloud key (dcd_live_...). Shared by every team member. */
+  apiKey: string;
+  keyId?: string;
+  /** Current tier and effective limits from Decider Cloud (saved ones if it can't be reached). */
+  tier: string;
+  limits: TeamApiKeyLimits | null;
+  /** This month's usage, or null if Decider Cloud couldn't be reached. Months are UTC. */
+  usage: { decisions?: number; requests?: number; input_tokens?: number } | null;
+  remaining: { decisions?: number | null } | null;
+  month: string | null;
+  /** The Decider Cloud account was suspended by an admin. */
+  suspended: boolean;
+  issuedAt?: string;
+  teamName: string;
+  /** True when this request created the key, false when the team already had one. */
+  created: boolean;
+}
+
+/**
+ * Get the caller's team API key for this hackathon, with live limits and usage,
+ * creating the team's Decider Cloud account on the first call. The server finds
+ * the caller's team itself and re-checks sign-in and Meetup verification.
+ */
+export async function requestTeamApiKey(hackathonId: string): Promise<TeamApiKey> {
+  return callApi<TeamApiKey>(`/hackathons/${hackathonId}/api-key`, { method: 'POST' });
 }
 
 // ---------------------------------------------------------------------------

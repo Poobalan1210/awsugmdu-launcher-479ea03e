@@ -463,6 +463,8 @@ export interface HackathonKit {
   repo?: string;
   /** Branch or tag to package. Defaults to main. Organisers only. */
   ref?: string;
+  /** Teams can generate a Decider Cloud API key (one per team) from the kit card. */
+  apiKeys?: boolean;
 }
 
 export interface Hackathon {

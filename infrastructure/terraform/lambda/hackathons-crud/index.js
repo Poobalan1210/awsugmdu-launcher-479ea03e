@@ -33,6 +33,7 @@ const {
   ScanCommand,
 } = require('@aws-sdk/lib-dynamodb');
 const crypto = require('crypto');
+const AdmZip = require('adm-zip');
 
 const { extractUserId } = require('./shared/auth');
 const { sendEmail, renderEmail, APP_URL } = require('./shared/email');
@@ -60,6 +61,13 @@ const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '')
 const COGNITO_USER_POOL_ID = process.env.COGNITO_USER_POOL_ID || '';
 const COGNITO_CLIENT_ID = process.env.COGNITO_CLIENT_ID || '';
 const KIT_GITHUB_TOKEN = process.env.KIT_GITHUB_TOKEN || '';
+
+// Team API keys for Decider Cloud (see issueTeamApiKey). The platform token can
+// create users and keys there, so it stays server-side. The issued keys live in
+// their own table so no team response can ever carry one by accident.
+const API_KEYS_TABLE = process.env.HACKATHON_API_KEYS_TABLE_NAME || 'awsug-hackathon-api-keys';
+const DECIDER_API_URL = (process.env.DECIDER_API_URL || '').replace(/\/+$/, '');
+const DECIDER_PLATFORM_TOKEN = process.env.DECIDER_PLATFORM_TOKEN || '';
 
 const ADMIN_ROLES = ['admin', 'organiser', 'volunteer'];
 // Judges can see and score submissions, but nothing else. Kept separate from
@@ -445,6 +453,12 @@ async function dispatch(event) {
     if (section === 'kit') {
       if (method === 'POST') return downloadKit(id, event);
       return createResponse(405, { error: `Method ${method} not allowed on kit` });
+    }
+
+    // --- Team API key (Decider Cloud) -------------------------------------
+    if (section === 'api-key') {
+      if (method === 'POST') return issueTeamApiKey(id, event);
+      return createResponse(405, { error: `Method ${method} not allowed on api-key` });
     }
 
     // --- Resources --------------------------------------------------------
@@ -1161,16 +1175,57 @@ async function deleteResource(id, resourceId, event) {
 // stays the source of truth: every download asks GitHub for a fresh archive of
 // the configured branch or tag, so pushing to the repo is all it takes to update
 // what members get. GitHub answers with a temporary codeload link (it expires
-// after five minutes for private repos), which the page opens straight away, so
-// members never see the repo or a reusable link.
+// after five minutes for private repos). The Lambda downloads it, renames it for
+// the team, and returns the zip itself, so members never see the repo or a
+// link. A kit too big to return that way falls back to the GitHub link.
 //
-// Only signed-in, Meetup-verified members may download. Organisers may always
-// download, including before downloads are switched on, so they can test.
+// Only signed-in, Meetup-verified members of a team may download (the page
+// offers it in the team's own panel). Organisers may always download, including
+// before downloads are switched on, so they can test.
 // ----------------------------------------------------------------------------
 
 const GITHUB_API_URL = 'https://api.github.com';
 const GITHUB_API_VERSION = '2026-03-10';
 const KIT_LINK_TTL_SECONDS = 300;
+// The kit is renamed for the team and sent back in the response, base64 in
+// JSON. That has to fit Lambda's 6 MB response limit, so a bigger kit falls back
+// to GitHub's own link (and GitHub's file name).
+const KIT_INLINE_MAX_BYTES = Number(process.env.KIT_INLINE_MAX_BYTES) || 4 * 1024 * 1024;
+
+/** "Team Core!" -> "team-core". ASCII only, so the folder name inside the zip reads the same everywhere. */
+function fileSlug(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60)
+    .replace(/-+$/, '');
+}
+
+/**
+ * Download the archive GitHub linked to and rename its top folder (GitHub's
+ * "owner-repo-commit") to `folderName`, keeping every file's data and
+ * permissions as they are. Null if it can't be done, or the kit is too big to
+ * send inline; the caller then falls back to GitHub's link.
+ */
+async function packageKitArchive(location, folderName) {
+  try {
+    const res = await fetch(location, { signal: AbortSignal.timeout(15000) });
+    if (!res.ok) throw new Error(`archive download returned ${res.status}`);
+    if (Number(res.headers.get('content-length') || 0) > KIT_INLINE_MAX_BYTES) return null;
+    const archive = Buffer.from(await res.arrayBuffer());
+    if (archive.length > KIT_INLINE_MAX_BYTES) return null;
+
+    const zip = new AdmZip(archive);
+    for (const entry of zip.getEntries()) {
+      entry.entryName = entry.entryName.replace(/^[^/]+\//, `${folderName}/`);
+    }
+    return zip.toBuffer();
+  } catch (error) {
+    console.error('Kit download: could not repackage the archive', error.message);
+    return null;
+  }
+}
 const KIT_REPO_PATTERN = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/;
 const KIT_REF_PATTERN = /^[A-Za-z0-9._/-]{1,100}$/;
 
@@ -1186,6 +1241,8 @@ function normalizeKit(input) {
   }
 
   const enabled = input.enabled === true;
+  // Teams can also generate a Decider Cloud API key from the kit card.
+  const apiKeys = input.apiKeys === true;
   const repo = String(input.repo || '').trim()
     .replace(/^https?:\/\/(www\.)?github\.com\//i, '')
     .replace(/\/+$/, '')
@@ -1203,7 +1260,7 @@ function normalizeKit(input) {
     return { error: 'Kit branch or tag is not valid' };
   }
 
-  return { value: { enabled, repo, ref } };
+  return { value: { enabled, repo, ref, apiKeys } };
 }
 
 async function downloadKit(id, event) {
@@ -1233,6 +1290,15 @@ async function downloadKit(id, event) {
     });
   }
 
+  // The kit is handed out per team, from the team's own panel.
+  const team = await findExistingMembership(id, userId);
+  if (!admin && !team) {
+    return createResponse(403, {
+      error: 'Join or create a team to download the kit. Solo builders can create a team of one.',
+      code: 'NO_TEAM',
+    });
+  }
+
   if (!KIT_GITHUB_TOKEN) {
     console.error('Kit download requested but KIT_GITHUB_TOKEN is not set');
     return createResponse(503, { error: 'Kit downloads are not set up yet. Please try again later.' });
@@ -1256,7 +1322,7 @@ async function downloadKit(id, event) {
     });
   } catch (error) {
     console.error('Kit download: GitHub request failed:', error.message);
-    return createResponse(502, { error: 'Could not reach GitHub. Please try again in a minute.' });
+    return createResponse(502, { error: "Couldn't start the download. Please try again in a minute." });
   }
 
   const location = response.headers.get('location') || '';
@@ -1267,8 +1333,316 @@ async function downloadKit(id, event) {
     return createResponse(502, { error: 'The kit is unavailable right now. Please try again later.' });
   }
 
-  console.log(JSON.stringify({ event: 'kit_download', hackathonId: id, userId, repo: kit.repo, ref }));
-  return createResponse(200, { url: location, expiresInSeconds: KIT_LINK_TTL_SECONDS });
+  // Named for the team: "team-core-decider-hackathon-kit.zip", unzipping to a
+  // folder of the same name. Organisers outside a team get the repo name alone.
+  const repoName = kit.repo.split('/')[1];
+  const teamSlug = team ? (fileSlug(team.name) || 'team') : '';
+  const baseName = teamSlug ? `${teamSlug}-${repoName}` : repoName;
+  const fileName = `${baseName}.zip`;
+  const packaged = await packageKitArchive(location, baseName);
+
+  console.log(JSON.stringify({
+    event: 'kit_download', hackathonId: id, userId, repo: kit.repo, ref, fileName, inline: !!packaged,
+  }));
+  if (!packaged) {
+    return createResponse(200, { url: location, expiresInSeconds: KIT_LINK_TTL_SECONDS, fileName });
+  }
+  return createResponse(200, { fileName, data: packaged.toString('base64') });
+}
+
+// ----------------------------------------------------------------------------
+// Team API keys (Decider Cloud)
+//
+// When the kit has team API keys switched on, each team gets one Decider Cloud
+// account on the free tier, created the first time any member asks for the key
+// from the team's panel. Decider Cloud shows a key only once (it keeps a hash),
+// so the key is saved in the api-keys table and shown to every member of the
+// team after that, with the live tier, limits and this month's usage. Same gate
+// as the kit: a verified sign-in, Meetup verification and team membership, and
+// organisers in a team can try it before switching the kit on for members.
+// ----------------------------------------------------------------------------
+
+const DECIDER_TIER = 'free';
+const DECIDER_TIMEOUT_MS = 8000; // up to three calls must fit in API Gateway's 29 s
+const KEY_CLAIM_STALE_MS = 60 * 1000;
+
+/** Our id for the team in Decider Cloud (its external_id). */
+function teamExternalId(teamId) {
+  return `awsugmdu-${teamId}`;
+}
+
+async function getApiKeyRecord(teamId) {
+  const result = await docClient.send(new GetCommand({ TableName: API_KEYS_TABLE, Key: { teamId } }));
+  return result.Item || null;
+}
+
+/**
+ * Reserve the team's key slot, so two teammates clicking at once can't create
+ * two Decider Cloud keys. A pending claim older than a minute belongs to an
+ * attempt that died, so it can be taken over. Returns true if this call holds
+ * the claim.
+ */
+async function claimApiKeySlot(team, userId, claimedAt, existing) {
+  const item = { teamId: team.id, hackathonId: team.hackathonId, status: 'pending', claimedAt, claimedBy: userId };
+  try {
+    if (!existing) {
+      await docClient.send(new PutCommand({
+        TableName: API_KEYS_TABLE,
+        Item: item,
+        ConditionExpression: 'attribute_not_exists(teamId)',
+      }));
+      return true;
+    }
+    if (existing.status === 'pending' && Date.now() - Date.parse(existing.claimedAt) > KEY_CLAIM_STALE_MS) {
+      await docClient.send(new PutCommand({
+        TableName: API_KEYS_TABLE,
+        Item: item,
+        ConditionExpression: '#s = :pending AND claimedAt = :old',
+        ExpressionAttributeNames: { '#s': 'status' },
+        ExpressionAttributeValues: { ':pending': 'pending', ':old': existing.claimedAt },
+      }));
+      return true;
+    }
+    return false;
+  } catch (error) {
+    if (error.name === 'ConditionalCheckFailedException') return false;
+    throw error;
+  }
+}
+
+/** Drop this call's claim after a failure, so the next click can retry. */
+async function releaseApiKeySlot(teamId, claimedAt) {
+  try {
+    await docClient.send(new DeleteCommand({
+      TableName: API_KEYS_TABLE,
+      Key: { teamId },
+      ConditionExpression: '#s = :pending AND claimedAt = :mine',
+      ExpressionAttributeNames: { '#s': 'status' },
+      ExpressionAttributeValues: { ':pending': 'pending', ':mine': claimedAt },
+    }));
+  } catch (error) {
+    console.error('Team API key: could not release claim', { teamId, message: error.message });
+  }
+}
+
+async function deciderRequest(method, path, body) {
+  const response = await fetch(`${DECIDER_API_URL}${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${DECIDER_PLATFORM_TOKEN}`,
+      'Content-Type': 'application/json',
+      'User-Agent': 'awsugmdu-hackathons',
+    },
+    body: body ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(DECIDER_TIMEOUT_MS),
+  });
+  let data = null;
+  try {
+    data = await response.json();
+  } catch {
+    data = null;
+  }
+  return { status: response.status, data };
+}
+
+/** The live parts of a Decider Cloud user response: tier, limits, this month's usage. */
+function liveAccount(data) {
+  if (!data) return null;
+  return {
+    tier: data.user?.tier,
+    status: data.user?.status,
+    limits: data.limits || null,
+    usage: data.usage || null,
+    remaining: data.remaining || null,
+    month: data.month || null,
+  };
+}
+
+/**
+ * Current tier, limits and usage for the team from Decider Cloud, so admin tier
+ * changes and this month's usage show up. Null if Decider Cloud can't be reached;
+ * the key is still shown, with the limits saved when it was issued.
+ */
+async function fetchDeciderAccount(externalId) {
+  try {
+    const info = await deciderRequest('GET', `/platform/v1/users/${encodeURIComponent(externalId)}`);
+    return info.status === 200 ? liveAccount(info.data) : null;
+  } catch (error) {
+    console.error('Team API key: usage lookup failed', { externalId, message: error.message });
+    return null;
+  }
+}
+
+/**
+ * Create the team's Decider Cloud user and return its first key, plus the live
+ * account details from the same response. If the user already exists there (an
+ * earlier attempt created it but never saved the key here), rotate with no
+ * grace period: that older key was never shown to anyone.
+ */
+async function createDeciderKey(team, user, claims) {
+  const externalId = teamExternalId(team.id);
+  const userPath = `/platform/v1/users/${encodeURIComponent(externalId)}`;
+
+  const created = await deciderRequest('POST', '/platform/v1/users', {
+    external_id: externalId,
+    email: normalizeEmail(user?.email || claims.email),
+    name: String(team.name || 'Hackathon team').slice(0, 200),
+    tier: DECIDER_TIER,
+  });
+
+  if (created.status === 201 && created.data?.api_key) {
+    return {
+      key: {
+        apiKey: created.data.api_key,
+        keyId: created.data.key?.key_id,
+        deciderUid: created.data.user?.uid,
+        tier: created.data.user?.tier || DECIDER_TIER,
+        limits: created.data.limits || null,
+      },
+      live: liveAccount(created.data),
+    };
+  }
+
+  if (created.status === 409) {
+    const rotated = await deciderRequest('POST', `${userPath}/keys/rotate`, { grace_seconds: 0 });
+    if (rotated.status !== 200 || !rotated.data?.api_key) {
+      throw new Error(`key rotation returned ${rotated.status}`);
+    }
+    const live = await fetchDeciderAccount(externalId);
+    return {
+      key: {
+        apiKey: rotated.data.api_key,
+        keyId: rotated.data.key?.key_id,
+        deciderUid: created.data?.detail?.uid,
+        tier: live?.tier || DECIDER_TIER,
+        limits: live?.limits || null,
+      },
+      live,
+    };
+  }
+
+  const detail = JSON.stringify(created.data?.detail ?? null).slice(0, 300);
+  throw new Error(`user creation returned ${created.status}: ${detail}`);
+}
+
+/**
+ * What a team member sees: the key, its tier and limits, this month's usage and
+ * whether it is new. Live details win; the saved ones are the fallback.
+ */
+function presentApiKey(record, team, created, live) {
+  return {
+    apiKey: record.apiKey,
+    keyId: record.keyId,
+    tier: live?.tier || record.tier,
+    limits: live?.limits || record.limits || null,
+    usage: live?.usage || null,
+    remaining: live?.remaining || null,
+    month: live?.month || null,
+    suspended: live?.status === 'suspended',
+    issuedAt: record.issuedAt,
+    teamName: team.name,
+    created,
+  };
+}
+
+async function issueTeamApiKey(id, event) {
+  // Signature-checked on purpose: see "Verified identity" above.
+  const claims = await verifyIdToken(event.headers?.Authorization || event.headers?.authorization);
+  if (!claims) {
+    return createResponse(401, { error: 'Sign in to get your team API key', code: 'AUTH_REQUIRED' });
+  }
+  const userId = claims.sub;
+
+  const [hackathon, user] = await Promise.all([fetchHackathon(id), getUserRecord(userId)]);
+  const admin = isAdminUser(user, userId);
+
+  if (!hackathon || (hackathon.status === 'draft' && !admin)) {
+    return createResponse(404, { error: 'Hackathon not found' });
+  }
+
+  const kit = hackathon.kit;
+  if (!kit?.repo || kit.apiKeys !== true || (!kit.enabled && !admin)) {
+    return createResponse(404, { error: 'This hackathon does not offer team API keys', code: 'API_KEYS_UNAVAILABLE' });
+  }
+
+  if (!admin && !isMeetupVerified(user)) {
+    return createResponse(403, {
+      error: 'Verify your Meetup membership in your profile to get your team API key',
+      code: 'MEETUP_NOT_VERIFIED',
+    });
+  }
+
+  const team = await findExistingMembership(id, userId);
+  if (!team) {
+    return createResponse(403, {
+      error: 'Join or create a team to get your team API key. Solo builders can create a team of one.',
+      code: 'NO_TEAM',
+    });
+  }
+
+  if (!DECIDER_API_URL || !DECIDER_PLATFORM_TOKEN) {
+    console.error('Team API key requested but Decider Cloud is not configured');
+    return createResponse(503, { error: 'Team API keys are not set up yet. Please try again later.' });
+  }
+
+  const showExisting = async (record) => {
+    const live = await fetchDeciderAccount(record.externalId || teamExternalId(team.id));
+    return createResponse(200, presentApiKey(record, team, false, live));
+  };
+
+  const existing = await getApiKeyRecord(team.id);
+  if (existing?.status === 'active') return showExisting(existing);
+
+  const claimedAt = nowIso();
+  if (!(await claimApiKeySlot(team, userId, claimedAt, existing))) {
+    // A teammate may have just finished generating it.
+    const latest = await getApiKeyRecord(team.id);
+    if (latest?.status === 'active') return showExisting(latest);
+    return createResponse(409, {
+      error: "Your team's API key is being generated. Try again in a few seconds.",
+      code: 'KEY_PENDING',
+    });
+  }
+
+  let issued;
+  try {
+    issued = await createDeciderKey(team, user, claims);
+  } catch (error) {
+    console.error('Team API key: Decider Cloud call failed', { teamId: team.id, message: error.message });
+    await releaseApiKeySlot(team.id, claimedAt);
+    return createResponse(502, { error: 'Could not create your API key right now. Please try again in a minute.' });
+  }
+
+  const record = compact({
+    teamId: team.id,
+    hackathonId: id,
+    externalId: teamExternalId(team.id),
+    status: 'active',
+    ...issued.key,
+    issuedAt: nowIso(),
+    issuedBy: userId,
+  });
+  try {
+    await docClient.send(new PutCommand({
+      TableName: API_KEYS_TABLE,
+      Item: record,
+      ConditionExpression: '#s = :pending AND claimedAt = :mine',
+      ExpressionAttributeNames: { '#s': 'status' },
+      ExpressionAttributeValues: { ':pending': 'pending', ':mine': claimedAt },
+    }));
+  } catch (error) {
+    if (error.name !== 'ConditionalCheckFailedException') throw error;
+    return createResponse(409, {
+      error: "Your team's API key is being generated. Try again in a few seconds.",
+      code: 'KEY_PENDING',
+    });
+  }
+
+  // Never log the key itself.
+  console.log(JSON.stringify({
+    event: 'team_api_key_issued', hackathonId: id, teamId: team.id, userId, keyId: issued.key.keyId, tier: issued.key.tier,
+  }));
+  return createResponse(201, presentApiKey(record, team, true, issued.live));
 }
 
 // ----------------------------------------------------------------------------
@@ -1328,9 +1702,13 @@ function sanitizeHackathonForViewer(hackathon, { userId, isAdmin }) {
   if (!registered) delete next.chatUrl;
 
   // The kit's repo and branch are organiser settings. Everyone else only needs
-  // to know a download is on offer; the repo itself is fetched server-side.
-  if (hackathon.kit?.enabled && hackathon.kit?.repo) next.kit = { enabled: true };
-  else delete next.kit;
+  // to know a download (and team API keys) are on offer; the repo itself is
+  // fetched server-side.
+  if (hackathon.kit?.enabled && hackathon.kit?.repo) {
+    next.kit = { enabled: true, apiKeys: hackathon.kit.apiKeys === true };
+  } else {
+    delete next.kit;
+  }
 
   return next;
 }

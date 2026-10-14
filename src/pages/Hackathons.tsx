@@ -7,7 +7,7 @@ import {
   Trophy, Users, Calendar, Clock, ChevronLeft, ChevronDown, Rocket, Send,
   BookOpen, ExternalLink, Copy, Crown, Mail, UserPlus, LogOut, Loader2,
   CheckCircle, XCircle, Lightbulb, Gift, ScrollText, Link2, Info, Search, User, X,
-  MessageCircle, Download,
+  MessageCircle, Download, KeyRound,
 } from 'lucide-react';
 
 import { Header } from '@/components/layout/Header';
@@ -35,7 +35,7 @@ import {
 import { getMeetupsByHackathon } from '@/lib/meetups';
 import {
   getHackathons, getHackathon, getHackathonTeams, getHackathonSubmissions,
-  registerForHackathon, requestHackathonKitDownload,
+  registerForHackathon, requestHackathonKitDownload, saveKitDownload, requestTeamApiKey, type TeamApiKey,
   createTeam, updateTeam, deleteTeam, joinTeamByCode,
   leaveTeam, removeTeamMember, inviteToTeam, revokeInvite, respondToInvite,
   requestToJoinTeam, respondToJoinRequest, submitHackathonWork,
@@ -903,6 +903,8 @@ function MyTeamPanel({ hackathon, team, onChanged }: {
           <p className="text-sm text-muted-foreground">{team.description}</p>
         )}
 
+        <TeamKitSection hackathon={hackathon} team={team} />
+
         <div className="space-y-2">
           <Label className="text-xs uppercase tracking-wide text-muted-foreground">Members</Label>
           <div className="space-y-2">
@@ -1452,46 +1454,167 @@ function BrowseTeams({ hackathon, teams, myTeam, onChanged }: {
 }
 
 // ---------------------------------------------------------------------------
-// Starter kit
+// Starter kit (inside the member's own team panel)
 // ---------------------------------------------------------------------------
 
+/** "October 2026" and its reset day from Decider Cloud's month ("202610"). Months are UTC. */
+function describeUsageMonth(month: string | null): { label: string; resets: string } | null {
+  if (!month || !/^\d{6}$/.test(month)) return null;
+  const year = Number(month.slice(0, 4));
+  const index = Number(month.slice(4)) - 1;
+  return {
+    label: format(new Date(year, index, 1), 'MMMM yyyy'),
+    resets: format(new Date(year, index + 1, 1), 'd MMM'),
+  };
+}
+
 /**
- * Download button for a hackathon's starter kit, which lives in a private
- * GitHub repo. The server re-checks sign-in and Meetup verification and returns
- * a temporary archive link that is opened straight away, so the link itself is
- * never shown. The checks here only pick which button to show.
+ * The team's Decider Cloud plan at a glance: tier, a meter for this month's
+ * decisions, and the per-request limits as tiles. `null` limits are unlimited.
  */
-function KitDownloadCard({ hackathon }: { hackathon: Hackathon }) {
+function ApiKeyUsagePanel({ teamKey }: { teamKey: TeamApiKey }) {
+  const limits = teamKey.limits || {};
+  const quota = limits.monthly_decisions;
+  const used = teamKey.usage?.decisions;
+  const hasUsage = typeof used === 'number';
+  const metered = hasUsage && typeof quota === 'number' && quota > 0;
+  const left = metered ? (teamKey.remaining?.decisions ?? Math.max(0, quota - used)) : null;
+  const percent = metered ? Math.min(100, (used / quota) * 100) : 0;
+  const barColour = left === 0 ? 'bg-destructive' : percent >= 80 ? 'bg-amber-500' : 'bg-primary';
+  const month = describeUsageMonth(teamKey.month);
+  const tierLabel = teamKey.tier.charAt(0).toUpperCase() + teamKey.tier.slice(1);
+
+  const tiles = ([
+    [limits.rpm, 'requests per minute'],
+    [limits.concurrency, limits.concurrency === 1 ? 'request at a time' : 'requests at a time'],
+    [limits.max_questions, 'questions per request'],
+    [limits.max_input_chars, 'characters per request'],
+  ] as const)
+    .filter(([value]) => value !== undefined)
+    .map(([value, unit]) => ({ value: value === null ? 'Unlimited' : value.toLocaleString(), unit }));
+
+  return (
+    <div className="space-y-4 rounded-lg border bg-background p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Badge variant="outline" className="border-primary/40 bg-primary/10 text-primary">
+          {tierLabel} plan
+        </Badge>
+        {month && (
+          <span className="text-xs text-muted-foreground">Resets on {month.resets}</span>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+          <span className="text-sm font-medium">Monthly allowance</span>
+          {hasUsage ? (
+            <span className="text-sm text-muted-foreground">
+              <span className="text-2xl font-semibold text-foreground">{used.toLocaleString()}</span>
+              {' '}of {typeof quota === 'number' ? quota.toLocaleString() : 'unlimited'} answers used
+              {left !== null && <> · <span className="font-medium text-foreground">{left.toLocaleString()}</span> left</>}
+            </span>
+          ) : (
+            <span className="text-sm text-muted-foreground">
+              {typeof quota === 'number' ? `${quota.toLocaleString()} answers a month` : 'Unlimited answers'}
+            </span>
+          )}
+        </div>
+        {metered && (
+          <div
+            role="progressbar"
+            aria-label="Answers used this month"
+            aria-valuemin={0}
+            aria-valuemax={quota}
+            aria-valuenow={used}
+            className="h-2.5 w-full overflow-hidden rounded-full bg-muted"
+          >
+            <div
+              className={`h-full rounded-full transition-all ${barColour}`}
+              style={{ width: `${used > 0 ? Math.max(percent, 2) : 0}%` }}
+            />
+          </div>
+        )}
+        <p className="text-xs text-muted-foreground">Each question the Decider answers uses one.</p>
+        {!hasUsage && (
+          <p className="text-xs text-muted-foreground">
+            Couldn't load this month's usage right now. Your key still works.
+          </p>
+        )}
+        {left === 0 && (
+          <p className="text-xs text-destructive">
+            Your team has used this month's allowance. Ask an organiser if you need more.
+          </p>
+        )}
+      </div>
+
+      {tiles.length > 0 && (
+        <dl className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {tiles.map(tile => (
+            <div key={tile.unit} className="flex flex-col-reverse gap-1 rounded-md border bg-muted/30 px-3 py-2">
+              <dt className="text-xs text-muted-foreground">{tile.unit}</dt>
+              <dd className="text-lg font-semibold leading-none">{tile.value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The hackathon kit and the team's Decider Cloud API key, inside the member's
+ * own team panel. The server re-checks sign-in, Meetup verification and team
+ * membership for both, and finds the caller's team itself, so no one can reach
+ * another team's key. The kit link is opened straight away, so it is never
+ * shown. The checks here only pick what to show.
+ */
+function TeamKitSection({ hackathon, team }: { hackathon: Hackathon; team: HackathonTeam }) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [downloading, setDownloading] = useState(false);
+  const [gettingKey, setGettingKey] = useState(false);
+  const [teamKey, setTeamKey] = useState<TeamApiKey | null>(null);
+
+  // After leaving one team and joining another, don't keep the old team's key on screen.
+  useEffect(() => { setTeamKey(null); }, [team.id]);
 
   const kit = hackathon.kit;
   // Members only receive `kit` while downloads are on. Organisers always receive
   // the full config (with the repo), so they can test before switching it on.
   if (!kit || (!kit.enabled && !kit.repo)) return null;
 
-  // The server lets organisers download without Meetup verification. Only
+  // The server lets organisers through without Meetup verification. Only
   // organisers are sent the repo, so its presence marks an organiser view.
   const organiserView = !!kit.repo;
   const needsVerification = !!user && !user.meetupVerified && !organiserView;
 
-  const handleDownload = async () => {
-    if (!user) {
-      navigate(`/login?redirect=${encodeURIComponent(`${window.location.pathname}${window.location.search}`)}`);
-      return;
+  const handleGetKey = async () => {
+    setGettingKey(true);
+    try {
+      const result = await requestTeamApiKey(hackathon.id);
+      setTeamKey(result);
+      if (result.created) toast.success("Your team's API key is ready");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not get your team API key');
+    } finally {
+      setGettingKey(false);
     }
-    if (needsVerification) {
-      navigate('/profile');
-      return;
-    }
+  };
 
+  const copyKey = async () => {
+    if (!teamKey) return;
+    try {
+      await navigator.clipboard.writeText(teamKey.apiKey);
+      toast.success('API key copied');
+    } catch {
+      toast.error('Could not copy it. Select the key and copy it instead.');
+    }
+  };
+
+  const handleDownload = async () => {
     setDownloading(true);
     try {
-      const { url } = await requestHackathonKitDownload(hackathon.id);
-      // GitHub serves the archive as an attachment, so the browser saves the
-      // zip and stays on this page.
-      window.location.assign(url);
+      saveKitDownload(await requestHackathonKitDownload(hackathon.id));
       toast.success('Your download is starting');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not download the kit');
@@ -1500,35 +1623,96 @@ function KitDownloadCard({ hackathon }: { hackathon: Hackathon }) {
     }
   };
 
-  const label = !user
-    ? 'Sign in to download'
-    : needsVerification ? 'Verify Meetup to download' : 'Download kit';
-
   return (
-    <Card className="glass-card border-primary/40">
-      <CardContent className="p-5 flex flex-wrap items-center justify-between gap-4">
-        <div className="space-y-1 min-w-0">
-          <p className="font-medium flex flex-wrap items-center gap-2">
-            <Download className="h-4 w-4 text-primary" />
-            Hackathon kit
-            {!kit.enabled && (
-              <Badge variant="outline" className="text-[10px] border-amber-500/30 text-amber-600">
-                Only organisers see this until downloads are on
-              </Badge>
-            )}
+    <div className="space-y-4 rounded-lg border border-primary/30 bg-primary/5 p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <Download className="h-4 w-4 text-primary" />
+        <span className="font-medium">Hackathon kit</span>
+        {!kit.enabled && (
+          <Badge variant="outline" className="text-[10px] border-amber-500/30 text-amber-600">
+            Only organisers see this until downloads are on
+          </Badge>
+        )}
+      </div>
+
+      {needsVerification ? (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-muted-foreground min-w-0">
+            Verify your Meetup membership in your profile to download the kit
+            {kit.apiKeys ? ' and get your team API key' : ''}.
           </p>
-          <p className="text-sm text-muted-foreground">
-            {needsVerification
-              ? 'The kit is for verified members. Verify your Meetup membership in your profile, then come back here to download it.'
-              : 'Everything you need to start building. After downloading, unzip it, open the folder in Kiro and follow the README inside.'}
-          </p>
+          <Button size="sm" onClick={() => navigate('/profile')} className="gap-2 shrink-0">
+            <CheckCircle className="h-4 w-4" />Verify Meetup
+          </Button>
         </div>
-        <Button onClick={handleDownload} disabled={downloading} className="gap-2 shrink-0">
-          {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-          {label}
-        </Button>
-      </CardContent>
-    </Card>
+      ) : (
+        <>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-muted-foreground min-w-0">
+              Everything you need to start building. Unzip it, open the folder in Kiro and
+              follow the README inside.
+            </p>
+            <Button size="sm" onClick={handleDownload} disabled={downloading} className="gap-2 shrink-0">
+              {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              Download kit
+            </Button>
+          </div>
+
+          {kit.apiKeys && (
+            <div className="space-y-3 pt-3 border-t border-primary/20">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="space-y-0.5 min-w-0">
+                  <p className="text-sm font-medium flex items-center gap-1.5">
+                    <KeyRound className="h-3.5 w-3.5 text-primary" />Your team's API key
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Lets your team use the AI models the user group hosts for this hackathon, for
+                    free. Everyone on the team shares this one key. Paste it when the kit's setup
+                    asks for your AWS User Group Madurai API key.
+                  </p>
+                </div>
+                {!teamKey && (
+                  <Button size="sm" variant="outline" onClick={handleGetKey} disabled={gettingKey} className="gap-2 shrink-0">
+                    {gettingKey ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
+                    Get team API key
+                  </Button>
+                )}
+              </div>
+
+              {teamKey && (
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <Input
+                      readOnly
+                      aria-label={`${team.name} API key`}
+                      value={teamKey.apiKey}
+                      onFocus={e => e.currentTarget.select()}
+                      className="font-mono text-xs"
+                    />
+                    <Button size="sm" variant="outline" onClick={copyKey} className="gap-2 shrink-0">
+                      <Copy className="h-3.5 w-3.5" />Copy
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setTeamKey(null)} className="shrink-0">
+                      Hide
+                    </Button>
+                  </div>
+                  {teamKey.suspended && (
+                    <p className="text-xs text-destructive">
+                      The organisers have paused this key. Ask an organiser for help.
+                    </p>
+                  )}
+                  <ApiKeyUsagePanel teamKey={teamKey} />
+                  <p className="text-xs text-muted-foreground">
+                    Keep it private, like a password: don't post it in chats or commit it to
+                    GitHub. If it leaks, ask an organiser for a new one.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </div>
   );
 }
 
@@ -2022,8 +2206,6 @@ function HackathonDetailView({ hackathonId }: { hackathonId: string }) {
           </CardContent>
         </Card>
 
-        <KitDownloadCard hackathon={hackathon} />
-
         {/* Tabs */}
         <Tabs defaultValue="overview" className="space-y-6">
           {/* 2x2 on phones: four labelled tabs across a 375px screen clips the
@@ -2256,14 +2438,30 @@ function HackathonDetailView({ hackathonId }: { hackathonId: string }) {
                         </div>
                       </div>
 
+                      {/* The kit (and team API key) live in the team's own panel. */}
+                      {hackathon.kit && (
+                        <div className="flex items-start gap-2 rounded-lg border border-primary/30 bg-primary/5 p-3">
+                          <Download className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                          <p className="text-sm text-muted-foreground">
+                            Create or join a team to get the hackathon kit
+                            {hackathon.kit.apiKeys ? " and your team's API key. You'll find them" : ". You'll find it"} in
+                            your team's section on this tab.
+                            {/* With solo entries on, the box below says this instead. */}
+                            {!hackathon.teamConfig?.allowIndividuals && ' Building solo? Create a team of one.'}
+                          </p>
+                        </div>
+                      )}
+
                       {/* Solo participation is otherwise invisible — spell it out. */}
                       {hackathon.teamConfig?.allowIndividuals && (
                         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed p-3">
                           <div className="flex items-start gap-2">
                             <User className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
                             <p className="text-sm text-muted-foreground">
-                              Prefer to work alone? You don't need a team — head to the
-                              Submit tab and enter as an individual.
+                              {/* The kit comes with a team, so a solo builder who wants it needs a team of one. */}
+                              {hackathon.kit
+                                ? `Prefer to work alone? Create a team of one to get the kit${hackathon.kit.apiKeys ? ' and API key' : ''}.`
+                                : "Prefer to work alone? You don't need a team — head to the Submit tab and enter as an individual."}
                             </p>
                           </div>
                         </div>

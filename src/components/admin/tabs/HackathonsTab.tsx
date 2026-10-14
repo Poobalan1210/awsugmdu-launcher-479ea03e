@@ -127,6 +127,7 @@ interface HackathonFormState {
   kitEnabled: boolean;
   kitRepo: string;
   kitRef: string;
+  kitApiKeys: boolean;
   sprintId: string;
   status: HackathonStatus;
   minSize: string;
@@ -154,6 +155,7 @@ const emptyForm = (): HackathonFormState => ({
   kitEnabled: false,
   kitRepo: '',
   kitRef: '',
+  kitApiKeys: false,
   sprintId: '',
   status: 'draft',
   minSize: String(DEFAULT_TEAM_CONFIG.minSize),
@@ -181,6 +183,7 @@ const formFromHackathon = (h: Hackathon): HackathonFormState => ({
   kitEnabled: h.kit?.enabled === true,
   kitRepo: h.kit?.repo || '',
   kitRef: h.kit?.ref || '',
+  kitApiKeys: h.kit?.apiKeys === true,
   sprintId: h.sprintId || '',
   status: h.status,
   minSize: String(h.teamConfig?.minSize ?? DEFAULT_TEAM_CONFIG.minSize),
@@ -215,7 +218,12 @@ function buildPayload(
     // Sent even when blank so clearing the field removes the link.
     chatUrl: form.chatUrl.trim(),
     // Also always sent: a blank repo with downloads off removes the kit.
-    kit: { enabled: form.kitEnabled, repo: form.kitRepo.trim(), ref: form.kitRef.trim() },
+    kit: {
+      enabled: form.kitEnabled,
+      repo: form.kitRepo.trim(),
+      ref: form.kitRef.trim(),
+      apiKeys: form.kitApiKeys,
+    },
     sprintId: form.sprintId && form.sprintId !== NO_SPRINT ? form.sprintId : undefined,
     status: form.status,
     teamConfig: {
@@ -384,10 +392,11 @@ function HackathonFormFields({ form, setForm, fields, setFields, sprints, resour
         <div className="space-y-1">
           <Label className="text-base">Starter kit download</Label>
           <p className="text-xs text-muted-foreground">
-            Offers a private GitHub repo as a zip download to signed-in, Meetup-verified
-            members. The repo stays the source of truth: every download packages the branch
-            or tag below, so pushing to the repo updates the kit. The server's GitHub token
-            must be able to read the repo. Members never see the repo name.
+            Adds a kit download to each team's panel in the Teams tab, for signed-in,
+            Meetup-verified members. The kit is a private GitHub repo and stays the source of
+            truth: every download packages the branch or tag below, so pushing to the repo
+            updates the kit. The server's GitHub token must be able to read the repo. Members
+            never see the repo name.
           </p>
         </div>
 
@@ -424,9 +433,24 @@ function HackathonFormFields({ form, setForm, fields, setFields, sprints, resour
             Show the download to members
           </Label>
         </div>
+
+        <div className="flex items-start gap-2">
+          <input
+            type="checkbox"
+            id="hk-kit-api-keys"
+            className="h-4 w-4 mt-0.5 rounded border-gray-300"
+            checked={form.kitApiKeys}
+            onChange={e => update('kitApiKeys', e.target.checked)}
+          />
+          <Label htmlFor="hk-kit-api-keys" className="text-sm font-normal cursor-pointer">
+            Teams can get a free API key for the user group's hosted AI models (Decider Cloud,
+            free plan). One key per team, created on the first click by any member and shown to
+            the whole team.
+          </Label>
+        </div>
         <p className="text-xs text-muted-foreground">
-          While this is off, organisers still see the download on the hackathon page, so you
-          can test it first.
+          While this is off, organisers who are in a team still see the kit in their team's
+          panel, so you can test it first.
         </p>
       </div>
 

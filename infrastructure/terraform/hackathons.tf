@@ -15,6 +15,19 @@ variable "kit_github_token" {
   sensitive   = true
 }
 
+variable "decider_platform_token" {
+  description = "Decider Cloud platform token. Lets the hackathons Lambda create one Decider Cloud user per hackathon team and issue its API key. Team API keys stay off until this is set. Keep it in terraform.tfvars (gitignored) or set TF_VAR_decider_platform_token, otherwise a deploy without it clears the token."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "decider_api_url" {
+  description = "Base URL of the Decider Cloud API that issues team API keys."
+  type        = string
+  default     = "https://da25tnxy06gjk.cloudfront.net"
+}
+
 # ------------------------------------------
 # DYNAMODB TABLES
 #
@@ -150,6 +163,28 @@ resource "aws_dynamodb_table" "hackathon_submissions" {
   }
 }
 
+# One item per team: the team's Decider Cloud API key. Kept out of the teams
+# table so no team response can carry a key by accident; only the api-key route
+# reads it.
+resource "aws_dynamodb_table" "hackathon_api_keys" {
+  name         = "${var.project_name}-hackathon-api-keys"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "teamId"
+
+  attribute {
+    name = "teamId"
+    type = "S"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  tags = {
+    Name = "${var.project_name}-hackathon-api-keys-table"
+  }
+}
+
 # ------------------------------------------
 # IAM
 # Per-domain inline policy on the shared lambda role, following the pattern in
@@ -179,6 +214,7 @@ resource "aws_iam_role_policy" "lambda_hackathons" {
           "${aws_dynamodb_table.hackathon_teams.arn}/index/*",
           aws_dynamodb_table.hackathon_submissions.arn,
           "${aws_dynamodb_table.hackathon_submissions.arn}/index/*",
+          aws_dynamodb_table.hackathon_api_keys.arn,
         ]
       },
       {
@@ -264,6 +300,10 @@ resource "aws_lambda_function" "hackathons_crud" {
       COGNITO_USER_POOL_ID = aws_cognito_user_pool.user_pool.id
       COGNITO_CLIENT_ID    = aws_cognito_user_pool_client.web_client.id
       KIT_GITHUB_TOKEN     = var.kit_github_token
+      # Team API keys: one Decider Cloud user per team, keys kept in their own table.
+      HACKATHON_API_KEYS_TABLE_NAME = aws_dynamodb_table.hackathon_api_keys.name
+      DECIDER_API_URL               = var.decider_api_url
+      DECIDER_PLATFORM_TOKEN        = var.decider_platform_token
     }
   }
 

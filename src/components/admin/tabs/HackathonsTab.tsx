@@ -124,6 +124,9 @@ interface HackathonFormState {
   submissionDeadline: string;
   bannerImage: string;
   chatUrl: string;
+  kitEnabled: boolean;
+  kitRepo: string;
+  kitRef: string;
   sprintId: string;
   status: HackathonStatus;
   minSize: string;
@@ -148,6 +151,9 @@ const emptyForm = (): HackathonFormState => ({
   submissionDeadline: '',
   bannerImage: '',
   chatUrl: '',
+  kitEnabled: false,
+  kitRepo: '',
+  kitRef: '',
   sprintId: '',
   status: 'draft',
   minSize: String(DEFAULT_TEAM_CONFIG.minSize),
@@ -172,6 +178,9 @@ const formFromHackathon = (h: Hackathon): HackathonFormState => ({
   submissionDeadline: h.submissionDeadline || '',
   bannerImage: h.bannerImage || '',
   chatUrl: h.chatUrl || '',
+  kitEnabled: h.kit?.enabled === true,
+  kitRepo: h.kit?.repo || '',
+  kitRef: h.kit?.ref || '',
   sprintId: h.sprintId || '',
   status: h.status,
   minSize: String(h.teamConfig?.minSize ?? DEFAULT_TEAM_CONFIG.minSize),
@@ -205,6 +214,8 @@ function buildPayload(
     bannerImage: form.bannerImage.trim() || undefined,
     // Sent even when blank so clearing the field removes the link.
     chatUrl: form.chatUrl.trim(),
+    // Also always sent: a blank repo with downloads off removes the kit.
+    kit: { enabled: form.kitEnabled, repo: form.kitRepo.trim(), ref: form.kitRef.trim() },
     sprintId: form.sprintId && form.sprintId !== NO_SPRINT ? form.sprintId : undefined,
     status: form.status,
     teamConfig: {
@@ -365,6 +376,57 @@ function HackathonFormFields({ form, setForm, fields, setFields, sprints, resour
           Where teams and mentors actually talk. Shown as a "Join the chat" button to
           registered participants only, and included in team invite and approval emails.
           Left deliberately external — people answer questions where they already are.
+        </p>
+      </div>
+
+      {/* Starter kit */}
+      <div className="space-y-4 rounded-lg border p-4 bg-muted/20">
+        <div className="space-y-1">
+          <Label className="text-base">Starter kit download</Label>
+          <p className="text-xs text-muted-foreground">
+            Offers a private GitHub repo as a zip download to signed-in, Meetup-verified
+            members. The repo stays the source of truth: every download packages the branch
+            or tag below, so pushing to the repo updates the kit. The server's GitHub token
+            must be able to read the repo. Members never see the repo name.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="hk-kit-repo">GitHub repository</Label>
+            <Input
+              id="hk-kit-repo"
+              value={form.kitRepo}
+              onChange={e => update('kitRepo', e.target.value)}
+              placeholder="owner/repo"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="hk-kit-ref">Branch or tag</Label>
+            <Input
+              id="hk-kit-ref"
+              value={form.kitRef}
+              onChange={e => update('kitRef', e.target.value)}
+              placeholder="main"
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="hk-kit-enabled"
+            className="h-4 w-4 rounded border-gray-300"
+            checked={form.kitEnabled}
+            onChange={e => update('kitEnabled', e.target.checked)}
+          />
+          <Label htmlFor="hk-kit-enabled" className="text-sm font-normal cursor-pointer">
+            Show the download to members
+          </Label>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          While this is off, organisers still see the download on the hackathon page, so you
+          can test it first.
         </p>
       </div>
 

@@ -54,6 +54,13 @@ const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '')
   .map(e => e.trim().toLowerCase())
   .filter(Boolean);
 
+// Kit downloads (see downloadKit). The user pool settings let that route check
+// the sign-in token's signature, the same way store-crud and campaign-crud do.
+// The GitHub token reads the private kit repo; downloads stay off until it is set.
+const COGNITO_USER_POOL_ID = process.env.COGNITO_USER_POOL_ID || '';
+const COGNITO_CLIENT_ID = process.env.COGNITO_CLIENT_ID || '';
+const KIT_GITHUB_TOKEN = process.env.KIT_GITHUB_TOKEN || '';
+
 const ADMIN_ROLES = ['admin', 'organiser', 'volunteer'];
 // Judges can see and score submissions, but nothing else. Kept separate from
 // ADMIN_ROLES so a judge can't create, edit or delete hackathons.
@@ -215,6 +222,93 @@ function canReviewSubmissions(user, userId) {
 }
 
 // ----------------------------------------------------------------------------
+// Verified identity (kit downloads)
+//
+// resolveCaller() decodes the Authorization header without checking it, and
+// also accepts a bare user id. User ids are public, so it cannot gate anything
+// a non-member must not get. The kit route uses verifyIdToken() instead, copied
+// from store-crud so the two implementations stay identical.
+// ----------------------------------------------------------------------------
+
+const COGNITO_ISSUER = COGNITO_USER_POOL_ID
+  ? `https://cognito-idp.${COGNITO_USER_POOL_ID.split('_')[0]}.amazonaws.com/${COGNITO_USER_POOL_ID}`
+  : '';
+const JWKS_REFETCH_MS = 60 * 1000;
+let jwksCache = null; // { keys, fetchedAt }
+
+async function cognitoSigningKey(kid) {
+  const find = () => (jwksCache ? jwksCache.keys.find((k) => k.kid === kid) : null) || null;
+  let key = find();
+  // An unknown key id usually means Cognito rotated its keys. Refetch, but at
+  // most once a minute, so junk tokens cannot make us hammer the endpoint.
+  if (!key && (!jwksCache || Date.now() - jwksCache.fetchedAt > JWKS_REFETCH_MS)) {
+    const r = await fetch(`${COGNITO_ISSUER}/.well-known/jwks.json`);
+    if (!r.ok) return null;
+    const body = await r.json();
+    jwksCache = { keys: Array.isArray(body?.keys) ? body.keys : [], fetchedAt: Date.now() };
+    key = find();
+  }
+  return key;
+}
+
+/** Claims of a genuine, unexpired ID token from this site's user pool, or null. */
+async function verifyIdToken(authHeader) {
+  if (!COGNITO_ISSUER || !COGNITO_CLIENT_ID) return null;
+  const parts = String(authHeader || '').replace(/^Bearer\s+/i, '').trim().split('.');
+  if (parts.length !== 3) return null;
+  try {
+    const decode = (s) => JSON.parse(Buffer.from(s, 'base64url').toString('utf8'));
+    const header = decode(parts[0]);
+    const claims = decode(parts[1]);
+    if (header.alg !== 'RS256' || typeof header.kid !== 'string') return null;
+    const jwk = await cognitoSigningKey(header.kid);
+    if (!jwk) return null;
+    const signed = crypto.verify(
+      'RSA-SHA256',
+      Buffer.from(`${parts[0]}.${parts[1]}`),
+      crypto.createPublicKey({ key: jwk, format: 'jwk' }),
+      Buffer.from(parts[2], 'base64url'),
+    );
+    if (!signed) return null;
+    const now = Math.floor(Date.now() / 1000);
+    if (claims.iss !== COGNITO_ISSUER || claims.aud !== COGNITO_CLIENT_ID) return null;
+    if (claims.token_use !== 'id' || typeof claims.sub !== 'string') return null;
+    if (typeof claims.exp !== 'number' || now > claims.exp + 60) return null; // 60s clock skew
+    return claims;
+  } catch {
+    return null;
+  }
+}
+
+// Extract the numeric Meetup member ID from a stored membership URL, e.g.
+//   https://www.meetup.com/members/456181201/group/36938462/
+function extractMeetupMemberId(meetupUrl) {
+  if (!meetupUrl || typeof meetupUrl !== 'string') return null;
+  const match = meetupUrl.match(/\/members\/(\d+)/);
+  return match ? match[1] : null;
+}
+
+/**
+ * Whether a user counts as Meetup-verified. Same rule as isMeetupVerified() in
+ * meetups-crud and the front end's derivation (src/lib/userProfile.ts), so the
+ * kit button and the server agree on who may download.
+ */
+function isMeetupVerified(user) {
+  if (!user) return false;
+  if (user.meetupVerified === true) return true;
+  if (user.meetupVerificationStatus === 'approved') return true;
+  const pointActivities = user.pointActivities || [];
+  if (pointActivities.some(a =>
+    a.type === 'signup' ||
+    a.type === 'meetup_verification' ||
+    (a.reason && a.reason.toLowerCase().includes('meetup'))
+  )) {
+    return true;
+  }
+  return !!extractMeetupMemberId(user.meetupEmail);
+}
+
+// ----------------------------------------------------------------------------
 // Data access helpers
 // ----------------------------------------------------------------------------
 
@@ -345,6 +439,12 @@ async function dispatch(event) {
 
     if (section === 'register' && method === 'POST') {
       return registerForHackathon(id, event);
+    }
+
+    // --- Starter kit download ---------------------------------------------
+    if (section === 'kit') {
+      if (method === 'POST') return downloadKit(id, event);
+      return createResponse(405, { error: `Method ${method} not allowed on kit` });
     }
 
     // --- Resources --------------------------------------------------------
@@ -698,6 +798,9 @@ async function createHackathon(event) {
     return createResponse(400, { error: 'End date must be on or after start date' });
   }
 
+  const kit = normalizeKit(body.kit);
+  if (kit.error) return createResponse(400, { error: kit.error });
+
   const id = genId('hack');
   const timestamp = nowIso();
 
@@ -719,6 +822,7 @@ async function createHackathon(event) {
     status: deriveStatus(startDate, endDate, body.status),
     bannerImage: body.bannerImage || undefined,
     chatUrl: isValidUrl(body.chatUrl) ? String(body.chatUrl).trim() : undefined,
+    kit: kit.value || undefined,
     sprintId: body.sprintId || undefined,
     teamConfig: normalizeTeamConfig(body.teamConfig),
     mentors: (Array.isArray(body.mentors) ? body.mentors : [])
@@ -797,6 +901,15 @@ async function updateHackathon(id, event) {
     setExpressions.push('#chatUrl = :chatUrl');
     names['#chatUrl'] = 'chatUrl';
     values[':chatUrl'] = trimmed || null;
+  }
+
+  // Validated like chatUrl. A blank repo with downloads off clears the kit.
+  if (body.kit !== undefined) {
+    const kit = normalizeKit(body.kit);
+    if (kit.error) return createResponse(400, { error: kit.error });
+    setExpressions.push('#kit = :kit');
+    names['#kit'] = 'kit';
+    values[':kit'] = kit.value;
   }
 
   if (setExpressions.length === 0) {
@@ -1042,6 +1155,123 @@ async function deleteResource(id, resourceId, event) {
 }
 
 // ----------------------------------------------------------------------------
+// Starter kit download
+//
+// A hackathon can offer a starter kit kept in a private GitHub repo. The repo
+// stays the source of truth: every download asks GitHub for a fresh archive of
+// the configured branch or tag, so pushing to the repo is all it takes to update
+// what members get. GitHub answers with a temporary codeload link (it expires
+// after five minutes for private repos), which the page opens straight away, so
+// members never see the repo or a reusable link.
+//
+// Only signed-in, Meetup-verified members may download. Organisers may always
+// download, including before downloads are switched on, so they can test.
+// ----------------------------------------------------------------------------
+
+const GITHUB_API_URL = 'https://api.github.com';
+const GITHUB_API_VERSION = '2026-03-10';
+const KIT_LINK_TTL_SECONDS = 300;
+const KIT_REPO_PATTERN = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/;
+const KIT_REF_PATTERN = /^[A-Za-z0-9._/-]{1,100}$/;
+
+/**
+ * Validate an organiser-supplied kit config. The repo may be given as
+ * "owner/repo" or as its GitHub URL. Returns { value } where null means
+ * "no kit", or { error } with a message for the organiser.
+ */
+function normalizeKit(input) {
+  if (input === undefined || input === null) return { value: null };
+  if (typeof input !== 'object' || Array.isArray(input)) {
+    return { error: 'Kit settings are not valid' };
+  }
+
+  const enabled = input.enabled === true;
+  const repo = String(input.repo || '').trim()
+    .replace(/^https?:\/\/(www\.)?github\.com\//i, '')
+    .replace(/\/+$/, '')
+    .replace(/\.git$/i, '');
+  const ref = String(input.ref || '').trim() || 'main';
+
+  if (!repo) {
+    if (enabled) return { error: 'Add the kit repository before turning downloads on' };
+    return { value: null };
+  }
+  if (!KIT_REPO_PATTERN.test(repo) || /^\.+$/.test(repo.split('/')[1])) {
+    return { error: 'Kit repository must look like owner/repo' };
+  }
+  if (!KIT_REF_PATTERN.test(ref) || ref.includes('..') || ref.startsWith('/') || ref.endsWith('/')) {
+    return { error: 'Kit branch or tag is not valid' };
+  }
+
+  return { value: { enabled, repo, ref } };
+}
+
+async function downloadKit(id, event) {
+  // Signature-checked on purpose: see "Verified identity" above.
+  const claims = await verifyIdToken(event.headers?.Authorization || event.headers?.authorization);
+  if (!claims) {
+    return createResponse(401, { error: 'Sign in to download the kit', code: 'AUTH_REQUIRED' });
+  }
+  const userId = claims.sub;
+
+  const [hackathon, user] = await Promise.all([fetchHackathon(id), getUserRecord(userId)]);
+  const admin = isAdminUser(user, userId);
+
+  if (!hackathon || (hackathon.status === 'draft' && !admin)) {
+    return createResponse(404, { error: 'Hackathon not found' });
+  }
+
+  const kit = hackathon.kit;
+  if (!kit?.repo || (!kit.enabled && !admin)) {
+    return createResponse(404, { error: 'This hackathon has no kit to download', code: 'KIT_UNAVAILABLE' });
+  }
+
+  if (!admin && !isMeetupVerified(user)) {
+    return createResponse(403, {
+      error: 'Verify your Meetup membership in your profile to download the kit',
+      code: 'MEETUP_NOT_VERIFIED',
+    });
+  }
+
+  if (!KIT_GITHUB_TOKEN) {
+    console.error('Kit download requested but KIT_GITHUB_TOKEN is not set');
+    return createResponse(503, { error: 'Kit downloads are not set up yet. Please try again later.' });
+  }
+
+  const ref = kit.ref || 'main';
+  const archiveUrl = `${GITHUB_API_URL}/repos/${kit.repo}/zipball/${ref.split('/').map(encodeURIComponent).join('/')}`;
+
+  let response;
+  try {
+    // GitHub replies with a redirect to the archive. Read the link instead of
+    // following it, so the member's browser downloads straight from GitHub.
+    response = await fetch(archiveUrl, {
+      redirect: 'manual',
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${KIT_GITHUB_TOKEN}`,
+        'User-Agent': 'awsugmdu-hackathons',
+        'X-GitHub-Api-Version': GITHUB_API_VERSION,
+      },
+    });
+  } catch (error) {
+    console.error('Kit download: GitHub request failed:', error.message);
+    return createResponse(502, { error: 'Could not reach GitHub. Please try again in a minute.' });
+  }
+
+  const location = response.headers.get('location') || '';
+  const isRedirect = response.status >= 300 && response.status < 400;
+  if (!isRedirect || !location.startsWith('https://codeload.github.com/')) {
+    // A 404 here means the repo or ref is wrong, or the token cannot read the repo.
+    console.error('Kit download: unexpected GitHub response', { status: response.status, repo: kit.repo, ref });
+    return createResponse(502, { error: 'The kit is unavailable right now. Please try again later.' });
+  }
+
+  console.log(JSON.stringify({ event: 'kit_download', hackathonId: id, userId, repo: kit.repo, ref }));
+  return createResponse(200, { url: location, expiresInSeconds: KIT_LINK_TTL_SECONDS });
+}
+
+// ----------------------------------------------------------------------------
 // Mentor handlers (hackathon pool + individual assignment)
 // ----------------------------------------------------------------------------
 
@@ -1096,6 +1326,11 @@ function sanitizeHackathonForViewer(hackathon, { userId, isAdmin }) {
   };
 
   if (!registered) delete next.chatUrl;
+
+  // The kit's repo and branch are organiser settings. Everyone else only needs
+  // to know a download is on offer; the repo itself is fetched server-side.
+  if (hackathon.kit?.enabled && hackathon.kit?.repo) next.kit = { enabled: true };
+  else delete next.kit;
 
   return next;
 }

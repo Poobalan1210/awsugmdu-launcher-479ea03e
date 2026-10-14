@@ -1,6 +1,7 @@
 import { callApi } from './api';
 import {
   Hackathon,
+  HackathonKit,
   HackathonPerson,
   HackathonResource,
   HackathonStatus,
@@ -34,6 +35,8 @@ export interface CreateHackathonData {
   bannerImage?: string;
   /** WhatsApp / Discord invite link for the event conversation. */
   chatUrl?: string;
+  /** Starter kit repo. A blank repo with downloads off removes the kit. */
+  kit?: HackathonKit;
   sprintId?: string;
   teamConfig?: Partial<HackathonTeamConfig>;
   submissionFormConfig?: SubmissionField[];
@@ -181,6 +184,25 @@ export async function registerForHackathon(
     method: 'POST',
     body: JSON.stringify(user),
   });
+}
+
+// ---------------------------------------------------------------------------
+// Starter kit
+// ---------------------------------------------------------------------------
+
+export interface KitDownloadLink {
+  /** Temporary GitHub archive link. Open it straight away: it expires in minutes. */
+  url: string;
+  expiresInSeconds: number;
+}
+
+/**
+ * Ask for a download link for the hackathon's starter kit. The server checks
+ * sign-in and Meetup verification itself; the client-side checks are only there
+ * to show the right button.
+ */
+export async function requestHackathonKitDownload(hackathonId: string): Promise<KitDownloadLink> {
+  return callApi<KitDownloadLink>(`/hackathons/${hackathonId}/kit`, { method: 'POST' });
 }
 
 // ---------------------------------------------------------------------------

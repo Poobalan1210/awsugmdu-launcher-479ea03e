@@ -8,6 +8,13 @@
 # CORS) following the same shape as kironomics.tf, plus three DynamoDB tables.
 # ==========================================
 
+variable "kit_github_token" {
+  description = "Read-only GitHub token for hackathon starter kits kept in private repos (fine-grained, Contents: Read-only on the kit repos only). Kit downloads stay off until this is set. Keep it in terraform.tfvars (gitignored) or set TF_VAR_kit_github_token, otherwise a deploy without it clears the token."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 # ------------------------------------------
 # DYNAMODB TABLES
 #
@@ -252,6 +259,11 @@ resource "aws_lambda_function" "hackathons_crud" {
       SES_FROM_EMAIL                   = "info@awsugmdu.in"
       APP_URL                          = "https://www.awsugmdu.in"
       ADMIN_EMAILS                     = var.admin_emails
+      # Kit downloads: verify the member's sign-in token, then read the private
+      # kit repo with a read-only token.
+      COGNITO_USER_POOL_ID = aws_cognito_user_pool.user_pool.id
+      COGNITO_CLIENT_ID    = aws_cognito_user_pool_client.web_client.id
+      KIT_GITHUB_TOKEN     = var.kit_github_token
     }
   }
 

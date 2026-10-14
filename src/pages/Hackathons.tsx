@@ -7,7 +7,7 @@ import {
   Trophy, Users, Calendar, Clock, ChevronLeft, ChevronDown, Rocket, Send,
   BookOpen, ExternalLink, Copy, Crown, Mail, UserPlus, LogOut, Loader2,
   CheckCircle, XCircle, Lightbulb, Gift, ScrollText, Link2, Info, Search, User, X,
-  MessageCircle,
+  MessageCircle, Download,
 } from 'lucide-react';
 
 import { Header } from '@/components/layout/Header';
@@ -35,7 +35,8 @@ import {
 import { getMeetupsByHackathon } from '@/lib/meetups';
 import {
   getHackathons, getHackathon, getHackathonTeams, getHackathonSubmissions,
-  registerForHackathon, createTeam, updateTeam, deleteTeam, joinTeamByCode,
+  registerForHackathon, requestHackathonKitDownload,
+  createTeam, updateTeam, deleteTeam, joinTeamByCode,
   leaveTeam, removeTeamMember, inviteToTeam, revokeInvite, respondToInvite,
   requestToJoinTeam, respondToJoinRequest, submitHackathonWork,
   findUserTeam, isTeamLead, isSubmissionOpen, isRegistrationOpen,
@@ -1451,6 +1452,87 @@ function BrowseTeams({ hackathon, teams, myTeam, onChanged }: {
 }
 
 // ---------------------------------------------------------------------------
+// Starter kit
+// ---------------------------------------------------------------------------
+
+/**
+ * Download button for a hackathon's starter kit, which lives in a private
+ * GitHub repo. The server re-checks sign-in and Meetup verification and returns
+ * a temporary archive link that is opened straight away, so the link itself is
+ * never shown. The checks here only pick which button to show.
+ */
+function KitDownloadCard({ hackathon }: { hackathon: Hackathon }) {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [downloading, setDownloading] = useState(false);
+
+  const kit = hackathon.kit;
+  // Members only receive `kit` while downloads are on. Organisers always receive
+  // the full config (with the repo), so they can test before switching it on.
+  if (!kit || (!kit.enabled && !kit.repo)) return null;
+
+  // The server lets organisers download without Meetup verification. Only
+  // organisers are sent the repo, so its presence marks an organiser view.
+  const organiserView = !!kit.repo;
+  const needsVerification = !!user && !user.meetupVerified && !organiserView;
+
+  const handleDownload = async () => {
+    if (!user) {
+      navigate(`/login?redirect=${encodeURIComponent(`${window.location.pathname}${window.location.search}`)}`);
+      return;
+    }
+    if (needsVerification) {
+      navigate('/profile');
+      return;
+    }
+
+    setDownloading(true);
+    try {
+      const { url } = await requestHackathonKitDownload(hackathon.id);
+      // GitHub serves the archive as an attachment, so the browser saves the
+      // zip and stays on this page.
+      window.location.assign(url);
+      toast.success('Your download is starting');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not download the kit');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const label = !user
+    ? 'Sign in to download'
+    : needsVerification ? 'Verify Meetup to download' : 'Download kit';
+
+  return (
+    <Card className="glass-card border-primary/40">
+      <CardContent className="p-5 flex flex-wrap items-center justify-between gap-4">
+        <div className="space-y-1 min-w-0">
+          <p className="font-medium flex flex-wrap items-center gap-2">
+            <Download className="h-4 w-4 text-primary" />
+            Hackathon kit
+            {!kit.enabled && (
+              <Badge variant="outline" className="text-[10px] border-amber-500/30 text-amber-600">
+                Only organisers see this until downloads are on
+              </Badge>
+            )}
+          </p>
+          <p className="text-sm text-muted-foreground">
+            {needsVerification
+              ? 'The kit is for verified members. Verify your Meetup membership in your profile, then come back here to download it.'
+              : 'Everything you need to start building. After downloading, unzip it, open the folder in Kiro and follow the README inside.'}
+          </p>
+        </div>
+        <Button onClick={handleDownload} disabled={downloading} className="gap-2 shrink-0">
+          {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+          {label}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Resources
 // ---------------------------------------------------------------------------
 
@@ -1939,6 +2021,8 @@ function HackathonDetailView({ hackathonId }: { hackathonId: string }) {
             </div>
           </CardContent>
         </Card>
+
+        <KitDownloadCard hackathon={hackathon} />
 
         {/* Tabs */}
         <Tabs defaultValue="overview" className="space-y-6">

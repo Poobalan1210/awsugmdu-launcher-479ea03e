@@ -452,6 +452,19 @@ export interface HackathonTeamConfig {
   requireMemberProfile?: boolean;
 }
 
+/**
+ * Starter kit served from a private GitHub repo. Organisers receive the full
+ * config; everyone else only receives `{ enabled: true }` when a kit is offered,
+ * since the repo is fetched server-side.
+ */
+export interface HackathonKit {
+  enabled: boolean;
+  /** owner/repo of the private GitHub repo. Organisers only. */
+  repo?: string;
+  /** Branch or tag to package. Defaults to main. Organisers only. */
+  ref?: string;
+}
+
 export interface Hackathon {
   id: string;
   title: string;
@@ -486,6 +499,8 @@ export interface Hackathon {
    * shouldn't be public.
    */
   chatUrl?: string;
+  /** Downloadable starter kit for signed-in, Meetup-verified members. */
+  kit?: HackathonKit;
   /** Optional link to the parent sprint this hackathon runs under. */
   sprintId?: string;
   teamConfig: HackathonTeamConfig;

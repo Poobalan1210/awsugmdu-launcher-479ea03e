@@ -283,6 +283,10 @@ resource "aws_lambda_function" "hackathons_crud" {
   source_code_hash = data.archive_file.hackathons_crud.output_base64sha256
   runtime          = "nodejs20.x"
   timeout          = 30
+  # A kit download holds GitHub's archive, the renamed copy and the base64
+  # response in memory at once, about 25 MB more than other requests. At the
+  # default 128 MB this function already peaks around 115 MB.
+  memory_size = 256
 
   environment {
     variables = {

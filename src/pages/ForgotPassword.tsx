@@ -8,9 +8,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { isUnverifiedEmailResetError, messageOf } from '@/lib/authErrors';
 import logo from '@/assets/logo.png';
 
-type Stage = 'request' | 'confirm';
+// 'verifyEmail' covers accounts whose signup stopped before the email code:
+// Cognito won't reset their password until the email is confirmed.
+type Stage = 'request' | 'verifyEmail' | 'confirm';
 
 export default function ForgotPassword() {
   const [stage, setStage] = useState<Stage>('request');
@@ -22,8 +25,23 @@ export default function ForgotPassword() {
   const [error, setError] = useState<string | null>(null);
 
   const navigate = useNavigate();
-  const { resetPassword, confirmResetPassword } = useAuth();
+  const { resetPassword, confirmResetPassword, confirmSignUp, resendConfirmationCode } = useAuth();
   const { toast } = useToast();
+
+  // Send a signup confirmation code so the email can be verified before the reset.
+  const startEmailVerification = async () => {
+    try {
+      await resendConfirmationCode(email);
+      setCode('');
+      setStage('verifyEmail');
+      toast({
+        title: 'Confirm your email first',
+        description: `We've sent a 6-digit code to ${email}.`,
+      });
+    } catch (err) {
+      setError(messageOf(err, "We couldn't send a code. Please try again."));
+    }
+  };
 
   const handleRequest = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,6 +56,10 @@ export default function ForgotPassword() {
         description: `We've sent a 6-digit code to ${email}`,
       });
     } catch (err: any) {
+      if (isUnverifiedEmailResetError(err)) {
+        await startEmailVerification();
+        return;
+      }
       const message = err.message || 'Failed to send reset code. Please try again.';
       setError(message);
       toast({
@@ -84,13 +106,56 @@ export default function ForgotPassword() {
     }
   };
 
+  const handleVerifyEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+
+    if (code.length !== 6) {
+      setError('Please enter the 6-digit code from your email.');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      try {
+        await confirmSignUp(email, code);
+      } catch (err) {
+        setError(messageOf(err, 'That code did not work. Please try again.'));
+        return;
+      }
+
+      // The email is verified now, so the normal reset can go ahead.
+      setCode('');
+      try {
+        await resetPassword(email);
+      } catch (err) {
+        setStage('request');
+        setError(messageOf(err, 'Your email is confirmed. Please request the reset code again.'));
+        return;
+      }
+      setStage('confirm');
+      toast({
+        title: 'Email confirmed',
+        description: `Now enter the password reset code we sent to ${email}.`,
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleResend = async () => {
     setError(null);
     try {
-      await resetPassword(email);
+      if (stage === 'verifyEmail') {
+        await resendConfirmationCode(email);
+      } else {
+        await resetPassword(email);
+      }
       toast({
         title: 'Code resent',
-        description: 'A new reset code has been sent to your email.',
+        description: stage === 'verifyEmail'
+          ? 'A new confirmation code has been sent to your email.'
+          : 'A new reset code has been sent to your email.',
       });
     } catch (err: any) {
       toast({
@@ -109,22 +174,74 @@ export default function ForgotPassword() {
             <img src={logo} alt="AWS User Group" className="h-16 w-auto" />
           </Link>
           <CardTitle className="text-2xl">
-            {stage === 'request' ? 'Forgot password?' : 'Reset your password'}
+            {stage === 'request'
+              ? 'Forgot password?'
+              : stage === 'verifyEmail'
+              ? 'Confirm your email'
+              : 'Reset your password'}
           </CardTitle>
           <CardDescription>
             {stage === 'request'
               ? "Enter your email and we'll send you a code to reset your password."
+              : stage === 'verifyEmail'
+              ? `Your signup was never finished, so your email isn't confirmed yet. Enter the code we sent to ${email}, then you can choose a new password.`
               : `Enter the code sent to ${email} and choose a new password.`}
           </CardDescription>
         </CardHeader>
         <CardContent>
           {error && (
-            <div className="mb-4 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">
+            <div role="alert" className="mb-4 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">
               {error}
             </div>
           )}
 
-          {stage === 'request' ? (
+          {stage === 'verifyEmail' ? (
+            <form onSubmit={handleVerifyEmail} className="space-y-5">
+              <div className="flex flex-col items-center gap-4">
+                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10">
+                  <ShieldCheck className="h-8 w-8 text-primary" aria-hidden="true" />
+                </div>
+                <Label htmlFor="email-confirmation-code">Enter the 6-digit code</Label>
+                <InputOTP
+                  id="email-confirmation-code"
+                  maxLength={6}
+                  value={code}
+                  onChange={setCode}
+                  disabled={isLoading}
+                  autoFocus
+                >
+                  <InputOTPGroup>
+                    <InputOTPSlot index={0} />
+                    <InputOTPSlot index={1} />
+                    <InputOTPSlot index={2} />
+                    <InputOTPSlot index={3} />
+                    <InputOTPSlot index={4} />
+                    <InputOTPSlot index={5} />
+                  </InputOTPGroup>
+                </InputOTP>
+              </div>
+
+              <Button type="submit" className="w-full" disabled={isLoading || code.length !== 6}>
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Confirming...
+                  </>
+                ) : (
+                  'Confirm email'
+                )}
+              </Button>
+
+              <button
+                type="button"
+                onClick={handleResend}
+                className="w-full text-sm text-muted-foreground hover:text-primary"
+                disabled={isLoading}
+              >
+                Didn't receive the code? Resend
+              </button>
+            </form>
+          ) : stage === 'request' ? (
             <form onSubmit={handleRequest} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>

@@ -17,6 +17,16 @@ import { User } from '@/data/mockData';
 import { createUserProfile, getUserProfile, hasCreatedProfileThisSession } from '@/lib/userProfile';
 import { isOrganiserEmail } from '@/lib/adminUtils';
 import { getUserRoles } from '@/lib/userRoles';
+import { UnconfirmedAccountError, messageOf, nameOf } from '@/lib/authErrors';
+
+// Re-throw with a readable message but keep Cognito's error name (for example
+// UsernameExistsException), which the auth pages branch on.
+function authError(error: unknown, fallback: string): Error {
+  const wrapped = new Error(messageOf(error, fallback));
+  const name = nameOf(error);
+  if (name) wrapped.name = name;
+  return wrapped;
+}
 
 interface AuthContextType {
   user: User | null;
@@ -233,10 +243,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             } as User);
           }
         }
+      } else if (output.nextStep.signInStep === 'CONFIRM_SIGN_UP') {
+        // Right password, but the email code was never entered. Cognito only
+        // reports this after accepting the password.
+        throw new UnconfirmedAccountError();
+      } else {
+        // No other extra step (MFA, new password) is enabled for this pool. Say
+        // so rather than reporting a sign-in that did not happen.
+        throw new Error(`Sign-in needs an extra step (${output.nextStep.signInStep}). Please contact the organisers.`);
       }
     } catch (error: any) {
+      if (error instanceof UnconfirmedAccountError) throw error;
       console.error('Sign in error:', error);
-      throw new Error(error.message || 'Failed to sign in');
+      throw authError(error, 'Failed to sign in');
     }
   };
 
@@ -255,7 +274,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return output;
     } catch (error: any) {
       console.error('Sign up error:', error);
-      throw new Error(error.message || 'Failed to sign up');
+      throw authError(error, 'Failed to sign up');
     }
   };
 
@@ -267,7 +286,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
     } catch (error: any) {
       console.error('Confirm sign up error:', error);
-      throw new Error(error.message || 'Failed to confirm sign up');
+      throw authError(error, 'Failed to confirm sign up');
     }
   };
 
@@ -286,7 +305,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await amplifyResendSignUpCode({ username: email });
     } catch (error: any) {
       console.error('Resend code error:', error);
-      throw new Error(error.message || 'Failed to resend confirmation code');
+      throw authError(error, 'Failed to resend confirmation code');
     }
   };
 
@@ -295,7 +314,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await amplifyResetPassword({ username: email });
     } catch (error: any) {
       console.error('Reset password error:', error);
-      throw new Error(error.message || 'Failed to send password reset code');
+      throw authError(error, 'Failed to send password reset code');
     }
   };
 

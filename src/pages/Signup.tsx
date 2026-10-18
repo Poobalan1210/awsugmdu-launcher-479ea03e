@@ -22,6 +22,7 @@ import { getAllColleges, College } from '@/lib/colleges';
 import { getAllCloudClubs, CloudClub } from '@/lib/cloudClubs';
 import { submitMeetupVerification, normalizeMeetupProfileUrl, getMeetupGroupUrl } from '@/lib/meetup';
 import { createUserProfile } from '@/lib/userProfile';
+import { UnconfirmedAccountError, messageOf, nameOf } from '@/lib/authErrors';
 
 type UserType = 'student' | 'professional';
 
@@ -73,6 +74,14 @@ export default function Signup() {
   const { toast } = useToast();
   const { signUp, confirmSignUp, resendConfirmationCode, signIn, signOut, refreshUser } = useAuth();
   const [userId, setUserId] = useState<string | null>(null);
+  // This email already had a login from an earlier signup that stopped before
+  // the email code: we confirm that login instead of creating a new one.
+  const [resumingSignup, setResumingSignup] = useState(false);
+  // A resumed signup signs in right after the code, so the last step must not sign in again.
+  const [signedInEarly, setSignedInEarly] = useState(false);
+  // This email already has an account and the password typed here doesn't match it.
+  const [existingAccount, setExistingAccount] = useState(false);
+  const loginHref = redirectTo ? `/login?redirect=${encodeURIComponent(redirectTo)}` : '/login';
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [colleges, setColleges] = useState<College[]>([]);
@@ -175,13 +184,59 @@ export default function Signup() {
         description: `We've sent a 6-digit code to ${formData.email}`,
       });
     } catch (error: any) {
-      toast({
-        title: "Sign up failed",
-        description: error.message || "Failed to create account. Please try again.",
-        variant: "destructive",
-      });
+      if (error.name === 'UsernameExistsException') {
+        await handleExistingEmail();
+      } else {
+        toast({
+          title: "Sign up failed",
+          description: error.message || "Failed to create account. Please try again.",
+          variant: "destructive",
+        });
+      }
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // The email already has a login. Signing in with the password typed here
+  // tells us which kind: an active account (just sign them in), an earlier
+  // signup that never confirmed its email (send a fresh code and carry on from
+  // here), or a different password (point them to sign in or reset it).
+  const handleExistingEmail = async () => {
+    try {
+      await signIn(formData.email, formData.password);
+      toast({
+        title: "You already have an account",
+        description: "We've signed you in.",
+      });
+      navigate(redirectTo && redirectTo.startsWith('/') ? redirectTo : '/');
+    } catch (error) {
+      if (error instanceof UnconfirmedAccountError) {
+        try {
+          await resendConfirmationCode(formData.email);
+        } catch (resendError) {
+          toast({
+            title: "Couldn't send a code",
+            description: messageOf(resendError, "Please try again in a minute."),
+            variant: "destructive",
+          });
+          return;
+        }
+        setResumingSignup(true);
+        setOtpSent(true);
+        toast({
+          title: "Welcome back",
+          description: `You started signing up earlier. We've sent a new code to ${formData.email}.`,
+        });
+      } else if (nameOf(error) === 'NotAuthorizedException') {
+        setExistingAccount(true);
+      } else {
+        toast({
+          title: "Sign up failed",
+          description: messageOf(error, "Please try again."),
+          variant: "destructive",
+        });
+      }
     }
   };
 
@@ -198,6 +253,22 @@ export default function Signup() {
     setIsLoading(true);
     try {
       await confirmSignUp(formData.email, otpValue);
+      if (resumingSignup) {
+        // The login already existed, so signUp() never returned its user ID.
+        // The password was accepted a moment ago, so this sign-in succeeds.
+        try {
+          await signIn(formData.email, formData.password, true);
+          setUserId((await getCurrentUser()).userId);
+          setSignedInEarly(true);
+        } catch {
+          toast({
+            title: "Email confirmed",
+            description: "Please sign in to finish setting up your account.",
+          });
+          navigate(loginHref);
+          return;
+        }
+      }
       setOtpVerified(true);
       toast({
         title: "Email verified!",
@@ -265,8 +336,11 @@ export default function Signup() {
 
       // Create user profile in DynamoDB BEFORE signing in
       try {
-        // Sign in temporarily to get auth token for API call
-        await signIn(formData.email, formData.password, true);
+        // Sign in temporarily to get auth token for API call (a resumed
+        // signup is already signed in from the email-code step)
+        if (!signedInEarly) {
+          await signIn(formData.email, formData.password, true);
+        }
         
         // Wait for auth session
         await new Promise(resolve => setTimeout(resolve, 1000));
@@ -520,7 +594,32 @@ export default function Signup() {
                     </p>
                   </div>
 
-                  {!otpSent ? (
+                  {existingAccount ? (
+                    <div role="alert" className="space-y-3 p-4 rounded-lg border border-amber-500/30 bg-amber-500/10">
+                      <p className="font-medium">This email already has an account</p>
+                      <p className="text-sm text-muted-foreground">
+                        The password you entered doesn't match it. Sign in with your original password, or reset it if you've forgotten it.
+                      </p>
+                      <div className="flex gap-2">
+                        <Button asChild className="flex-1">
+                          <Link to={loginHref}>Sign in</Link>
+                        </Button>
+                        <Button asChild variant="outline" className="flex-1">
+                          <Link to="/forgot-password">Reset password</Link>
+                        </Button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setExistingAccount(false);
+                          setCurrentStep(1);
+                        }}
+                        className="w-full text-sm text-muted-foreground hover:text-primary"
+                      >
+                        Use a different email
+                      </button>
+                    </div>
+                  ) : !otpSent ? (
                     <Button 
                       onClick={handleSendOTP} 
                       className="w-full" 
@@ -537,6 +636,11 @@ export default function Signup() {
                     </Button>
                   ) : !otpVerified ? (
                     <div className="space-y-4">
+                      {resumingSignup && (
+                        <p className="text-sm text-muted-foreground text-center">
+                          You started signing up with this email earlier. Enter the new code to pick up where you left off.
+                        </p>
+                      )}
                       <div className="flex flex-col items-center gap-4">
                         <Label>Enter the 6-digit code</Label>
                         <InputOTP

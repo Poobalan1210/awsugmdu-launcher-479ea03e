@@ -201,13 +201,25 @@ async function getUser(userId, event) {
   }
 }
 
+/**
+ * Read every item of a table. A single Scan stops at 1 MB of data, and the
+ * users table is past that, so one call silently dropped ~100 members from the
+ * members tab, public profile links and every other list built from GET /users.
+ */
+async function scanAll(params) {
+  const items = [];
+  let ExclusiveStartKey;
+  do {
+    const page = await docClient.send(new ScanCommand({ ...params, ExclusiveStartKey }));
+    items.push(...(page.Items || []));
+    ExclusiveStartKey = page.LastEvaluatedKey;
+  } while (ExclusiveStartKey);
+  return items;
+}
+
 async function getAllUsers(event) {
   try {
-    const result = await docClient.send(new ScanCommand({
-      TableName: USERS_TABLE,
-    }));
-
-    const items = result.Items || [];
+    const items = await scanAll({ TableName: USERS_TABLE });
     // Organisers keep the full records — the admin members tab, meetup
     // verification and hackathon judging all need contact details.
     const full = await callerIsOrganiser(event);
@@ -218,7 +230,7 @@ async function getAllUsers(event) {
       headers: corsHeaders,
       body: JSON.stringify({
         users,
-        count: result.Count || 0,
+        count: users.length,
       }),
     };
   } catch (error) {

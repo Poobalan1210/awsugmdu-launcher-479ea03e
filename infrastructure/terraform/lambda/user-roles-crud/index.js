@@ -91,13 +91,25 @@ exports.handler = async (event) => {
   }
 };
 
+/**
+ * Read every user. A single Scan stops at 1 MB of data, and the users table is
+ * past that, so roles held by members beyond the first page were missing from
+ * the members tab and could not be removed ("Role not found").
+ */
+async function scanAllUsers() {
+  const items = [];
+  let ExclusiveStartKey;
+  do {
+    const page = await docClient.send(new ScanCommand({ TableName: USERS_TABLE, ExclusiveStartKey }));
+    items.push(...(page.Items || []));
+    ExclusiveStartKey = page.LastEvaluatedKey;
+  } while (ExclusiveStartKey);
+  return items;
+}
+
 // Get all role assignments
 async function getAllUserRoles() {
-  const result = await docClient.send(new ScanCommand({
-    TableName: USERS_TABLE
-  }));
-  
-  const users = result.Items || [];
+  const users = await scanAllUsers();
   const allRoles = [];
   
   // Extract roles from all users
@@ -189,11 +201,7 @@ async function assignRole(event) {
 // Remove role from user
 async function removeRole(roleId) {
   // Scan all users to find the one with this role
-  const result = await docClient.send(new ScanCommand({
-    TableName: USERS_TABLE
-  }));
-  
-  const users = result.Items || [];
+  const users = await scanAllUsers();
   
   for (const user of users) {
     if (user.roles && Array.isArray(user.roles)) {

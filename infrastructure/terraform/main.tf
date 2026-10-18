@@ -612,6 +612,9 @@ resource "aws_lambda_function" "users_crud" {
   source_code_hash = data.archive_file.users_crud.output_base64sha256
   runtime          = "nodejs20.x"
   timeout          = 30
+  # GET /users reads and serialises the whole users table. At the default
+  # 128 MB it already peaked at 116 MB while reading only the first 1 MB page.
+  memory_size = 256
 
   environment {
     variables = {

@@ -14,6 +14,9 @@ resource "aws_lambda_function" "user_roles_crud" {
   source_code_hash = data.archive_file.user_roles_crud.output_base64sha256
   runtime         = "nodejs18.x"
   timeout         = 30
+  # Listing or removing roles reads the whole users table (all scan pages).
+  # At the default 128 MB it already peaked at 102 MB reading only the first page.
+  memory_size = 256
 
   environment {
     variables = {

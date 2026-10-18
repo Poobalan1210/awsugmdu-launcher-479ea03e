@@ -8,7 +8,9 @@ export interface CreateUserProfileData {
   name: string;
   avatar?: string;
   bio?: string;
-  userType: 'student' | 'professional';
+  // Optional: a profile recovered at sign-in (see AuthContext) has no signup
+  // answers yet. The edit-profile dialog infers it until the member picks one.
+  userType?: 'student' | 'professional';
   meetupEmail?: string;
   collegeName?: string;
   collegeCity?: string;
@@ -28,11 +30,32 @@ export interface CreateUserProfileData {
   hideFromLeaderboard?: boolean;
 }
 
-export async function createUserProfile(data: CreateUserProfileData): Promise<{ success: boolean; userId: string }> {
-  return callApi('/users', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
+// User IDs whose profile row this browser tab has created or is creating.
+// POST /users overwrites an existing row, so AuthContext checks this before
+// recovering a "missing" profile: the 404 may only be a read lagging the signup
+// write (DynamoDB reads are eventually consistent), and a second POST would
+// replace the full signup profile with a bare one.
+const profilesCreatedThisSession = new Set<string>();
+
+export async function createUserProfile(
+  data: CreateUserProfileData
+): Promise<{ success: boolean; userId: string; user?: User }> {
+  // Recorded before the request so a concurrent recovery in this tab backs off
+  // while the write is in flight; cleared again if the write fails.
+  profilesCreatedThisSession.add(data.userId);
+  try {
+    return await callApi('/users', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  } catch (error) {
+    profilesCreatedThisSession.delete(data.userId);
+    throw error;
+  }
+}
+
+export function hasCreatedProfileThisSession(userId: string): boolean {
+  return profilesCreatedThisSession.has(userId);
 }
 
 export async function getUserProfile(userId: string): Promise<User> {

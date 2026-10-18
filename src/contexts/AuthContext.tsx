@@ -14,7 +14,7 @@ import {
 } from 'aws-amplify/auth';
 import { uploadData } from 'aws-amplify/storage';
 import { User } from '@/data/mockData';
-import { createUserProfile, getUserProfile } from '@/lib/userProfile';
+import { createUserProfile, getUserProfile, hasCreatedProfileThisSession } from '@/lib/userProfile';
 import { isOrganiserEmail } from '@/lib/adminUtils';
 import { getUserRoles } from '@/lib/userRoles';
 
@@ -40,69 +40,108 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Transform a DynamoDB profile record into the app's User.
+  const toAppUser = (profile: User, email: string, communityRoleValues: string[]): User => {
+    // Determine role: organiser emails or community role assignments get priority.
+    // `role` is single-valued, so the order here is the precedence order —
+    // broader access wins, since an organiser can already do everything a
+    // judge can.
+    let role = profile.role || 'member';
+    
+    if (isOrganiserEmail(email) || communityRoleValues.includes('organiser')) {
+      role = 'organiser';
+    } else if (communityRoleValues.includes('admin')) {
+      role = 'admin';
+    } else if (communityRoleValues.includes('judge')) {
+      // Without this, assigning the judge role in the members tab would have no
+      // effect: it would never reach user.role and the UI could not gate on it.
+      role = 'judge';
+    }
+    
+    return {
+      id: profile.userId || profile.id,
+      email: profile.email,
+      name: profile.name,
+      avatar: profile.avatar || '',
+      points: profile.points || 0,
+      redeemablePoints: profile.redeemablePoints ?? profile.points ?? 0,
+      rank: profile.rank || 0,
+      badges: profile.badges || [],
+      joinedDate: profile.joinedDate || new Date().toISOString(),
+      role,
+      bio: profile.bio,
+      designation: profile.designation,
+      company: (profile as any).companyName || profile.company,
+      linkedIn: profile.linkedIn,
+      github: profile.github,
+      twitter: profile.twitter,
+      meetupVerified: !!profile.meetupVerified || 
+                      profile.meetupVerificationStatus === 'approved' || 
+                      (profile.pointActivities && profile.pointActivities.some((pa: any) => 
+                        pa.type === 'signup' || 
+                        pa.type === 'meetup_verification' ||
+                        pa.reason?.toLowerCase().includes('meetup')
+                      )) || 
+                      isOrganiserEmail(profile.email),
+      meetupVerificationStatus: profile.meetupVerificationStatus,
+      meetupEmail: profile.meetupEmail,
+      pointActivities: profile.pointActivities || [],
+    } as User;
+  };
+
+  // A Cognito account can exist with no users-table row: signup creates the
+  // login at the code-confirmation step but only writes the profile at the very
+  // end, so anyone who drops off in between (or whose final save fails) can
+  // still sign in, yet every profile save, Meetup verification included, then
+  // fails with "User not found". Create the missing row from the ID token
+  // (signup sets the name and email attributes). Returns the new record, or
+  // null if it could not be created.
+  const createMissingProfile = async (userId: string, fallbackEmail: string): Promise<User | null> => {
+    // Never write over a row this tab created or is creating: see
+    // hasCreatedProfileThisSession in lib/userProfile.
+    if (hasCreatedProfileThisSession(userId)) return null;
+    try {
+      const session = await fetchAuthSession();
+      const claims = session.tokens?.idToken?.payload;
+      const tokenEmail = claims?.email;
+      const tokenName = claims?.name;
+      const email = typeof tokenEmail === 'string' && tokenEmail ? tokenEmail : fallbackEmail;
+      if (!email) return null;
+      const name = typeof tokenName === 'string' && tokenName.trim()
+        ? tokenName.trim()
+        : email.split('@')[0];
+
+      const result = await createUserProfile({ userId, email, name });
+      return result.user ?? null;
+    } catch (error) {
+      console.error('Failed to create missing user profile:', error);
+      return null;
+    }
+  };
+
   // Fetch user profile from DynamoDB
   const fetchUserProfile = async (userId: string, email: string): Promise<User | null> => {
+    // Roles load concurrently with the profile; a roles failure never blocks sign-in.
+    const communityRoleValues: Promise<string[]> = getUserRoles(userId)
+      .then((roles) => roles.map((r) => r.role))
+      .catch(() => []);
+
     try {
-      // Fetch full profile and roles concurrently
-      const [profile, communityRoles] = await Promise.all([
-        getUserProfile(userId),
-        getUserRoles(userId).catch(() => [])
-      ]);
-      
-      const communityRoleValues = (communityRoles as any[]).map(r => r.role);
-      
-      // Determine role: organiser emails or community role assignments get priority.
-      // `role` is single-valued, so the order here is the precedence order —
-      // broader access wins, since an organiser can already do everything a
-      // judge can.
-      let role = profile.role || 'member';
-      
-      if (isOrganiserEmail(email) || communityRoleValues.includes('organiser')) {
-        role = 'organiser';
-      } else if (communityRoleValues.includes('admin')) {
-        role = 'admin';
-      } else if (communityRoleValues.includes('judge')) {
-        // Without this, assigning the judge role in the members tab would have no
-        // effect: it would never reach user.role and the UI could not gate on it.
-        role = 'judge';
-      }
-      
-      // Transform DynamoDB profile to User interface
-      return {
-        id: profile.userId || profile.id,
-        email: profile.email,
-        name: profile.name,
-        avatar: profile.avatar || '',
-        points: profile.points || 0,
-        redeemablePoints: profile.redeemablePoints ?? profile.points ?? 0,
-        rank: profile.rank || 0,
-        badges: profile.badges || [],
-        joinedDate: profile.joinedDate || new Date().toISOString(),
-        role,
-        bio: profile.bio,
-        designation: profile.designation,
-        company: (profile as any).companyName || profile.company,
-        linkedIn: profile.linkedIn,
-        github: profile.github,
-        twitter: profile.twitter,
-        meetupVerified: !!profile.meetupVerified || 
-                        profile.meetupVerificationStatus === 'approved' || 
-                        (profile.pointActivities && profile.pointActivities.some((pa: any) => 
-                          pa.type === 'signup' || 
-                          pa.type === 'meetup_verification' ||
-                          pa.reason?.toLowerCase().includes('meetup')
-                        )) || 
-                        isOrganiserEmail(profile.email),
-        meetupVerificationStatus: profile.meetupVerificationStatus,
-        meetupEmail: profile.meetupEmail,
-        pointActivities: profile.pointActivities || [],
-      } as User;
+      const profile = await getUserProfile(userId);
+      return toAppUser(profile, email, await communityRoleValues);
     } catch (error: any) {
       console.error('Failed to fetch user profile:', error);
       
       // If profile doesn't exist in DB (404), return a basic user object
       // This can happen if user just signed up but profile creation failed
       if (error.message?.includes('not found') || error.message?.includes('404')) {
+        // users-crud answers a missing row with 404 {"error":"User not found"}:
+        // create the row so the member can actually save and verify.
+        if (/user not found/i.test(error.message)) {
+          const created = await createMissingProfile(userId, email);
+          if (created) return toAppUser(created, email, await communityRoleValues);
+        }
+
         const role = isOrganiserEmail(email) ? 'organiser' : 'member';
         return {
           id: userId,

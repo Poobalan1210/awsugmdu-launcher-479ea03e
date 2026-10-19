@@ -39,7 +39,7 @@ import {
   createTeam, updateTeam, deleteTeam, joinTeamByCode,
   leaveTeam, removeTeamMember, inviteToTeam, revokeInvite, respondToInvite,
   requestToJoinTeam, respondToJoinRequest, submitHackathonWork,
-  findUserTeam, isTeamLead, isSubmissionOpen, isRegistrationOpen,
+  findUserTeam, isTeamLead, isSubmissionOpen, isRegistrationOpen, isSoloHackathon,
   TEAM_JOIN_POLICY_SUMMARY,
   EXPERIENCE_LEVELS, EXPERIENCE_LEVEL_LABELS, EXPERIENCE_LEVEL_SHORT, EXPERIENCE_LEVEL_STYLES,
   teamSkills, teamExperienceSpread, availableSkillFilters, teamMatchesSkill, hasMemberProfile,
@@ -178,6 +178,11 @@ function HackathonListView() {
                       <span className="inline-flex items-center gap-1">
                         <Users className="h-3 w-3" />{hackathon.participants || 0} registered
                       </span>
+                      {isSoloHackathon(hackathon) && (
+                        <span className="inline-flex items-center gap-1">
+                          <User className="h-3 w-3" />Solo participation
+                        </span>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -391,6 +396,10 @@ function CreateTeamDialog({ hackathon, onCreated }: { hackathon: Hackathon; onCr
   const [lookingForSkills, setLookingForSkills] = useState<string[]>([]);
 
   const tracks = hackathon.tracks || [];
+  const solo = isSoloHackathon(hackathon);
+  const kitPerks = hackathon.kit
+    ? (hackathon.kit.apiKeys ? 'get the kit and your API key, and ' : 'get the kit, and ')
+    : '';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -411,7 +420,7 @@ function CreateTeamDialog({ hackathon, onCreated }: { hackathon: Hackathon; onCr
         userAvatar: user.avatar,
         ...profilePayload(profile),
       });
-      toast.success('Team created — you are the lead');
+      toast.success(solo ? 'Your team is ready' : 'Team created — you are the lead');
       setOpen(false);
       setForm({ name: '', description: '', projectName: '', track: '' });
       setProfile(emptyProfileForm());
@@ -427,16 +436,24 @@ function CreateTeamDialog({ hackathon, onCreated }: { hackathon: Hackathon; onCr
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button className="gap-2"><UserPlus className="h-4 w-4" />Create a team</Button>
+        <Button className="gap-2">
+          <UserPlus className="h-4 w-4" />{solo ? 'Create your team' : 'Create a team'}
+        </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Create a team</DialogTitle>
+          <DialogTitle>{solo ? 'Create your team of one' : 'Create a team'}</DialogTitle>
           <DialogDescription>
-            You'll be the team lead, so you can invite people by email, approve join
-            requests, and submit the final project.
-            {hackathon.teamConfig?.allowIndividuals
-              && " You don't have to create a team at all — solo entries are allowed."}
+            {solo ? (
+              `This is a solo hackathon, so your team is just you. You'll use it to ${kitPerks}submit your project.`
+            ) : (
+              <>
+                You'll be the team lead, so you can invite people by email, approve join
+                requests, and submit the final project.
+                {hackathon.teamConfig?.allowIndividuals
+                  && " You don't have to create a team at all — solo entries are allowed."}
+              </>
+            )}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -476,7 +493,7 @@ function CreateTeamDialog({ hackathon, onCreated }: { hackathon: Hackathon; onCr
               value={form.description}
               onChange={e => setForm({ ...form, description: e.target.value })}
               rows={3}
-              placeholder="Helps others decide whether to ask to join"
+              placeholder={solo ? 'A line or two about your project (optional)' : 'Helps others decide whether to ask to join'}
             />
           </div>
 
@@ -487,22 +504,25 @@ function CreateTeamDialog({ hackathon, onCreated }: { hackathon: Hackathon; onCr
             idPrefix="create-team"
           />
 
-          {/* The lead states the gaps, so browsers don't have to infer them. */}
-          <div className="space-y-2 rounded-lg border p-3 bg-muted/20">
-            <div className="space-y-1">
-              <Label className="text-sm">Looking for</Label>
-              <p className="text-xs text-muted-foreground">
-                Skills your team still needs. Shown prominently to anyone browsing teams.
-              </p>
+          {/* The lead states the gaps, so browsers don't have to infer them.
+              Pointless when nobody can join. */}
+          {!solo && (
+            <div className="space-y-2 rounded-lg border p-3 bg-muted/20">
+              <div className="space-y-1">
+                <Label className="text-sm">Looking for</Label>
+                <p className="text-xs text-muted-foreground">
+                  Skills your team still needs. Shown prominently to anyone browsing teams.
+                </p>
+              </div>
+              <SkillPicker
+                options={hackathon.skillOptions || []}
+                value={lookingForSkills}
+                onChange={setLookingForSkills}
+                idPrefix="create-team-needs"
+                placeholder="e.g., frontend, Bedrock"
+              />
             </div>
-            <SkillPicker
-              options={hackathon.skillOptions || []}
-              value={lookingForSkills}
-              onChange={setLookingForSkills}
-              idPrefix="create-team-needs"
-              placeholder="e.g., frontend, Bedrock"
-            />
-          </div>
+          )}
 
           <div className="flex gap-2 pt-2 border-t">
             <Button type="submit" disabled={saving} className="flex-1">
@@ -790,10 +810,14 @@ function MyTeamPanel({ hackathon, team, onChanged }: {
 }) {
   const { user } = useAuth();
   const lead = isTeamLead(team, user?.id);
+  // Nobody can join a team in a solo hackathon, so the recruiting tools go away.
+  const solo = isSoloHackathon(hackathon);
   const [savingProject, setSavingProject] = useState(false);
   const [projectName, setProjectName] = useState(team.projectName || '');
   const [needs, setNeeds] = useState<string[]>(team.lookingForSkills || []);
   const [savingNeeds, setSavingNeeds] = useState(false);
+  const [teamName, setTeamName] = useState(team.name || '');
+  const [savingName, setSavingName] = useState(false);
 
   // Re-sync when the team is refetched, so a save elsewhere isn't overwritten by
   // stale local state.
@@ -801,6 +825,28 @@ function MyTeamPanel({ hackathon, team, onChanged }: {
     setNeeds(team.lookingForSkills || []);
     setProjectName(team.projectName || '');
   }, [team.lookingForSkills, team.projectName]);
+
+  useEffect(() => { setTeamName(team.name || ''); }, [team.name]);
+
+  const nameChanged = teamName.trim() !== '' && teamName.trim() !== team.name;
+
+  const handleSaveName = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const next = teamName.trim();
+    if (!next) { toast.error('Give your team a name'); return; }
+    if (next === team.name) return;
+
+    setSavingName(true);
+    try {
+      await updateTeam(hackathon.id, team.id, { name: next });
+      toast.success(`Team renamed to ${next}`);
+      onChanged();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to rename the team');
+    } finally {
+      setSavingName(false);
+    }
+  };
 
   const handleSaveNeeds = async () => {
     setSavingNeeds(true);
@@ -888,13 +934,18 @@ function MyTeamPanel({ hackathon, team, onChanged }: {
               {lead && <Badge variant="outline" className="gap-1 text-[10px]"><Crown className="h-3 w-3" />Lead</Badge>}
             </CardTitle>
             <CardDescription>
-              {team.members.length} of {maxSize} members
+              {solo && team.members.length <= 1
+                ? 'Solo team'
+                : `${team.members.length} of ${maxSize} members`}
               {team.track ? ` · ${team.track}` : ''}
             </CardDescription>
           </div>
-          <Button variant="outline" size="sm" className="gap-2 font-mono" onClick={handleCopyCode}>
-            <Copy className="h-3.5 w-3.5" />{team.joinCode}
-          </Button>
+          {/* A join code is only useful while someone can still join. */}
+          {!solo && (
+            <Button variant="outline" size="sm" className="gap-2 font-mono" onClick={handleCopyCode}>
+              <Copy className="h-3.5 w-3.5" />{team.joinCode}
+            </Button>
+          )}
         </div>
       </CardHeader>
 
@@ -1007,6 +1058,26 @@ function MyTeamPanel({ hackathon, team, onChanged }: {
 
         {lead && (
           <>
+            <form onSubmit={handleSaveName} className="space-y-2 pt-3 border-t">
+              <Label htmlFor="my-team-name">Team name</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="my-team-name"
+                  value={teamName}
+                  onChange={e => setTeamName(e.target.value)}
+                  placeholder="e.g., Cloud Llamas"
+                />
+                <Button
+                  type="submit"
+                  variant="outline"
+                  disabled={savingName || !nameChanged}
+                  aria-label="Save team name"
+                >
+                  {savingName ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save'}
+                </Button>
+              </div>
+            </form>
+
             <div className="space-y-2 pt-3 border-t">
               <Label htmlFor="my-project">Project name</Label>
               <div className="flex gap-2">
@@ -1022,30 +1093,34 @@ function MyTeamPanel({ hackathon, team, onChanged }: {
               </div>
             </div>
 
-            <div className="space-y-2 pt-3 border-t">
-              <Label>Looking for</Label>
-              <p className="text-xs text-muted-foreground">
-                Skills you still need. Shown to anyone browsing teams, and used by the skill filter.
-              </p>
-              <SkillPicker
-                options={hackathon.skillOptions || []}
-                value={needs}
-                onChange={setNeeds}
-                idPrefix="my-team-needs"
-                placeholder="e.g., frontend, Bedrock"
-              />
-              <Button variant="outline" size="sm" onClick={handleSaveNeeds} disabled={savingNeeds}>
-                {savingNeeds ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save'}
-              </Button>
-            </div>
+            {!solo && (
+              <>
+                <div className="space-y-2 pt-3 border-t">
+                  <Label>Looking for</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Skills you still need. Shown to anyone browsing teams, and used by the skill filter.
+                  </p>
+                  <SkillPicker
+                    options={hackathon.skillOptions || []}
+                    value={needs}
+                    onChange={setNeeds}
+                    idPrefix="my-team-needs"
+                    placeholder="e.g., frontend, Bedrock"
+                  />
+                  <Button variant="outline" size="sm" onClick={handleSaveNeeds} disabled={savingNeeds}>
+                    {savingNeeds ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save'}
+                  </Button>
+                </div>
 
-            <div className="pt-3 border-t">
-              <JoinRequestsPanel hackathon={hackathon} team={team} onChanged={onChanged} />
-            </div>
+                <div className="pt-3 border-t">
+                  <JoinRequestsPanel hackathon={hackathon} team={team} onChanged={onChanged} />
+                </div>
 
-            <div className="pt-3 border-t">
-              <InvitePanel hackathon={hackathon} team={team} onChanged={onChanged} />
-            </div>
+                <div className="pt-3 border-t">
+                  <InvitePanel hackathon={hackathon} team={team} onChanged={onChanged} />
+                </div>
+              </>
+            )}
           </>
         )}
 
@@ -1283,6 +1358,8 @@ function BrowseTeams({ hackathon, teams, myTeam, onChanged }: {
 
   const policy = hackathon.teamConfig?.joinPolicy ?? 'request';
   const maxSize = hackathon.teamConfig?.maxSize ?? 4;
+  // Every team is one person and closed, so size, "Full" and "Looking for" are noise.
+  const solo = isSoloHackathon(hackathon);
 
   const others = teams.filter(t => t.id !== myTeam?.id);
   const filterOptions = availableSkillFilters(hackathon, others);
@@ -1356,11 +1433,13 @@ function BrowseTeams({ hackathon, teams, myTeam, onChanged }: {
                 <div className="min-w-0 space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-medium">{team.name}</span>
-                    <Badge variant="outline" className="text-[10px]">
-                      {team.members.length}/{maxSize}
-                    </Badge>
+                    {!solo && (
+                      <Badge variant="outline" className="text-[10px]">
+                        {team.members.length}/{maxSize}
+                      </Badge>
+                    )}
                     {team.track && <Badge variant="secondary" className="text-[10px]">{team.track}</Badge>}
-                    {full && <Badge variant="outline" className="text-[10px] text-muted-foreground">Full</Badge>}
+                    {full && !solo && <Badge variant="outline" className="text-[10px] text-muted-foreground">Full</Badge>}
                   </div>
                   {team.projectName && (
                     <p className="text-sm text-muted-foreground">Project: {team.projectName}</p>
@@ -1388,7 +1467,7 @@ function BrowseTeams({ hackathon, teams, myTeam, onChanged }: {
 
               {/* What the team is missing — the most actionable line on the card,
                   so it gets its own emphasis rather than being buried. */}
-              {needs.length > 0 && (
+              {needs.length > 0 && !solo && (
                 <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-primary/20 bg-primary/5 px-2.5 py-1.5">
                   <Search className="h-3 w-3 text-primary shrink-0" />
                   <span className="text-xs font-medium text-primary">Looking for:</span>
@@ -1838,7 +1917,9 @@ function SubmitTab({ hackathon, myTeam, mySubmission, onSubmitted }: {
       <EmptyState
         icon={Users}
         title="You need a team to submit"
-        body="This hackathon only accepts team entries. Create a team or join one first."
+        body={isSoloHackathon(hackathon)
+          ? 'This is a solo hackathon. Create your team of one on the Teams tab, then submit from here.'
+          : 'This hackathon only accepts team entries. Create a team or join one first.'}
       />
     );
   }
@@ -2093,6 +2174,10 @@ function HackathonDetailView({ hackathonId }: { hackathonId: string }) {
 
   const teamsOpen = isRegistrationOpen(hackathon);
   const individualMentor = user ? hackathon.individualMentors?.[user.id] : undefined;
+  const solo = isSoloHackathon(hackathon);
+  const soloKitPerks = hackathon.kit
+    ? `the kit${hackathon.kit.apiKeys ? ' and your API key' : ''}`
+    : '';
 
   return (
     <PageShell>
@@ -2101,8 +2186,29 @@ function HackathonDetailView({ hackathonId }: { hackathonId: string }) {
           <ChevronLeft className="h-4 w-4" />All hackathons
         </Button>
 
+        {/* An invite emailed before the hackathon went solo. It can't be accepted
+            any more (every team is full), so say so instead of offering a
+            button that can only fail. */}
+        {inviteToken && inviteTeamId && solo && (
+          <Card className="glass-card border-primary/40">
+            <CardContent className="p-5 flex flex-wrap items-center justify-between gap-4">
+              <div className="space-y-1">
+                <p className="font-medium flex items-center gap-2">
+                  <Mail className="h-4 w-4 text-primary" />
+                  Team invites are closed
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  This is now a solo hackathon, so team invites can't be accepted.
+                  Create your own team of one on the Teams tab instead.
+                </p>
+              </div>
+              <Button variant="outline" onClick={clearInviteParams}>Dismiss</Button>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Pending email invite */}
-        {inviteToken && inviteTeamId && (
+        {inviteToken && inviteTeamId && !solo && (
           <Card className="glass-card border-primary/40">
             <CardContent className="p-5 flex flex-wrap items-center justify-between gap-4">
               <div className="space-y-1">
@@ -2150,9 +2256,24 @@ function HackathonDetailView({ hackathonId }: { hackathonId: string }) {
                   <Badge variant="outline" className={`text-[10px] ${statusStyles[hackathon.status]}`}>
                     {statusLabels[hackathon.status]}
                   </Badge>
+                  {solo && (
+                    <Badge variant="outline" className="gap-1 text-[10px] border-primary/30 text-primary">
+                      <User className="h-3 w-3" />Solo hackathon
+                    </Badge>
+                  )}
                 </div>
                 {hackathon.theme && <p className="text-primary/80">{hackathon.theme}</p>}
                 <p className="text-muted-foreground max-w-3xl">{hackathon.description}</p>
+                {solo && (
+                  <div className="flex items-start gap-2 rounded-lg border border-primary/30 bg-primary/5 p-3 max-w-3xl">
+                    <User className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                    <p className="text-sm text-muted-foreground">
+                      <span className="font-medium text-foreground">This is a solo participant hackathon.</span>{' '}
+                      Everyone builds on their own, so each team is just one person.
+                      {soloKitPerks && ` Create your team of one on the Teams tab to get ${soloKitPerks}.`}
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div className="flex flex-wrap items-center gap-2 shrink-0">
@@ -2307,17 +2428,37 @@ function HackathonDetailView({ hackathonId }: { hackathonId: string }) {
             <Card className="glass-card">
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
-                  <Users className="h-4 w-4 text-primary" />How teams work
+                  {solo
+                    ? <><User className="h-4 w-4 text-primary" />How participation works</>
+                    : <><Users className="h-4 w-4 text-primary" />How teams work</>}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2 text-sm text-muted-foreground">
-                <p>Team size: {hackathon.teamConfig?.minSize} to {hackathon.teamConfig?.maxSize} people.</p>
-                <p>{TEAM_JOIN_POLICY_SUMMARY[hackathon.teamConfig?.joinPolicy ?? 'request']}</p>
-                <p>
-                  {hackathon.teamConfig?.allowIndividuals
-                    ? 'Solo entries are allowed — you can submit without forming a team.'
-                    : 'Every entry must come from a team.'}
-                </p>
+                {solo ? (
+                  <>
+                    <p>
+                      This is a solo hackathon: one person per team. Team invites, join codes and
+                      join requests are switched off.
+                    </p>
+                    <p>
+                      {soloKitPerks
+                        ? `Create your team of one on the Teams tab. That's where you get ${soloKitPerks}, and it's how you submit.`
+                        : hackathon.teamConfig?.allowIndividuals
+                          ? 'You can submit as an individual from the Submit tab, or create a team of one first.'
+                          : 'Create your team of one on the Teams tab before you submit.'}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p>Team size: {hackathon.teamConfig?.minSize} to {hackathon.teamConfig?.maxSize} people.</p>
+                    <p>{TEAM_JOIN_POLICY_SUMMARY[hackathon.teamConfig?.joinPolicy ?? 'request']}</p>
+                    <p>
+                      {hackathon.teamConfig?.allowIndividuals
+                        ? 'Solo entries are allowed — you can submit without forming a team.'
+                        : 'Every entry must come from a team.'}
+                    </p>
+                  </>
+                )}
               </CardContent>
             </Card>
 
@@ -2425,14 +2566,19 @@ function HackathonDetailView({ hackathonId }: { hackathonId: string }) {
                     <CardContent className="p-6 space-y-4">
                       <div className="flex flex-wrap items-start justify-between gap-4">
                         <div className="space-y-1">
-                          <h3 className="font-semibold">You're not on a team yet</h3>
+                          <h3 className="font-semibold">
+                            {solo ? 'Set up your team of one' : "You're not on a team yet"}
+                          </h3>
                           <p className="text-sm text-muted-foreground">
-                            {TEAM_JOIN_POLICY_SUMMARY[hackathon.teamConfig?.joinPolicy ?? 'request']}
+                            {solo
+                              ? "This is a solo hackathon, so your team is just you. Nobody else can join it."
+                              : TEAM_JOIN_POLICY_SUMMARY[hackathon.teamConfig?.joinPolicy ?? 'request']}
                           </p>
                         </div>
                         <div className="flex flex-wrap gap-2">
                           <CreateTeamDialog hackathon={hackathon} onCreated={load} />
-                          {hackathon.teamConfig?.joinPolicy !== 'invite_only' && (
+                          {/* Every team is full in a solo hackathon, so a code can only fail. */}
+                          {!solo && hackathon.teamConfig?.joinPolicy !== 'invite_only' && (
                             <JoinByCodeDialog hackathon={hackathon} onJoined={load} />
                           )}
                         </div>
@@ -2442,26 +2588,36 @@ function HackathonDetailView({ hackathonId }: { hackathonId: string }) {
                       {hackathon.kit && (
                         <div className="flex items-start gap-2 rounded-lg border border-primary/30 bg-primary/5 p-3">
                           <Download className="h-4 w-4 text-primary mt-0.5 shrink-0" />
-                          <p className="text-sm text-muted-foreground">
-                            Create or join a team to get the hackathon kit
-                            {hackathon.kit.apiKeys ? " and your team's API key. You'll find them" : ". You'll find it"} in
-                            your team's section on this tab.
-                            {/* With solo entries on, the box below says this instead. */}
-                            {!hackathon.teamConfig?.allowIndividuals && ' Building solo? Create a team of one.'}
-                          </p>
+                          {solo ? (
+                            <p className="text-sm text-muted-foreground">
+                              Create your team to get {soloKitPerks}. You'll find
+                              {hackathon.kit.apiKeys ? ' them' : ' it'} in your team's section on this tab.
+                            </p>
+                          ) : (
+                            <p className="text-sm text-muted-foreground">
+                              Create or join a team to get the hackathon kit
+                              {hackathon.kit.apiKeys ? " and your team's API key. You'll find them" : ". You'll find it"} in
+                              your team's section on this tab.
+                              {/* With solo entries on, the box below says this instead. */}
+                              {!hackathon.teamConfig?.allowIndividuals && ' Building solo? Create a team of one.'}
+                            </p>
+                          )}
                         </div>
                       )}
 
-                      {/* Solo participation is otherwise invisible — spell it out. */}
-                      {hackathon.teamConfig?.allowIndividuals && (
+                      {/* Solo participation is otherwise invisible — spell it out. In a
+                          solo hackathon with a kit, the box above already covers it. */}
+                      {hackathon.teamConfig?.allowIndividuals && !(solo && hackathon.kit) && (
                         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed p-3">
                           <div className="flex items-start gap-2">
                             <User className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
                             <p className="text-sm text-muted-foreground">
                               {/* The kit comes with a team, so a solo builder who wants it needs a team of one. */}
-                              {hackathon.kit
-                                ? `Prefer to work alone? Create a team of one to get the kit${hackathon.kit.apiKeys ? ' and API key' : ''}.`
-                                : "Prefer to work alone? You don't need a team — head to the Submit tab and enter as an individual."}
+                              {solo
+                                ? "You can also skip the team and enter as an individual from the Submit tab."
+                                : hackathon.kit
+                                  ? `Prefer to work alone? Create a team of one to get the kit${hackathon.kit.apiKeys ? ' and API key' : ''}.`
+                                  : "Prefer to work alone? You don't need a team — head to the Submit tab and enter as an individual."}
                             </p>
                           </div>
                         </div>

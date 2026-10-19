@@ -2066,9 +2066,27 @@ async function updateTeam(hackathonId, teamId, event) {
   }
 
   const body = parseBody(event);
+
+  // Renaming follows the createTeam rule: names are unique within a hackathon,
+  // case-insensitively. Only checked when the name actually changes, so saving
+  // other fields never trips over the team's own name.
+  let name = team.name;
+  if (body.name !== undefined) {
+    name = String(body.name ?? '').trim();
+    if (!name) return createResponse(400, { error: 'Team name is required' });
+
+    if (name !== team.name) {
+      const teams = await fetchTeamsByHackathon(hackathonId);
+      const taken = teams.some(t => (
+        t.id !== teamId && String(t.name || '').toLowerCase() === name.toLowerCase()
+      ));
+      if (taken) return createResponse(409, { error: 'A team with that name already exists' });
+    }
+  }
+
   const updated = await putTeam({
     ...team,
-    name: body.name !== undefined ? String(body.name).trim() || team.name : team.name,
+    name,
     description: body.description !== undefined ? body.description : team.description,
     projectName: body.projectName !== undefined ? body.projectName : team.projectName,
     track: body.track !== undefined ? body.track : team.track,
@@ -2080,7 +2098,32 @@ async function updateTeam(hackathonId, teamId, event) {
       : team.lookingForSkills,
   });
 
+  if (name !== team.name) await syncSubmissionTeamName(hackathonId, teamId, name);
+
   return createResponse(200, { team: updated });
+}
+
+/**
+ * Submissions keep a copy of the team name for the review list, so a rename has
+ * to reach them too or judges see the old name. Never throws: the rename itself
+ * has already been saved and must not be reported as failed.
+ */
+async function syncSubmissionTeamName(hackathonId, teamId, teamName) {
+  try {
+    const submissions = await fetchSubmissionsByHackathon(hackathonId);
+    await Promise.all(submissions
+      .filter(s => s.teamId === teamId)
+      .map(s => docClient.send(new UpdateCommand({
+        TableName: SUBMISSIONS_TABLE,
+        Key: { id: s.id },
+        UpdateExpression: 'SET teamName = :n',
+        // Don't recreate a submission that was withdrawn in the meantime.
+        ConditionExpression: 'attribute_exists(id)',
+        ExpressionAttributeValues: { ':n': teamName },
+      }))));
+  } catch (error) {
+    console.error(`Could not update the team name on submissions for ${teamId}:`, error.message);
+  }
 }
 
 async function deleteTeam(hackathonId, teamId, event) {

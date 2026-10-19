@@ -733,6 +733,15 @@ export function isTeamFull(team: HackathonTeam, config: HackathonTeamConfig): bo
 }
 
 /**
+ * A maximum team size of one makes a solo hackathon: everyone builds on their
+ * own. Each person still has a team of one, because the kit, the API key and
+ * submissions are all issued per team.
+ */
+export function isSoloHackathon(hackathon?: Pick<Hackathon, 'teamConfig'> | null): boolean {
+  return Number(hackathon?.teamConfig?.maxSize) === 1;
+}
+
+/**
  * Deadlines are date-only (YYYY-MM-DD) with no timezone. Building a Date from
  * `${deadline}T23:59:59` parses as local time, which shifts the boundary by the
  * viewer's UTC offset and can disagree with the server. Comparing ISO date

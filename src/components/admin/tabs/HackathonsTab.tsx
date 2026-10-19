@@ -32,7 +32,7 @@ import {
   getHackathonTeams, getHackathonSubmissions, reviewHackathonSubmission,
   addHackathonResource, deleteHackathonResource,
   addHackathonMentor, removeHackathonMentor, removeIndividualMentor,
-  assignTeamMentor, removeTeamMentor,
+  assignTeamMentor, removeTeamMentor, updateTeam,
   DEFAULT_TEAM_CONFIG, TEAM_JOIN_POLICY_LABELS,
   EXPERIENCE_LEVEL_SHORT, EXPERIENCE_LEVEL_STYLES,
   type CreateHackathonData,
@@ -1188,6 +1188,10 @@ function TeamsPanel({ hackathon, teams, allUsers, canManage = true, onChanged }:
             </CollapsibleTrigger>
 
             <CollapsibleContent className="border-t p-3 space-y-4">
+              {canManage && (
+                <TeamRenameField hackathonId={hackathon.id} team={team} onRenamed={onChanged} />
+              )}
+
               <div className="space-y-2">
                 <Label className="text-xs uppercase tracking-wide text-muted-foreground">Members</Label>
                 <div className="space-y-1">
@@ -1286,6 +1290,65 @@ function TeamsPanel({ hackathon, teams, allUsers, canManage = true, onChanged }:
         );
       })}
     </div>
+  );
+}
+
+/**
+ * Organisers can rename any team, for example to tidy the "Team_Name" names a
+ * solo split produces. The API applies the same unique-name rule as creation.
+ */
+function TeamRenameField({ hackathonId, team, onRenamed }: {
+  hackathonId: string;
+  team: HackathonTeam;
+  onRenamed: () => void;
+}) {
+  const [name, setName] = useState(team.name || '');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { setName(team.name || ''); }, [team.name]);
+
+  const next = name.trim();
+  const changed = next !== '' && next !== team.name;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!changed) return;
+
+    setSaving(true);
+    try {
+      await updateTeam(hackathonId, team.id, { name: next });
+      toast.success(`Renamed to ${next}`);
+      onRenamed();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to rename the team');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-2">
+      <Label htmlFor={`team-name-${team.id}`} className="text-xs uppercase tracking-wide text-muted-foreground">
+        Team name
+      </Label>
+      <div className="flex gap-2">
+        <Input
+          id={`team-name-${team.id}`}
+          value={name}
+          onChange={e => setName(e.target.value)}
+          className="h-8 text-sm"
+        />
+        <Button
+          type="submit"
+          size="sm"
+          variant="outline"
+          disabled={saving || !changed}
+          aria-label={`Save the new name for ${team.name}`}
+        >
+          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Save'}
+        </Button>
+      </div>
+    </form>
   );
 }
 

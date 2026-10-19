@@ -2058,6 +2058,11 @@ function HackathonDetailView({ hackathonId }: { hackathonId: string }) {
 
   const inviteToken = searchParams.get('invite');
   const inviteTeamId = searchParams.get('team');
+  // ?tab= opens a tab directly, e.g. ?tab=teams from the homepage API key link.
+  const requestedTab = searchParams.get('tab');
+  const initialTab = requestedTab && ['overview', 'teams', 'resources', 'submit'].includes(requestedTab)
+    ? requestedTab
+    : 'overview';
 
   const load = useCallback(async () => {
     try {
@@ -2328,7 +2333,7 @@ function HackathonDetailView({ hackathonId }: { hackathonId: string }) {
         </Card>
 
         {/* Tabs */}
-        <Tabs defaultValue="overview" className="space-y-6">
+        <Tabs defaultValue={initialTab} className="space-y-6">
           {/* 2x2 on phones: four labelled tabs across a 375px screen clips the
               text, since TabsTrigger is whitespace-nowrap. h-auto because the
               base TabsList is a fixed height and would clip the second row. */}

@@ -1,6 +1,7 @@
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
 import { HeroSection } from '@/components/home/HeroSection';
+import { HackathonBanner } from '@/components/home/HackathonBanner';
 import { Leaderboard } from '@/components/home/Leaderboard';
 import { EventsSection } from '@/components/home/EventsSection';
 import { InitiativesSection } from '@/components/home/InitiativesSection';
@@ -14,6 +15,8 @@ const Index = () => {
       <Header />
       
       <main className="flex-1">
+        {/* Strands Decider hackathon: link to the event page and team API keys */}
+        <HackathonBanner />
         <HeroSection />
         
         <div className="container mx-auto px-4 py-16">

@@ -28,9 +28,9 @@ import { CheckoutDialog } from '@/components/store/CheckoutDialog';
 import { usePrizeClaim } from '@/hooks/usePrizeClaim';
 import {
   BASE_REWARD_BLURB, COMPLETION_AWARD_CREDITS, ENTRY_DEADLINE_IST_LABEL, ENTRY_FORM_URL,
-  CAMPAIGN_ID, LESSONS, LESSON_GATE_PLACES, MAX_CREDITS, PLATFORM_LABEL, PRIZE_PLACES, PRIZE_TIERS,
-  SUBMISSION_REQUIREMENTS, TERMS_URL, detectPlatform,
-  getCampaignLeaderboard, getCampaignStats, getMyCampaign, joinCampaign,
+  CAMPAIGN_ID, LESSONS, LESSON_GATE_PLACES, MAX_CREDITS, OFFICIAL_WINNERS_URL, PLATFORM_LABEL,
+  PRIZE_PLACES, PRIZE_TIERS, SUBMISSION_REQUIREMENTS, TERMS_URL, detectPlatform,
+  getCampaignLeaderboard, getCampaignStats, getMyCampaign, isOfficialWinner, joinCampaign,
   mintSetupCode, prizeItemInSentence, prizeTierById, prizeTierForPlace, requirementStatus,
   rotateKironomicsKey, setLessons, setupCommand, socialPostTemplate, timeLeftToDeadline,
   type CampaignPrize, type Lesson, type LessonState, type Platform, type RepoStats, type RequirementStatus,
@@ -115,6 +115,39 @@ function LessonsCell({ done, bonus }: { done?: number; bonus?: number }) {
         {bonus ? <span className="ml-1 text-xs font-medium text-primary">+{bonus}</span> : null}
       </span>
       <span className="sr-only">{label}</span>
+    </span>
+  );
+}
+
+/**
+ * Marks a builder who is on Kiro's official winners list, after their name.
+ * Phones have no room for it beside the name, so there only screen readers get
+ * the words, and the cap on the avatar (OfficialWinnerCap) shows it instead.
+ */
+function OfficialWinnerTag() {
+  return (
+    <>
+      <Badge
+        variant="outline"
+        title="On Kiro's official University Challenge winners list"
+        className="hidden sm:inline-flex shrink-0 gap-1 whitespace-nowrap border-amber-500/50 bg-amber-500/10 px-2 text-amber-800 dark:text-amber-300"
+      >
+        <GraduationCap className="h-3 w-3" aria-hidden="true" />
+        Official winner
+      </Badge>
+      <span className="sr-only sm:hidden">Official winner</span>
+    </>
+  );
+}
+
+/** The phone version of OfficialWinnerTag: a cap on the avatar, explained by the note above the board. */
+function OfficialWinnerCap() {
+  return (
+    <span
+      aria-hidden="true"
+      className="sm:hidden absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full border border-amber-500/60 bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+    >
+      <GraduationCap className="h-2.5 w-2.5" />
     </span>
   );
 }
@@ -992,6 +1025,7 @@ export default function KiroUniversity() {
   const scrollToAction = () =>
     actionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   const myRank = leaderboard.find((row) => row.userId === user?.id)?.rank ?? null;
+  const officialWinnersOnBoard = leaderboard.filter((row) => isOfficialWinner(row.userId)).length;
   const challengeOver = timeLeftToDeadline().passed;
 
   const handleJoin = async () => {
@@ -1347,6 +1381,29 @@ export default function KiroUniversity() {
                 : 'Updated every 6 hours.'}
             </p>
 
+            {officialWinnersOnBoard > 0 && (
+              <p className="flex items-start gap-2 text-sm text-muted-foreground max-w-2xl">
+                <GraduationCap className="h-4 w-4 mt-0.5 shrink-0 text-amber-800 dark:text-amber-300" aria-hidden="true" />
+                <span>
+                  <span className="font-medium text-foreground">Official winner</span> marks the{' '}
+                  {officialWinnersOnBoard}{' '}
+                  {officialWinnersOnBoard === 1 ? 'builder here who is' : 'builders here who are'} on
+                  Kiro&apos;s{' '}
+                  <a
+                    href={OFFICIAL_WINNERS_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                  >
+                    official University Challenge winners list
+                    <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                    <span className="sr-only"> (opens in a new tab)</span>
+                  </a>
+                  .
+                </span>
+              </p>
+            )}
+
             {/* Without this, a board of 13 under a hero reading "38 builders
                 joined" looks broken. Only people with a linked repo can be
                 ranked — there is nothing to measure otherwise — so say so
@@ -1395,11 +1452,15 @@ export default function KiroUniversity() {
                         {row.rank <= 3 ? ['🥇', '🥈', '🥉'][row.rank - 1] : `#${row.rank}`}
                       </span>
                       <span className="flex items-center gap-2 min-w-0">
-                        <Avatar className="h-7 w-7 shrink-0">
-                          <AvatarImage src={row.avatar} alt="" />
-                          <AvatarFallback>{row.displayName.charAt(0)}</AvatarFallback>
-                        </Avatar>
+                        <span className="relative shrink-0">
+                          <Avatar className="h-7 w-7">
+                            <AvatarImage src={row.avatar} alt="" />
+                            <AvatarFallback>{row.displayName.charAt(0)}</AvatarFallback>
+                          </Avatar>
+                          {isOfficialWinner(row.userId) && <OfficialWinnerCap />}
+                        </span>
                         <span className="truncate font-medium">{row.displayName}</span>
+                        {isOfficialWinner(row.userId) && <OfficialWinnerTag />}
                         {row.validated && (
                           <Badge variant="secondary" className="shrink-0 text-xs">validated</Badge>
                         )}

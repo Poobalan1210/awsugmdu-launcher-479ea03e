@@ -411,6 +411,53 @@ export interface ClaimPrizeResult {
   confirmationEmailed?: boolean;
 }
 
+// ── Kiro's official winners ───────────────────────────────────────
+
+/** Kiro's list of everyone who completed a scored submission. */
+export const OFFICIAL_WINNERS_URL = 'https://kiro.dev/2026/university/winners/';
+
+/**
+ * Builders on our leaderboard who are on Kiro's official winners list, by
+ * userId, with the name as Kiro lists it. Kiro publishes names only, so these
+ * were matched against the leaderboard by hand on 20 Oct 2026: names that match
+ * exactly, ignoring case, spacing and word order, plus near matches an
+ * organiser confirmed are the same person, noted with the name on our board.
+ */
+export const OFFICIAL_WINNERS: Readonly<Record<string, string>> = {
+  'b448e4d8-2001-70e9-1161-b31be06d952e': 'Adlin Sweety JK', // confirmed: "Adlin Sweety" on our board
+  'b4f814a8-4081-70f2-a674-5f537db69938': 'Ajaykumar K V',
+  '84083408-9031-704b-6d32-2d3108e994bd': 'Asma B',
+  'f4182428-3011-70bf-579a-39fffa365616': 'Bhuvaneshwari G',
+  '5438a458-5091-7061-312f-62b355189636': 'Dineshraj Dhanapathy',
+  '44687468-e0e1-70c3-05a3-521732b23a7c': 'Gayathri S E',
+  'b438b468-8041-7036-3659-db9db22bda68': 'Jagankumar M',
+  '84a85438-a0c1-7033-9c67-1f2be8bda350': 'Kaniskasri T S P',
+  'f448a4c8-9001-70e9-3d59-e44d3d2b6e69': 'Karthikeyan M A',
+  '94a804b8-4011-70a2-c49f-fe0e73a425fc': 'P G Ayush Rai AIML',
+  '1498e488-d0a1-7023-29d5-0b03a24f8dc5': 'Prakash J',
+  '6468f4d8-1061-707e-681d-8c9b93512120': 'Praveen Raj Thulasi S',
+  '74081438-2031-705a-b374-5cb073070fba': 'Ragull SS', // confirmed: "Ragul S S" on our board
+  'f498c428-a061-7064-05f2-0968d394d42c': 'Rajkumar KK',
+  'f4a804d8-3091-70db-3b52-abe327c33f33': 'Saranya Palanisamy', // confirmed: "SARANYA P" on our board
+  '342834d8-d021-7013-e6a1-acacbfed8dca': 'Selva Meenakshi K',
+  '6438d4d8-80d1-708f-a113-091e3bae68e0': 'Sharmila M',
+  'f4c80428-6081-70f1-64db-dd28af0e0006': 'Shashank S',
+  'f4b85458-b0d1-70b5-8500-1efcf62fa758': 'Sivanivetha S',
+  'c4a8d418-9041-7092-6464-adc4a5bbad8c': 'Sri Ganth K',
+  '44d82428-0061-7002-9a73-e25c348cd4f7': 'Subiksha V S',
+  'f4087408-70d1-7039-75e6-f03f454e78ae': 'Sujith J',
+  '64c834c8-30b1-705e-a1e6-f7d1be98a7dc': 'Sundara Saraswathi Abinaya V',
+  'c40894a8-e031-70a9-cdb1-9688d2e24327': 'Thamaraikannan G',
+  'c478e4c8-a021-7025-fdd8-7439c16e0968': 'Vaishnavi P',
+  '44a8e458-50f1-7045-a07b-a2fe046ab1aa': 'Vishnu Priya Rajkumar',
+};
+
+const OFFICIAL_WINNER_IDS = new Set(Object.keys(OFFICIAL_WINNERS));
+
+export function isOfficialWinner(userId: string | null | undefined): boolean {
+  return !!userId && OFFICIAL_WINNER_IDS.has(userId);
+}
+
 // ── Types ─────────────────────────────────────────────────────────
 
 export type ParticipationStatus = 'joined' | 'building' | 'submitted' | 'validated';

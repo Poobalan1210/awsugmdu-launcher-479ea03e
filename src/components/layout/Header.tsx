@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Menu, X, User, LogOut, Shield, Activity, Rocket, GraduationCap, Cloud, Users, Sparkles, CalendarDays, Ghost, Trophy } from 'lucide-react';
+import { Menu, X, User, LogOut, Shield, Activity, Rocket, GraduationCap, Cloud, Users, Sparkles, CalendarDays, Ghost, Trophy, University } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import {
@@ -54,6 +54,7 @@ const programItems = [
   { name: 'Cloud Clubs', path: '/cloud-clubs', description: 'College cloud communities', icon: Cloud },
   { name: 'Circles', path: '/circles', description: 'Focused peer learning groups', icon: Users },
   { name: 'Community Spotlight', path: '/community-spotlight', description: 'Celebrating member achievements', icon: Sparkles },
+  { name: 'Kiro University', path: '/kiro', description: "Our build-along for Kiro's University Challenge", icon: University },
   { name: 'Kironomics', path: '/kironomics', description: 'The Kiro usage leaderboard — compete & win swag', icon: Ghost },
   { name: 'AWS Events', path: '/aws-events', description: 'Official AWS events and conferences', icon: CalendarDays },
 ];

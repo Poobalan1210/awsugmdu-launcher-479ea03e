@@ -690,12 +690,14 @@ async function submitWork(id, event) {
     return createResponse(400, { error: 'Missing required fields: userId, userName' });
   }
   
-  // Validate AWS Builder Center blog URL if provided
+  // Validate the blog URL is hosted on AWS Builder Center if provided.
+  // Any path is accepted (/content/..., /project/..., etc.) — only the host is
+  // enforced, plus a non-empty path so the bare homepage isn't accepted.
   if (blogUrl) {
-    const builderUrlPattern = /^https:\/\/builder\.aws\.com\/content\/[a-zA-Z0-9]+\/.+$/;
+    const builderUrlPattern = /^https:\/\/builder\.aws\.com\/.+$/;
     if (!builderUrlPattern.test(blogUrl)) {
       return createResponse(400, { 
-        error: 'Invalid blog URL. Please provide a valid AWS Builder Center URL (e.g., https://builder.aws.com/content/...)' 
+        error: 'Invalid blog URL. Please provide a valid AWS Builder Center URL (e.g., https://builder.aws.com/...)' 
       });
     }
   }

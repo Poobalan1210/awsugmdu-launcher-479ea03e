@@ -2058,7 +2058,7 @@ function HackathonDetailView({ hackathonId }: { hackathonId: string }) {
 
   const inviteToken = searchParams.get('invite');
   const inviteTeamId = searchParams.get('team');
-  // ?tab= opens a tab directly, e.g. ?tab=teams from the homepage API key link.
+  // ?tab= opens a tab directly, e.g. ?tab=teams or ?tab=submit from email links.
   const requestedTab = searchParams.get('tab');
   const initialTab = requestedTab && ['overview', 'teams', 'resources', 'submit'].includes(requestedTab)
     ? requestedTab

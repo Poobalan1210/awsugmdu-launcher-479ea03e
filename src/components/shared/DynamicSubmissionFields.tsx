@@ -82,15 +82,19 @@ export function DynamicSubmissionFields({
       {fields.map(field => {
         const id = domId(field.id);
         const value = values[field.id];
+        const requiredMarker = field.required
+          ? <span className="text-destructive ml-1">*</span>
+          : <span className="text-muted-foreground text-xs ml-1">(Optional)</span>;
 
         return (
           <div key={field.id} className="space-y-3">
-            <Label htmlFor={id}>
-              {field.label}
-              {field.required
-                ? <span className="text-destructive ml-1">*</span>
-                : <span className="text-muted-foreground text-xs ml-1">(Optional)</span>}
-            </Label>
+            {/* A checkbox carries its label beside the box; a heading too would repeat it. */}
+            {field.type !== 'checkbox' && (
+              <Label htmlFor={id}>
+                {field.label}
+                {requiredMarker}
+              </Label>
+            )}
 
             {field.type === 'text' && (
               <Input
@@ -150,17 +154,18 @@ export function DynamicSubmissionFields({
             )}
 
             {field.type === 'checkbox' && (
-              <div className="flex items-center space-x-2">
+              <div className="flex items-start gap-2">
                 <input
                   type="checkbox"
                   id={id}
-                  className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                  className="h-4 w-4 mt-0.5 shrink-0 rounded border-gray-300 text-primary focus:ring-primary"
                   checked={!!value}
                   onChange={e => setValue(field.id, e.target.checked)}
                   disabled={disabled}
                 />
-                <Label htmlFor={id} className="font-normal cursor-pointer">
-                  {field.placeholder || field.label}
+                <Label htmlFor={id} className="font-normal leading-5 cursor-pointer">
+                  {field.label}
+                  {requiredMarker}
                 </Label>
               </div>
             )}

@@ -1,0 +1,11 @@
+{
+  "name": "builder-center-crud",
+  "version": "1.0.0",
+  "description": "Lambda for the Builder Center backfill: suggested articles members claim onto their profile, and the admin points settings and import",
+  "main": "index.js",
+  "type": "commonjs",
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.621.0",
+    "@aws-sdk/lib-dynamodb": "^3.621.0"
+  }
+}

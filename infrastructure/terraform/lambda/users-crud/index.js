@@ -15,6 +15,7 @@ const MEETUPS_TABLE = process.env.MEETUPS_TABLE_NAME || 'awsug-meetups';
 const SPRINTS_TABLE = process.env.SPRINTS_TABLE_NAME || 'awsug-sprints';
 const DISCUSSIONS_TABLE = process.env.DISCUSSIONS_TABLE_NAME || 'awsug-discussions';
 const ORDERS_TABLE = process.env.ORDERS_TABLE_NAME || 'awsug-orders';
+const BUILDER_CONTENT_TABLE = process.env.BUILDER_CONTENT_TABLE_NAME || '';
 const USER_POOL_ID = process.env.COGNITO_USER_POOL_ID;
 const PROFILE_PHOTOS_BUCKET = process.env.PROFILE_PHOTOS_BUCKET;
 const MEETUP_POSTERS_BUCKET = process.env.MEETUP_POSTERS_BUCKET;
@@ -499,6 +500,9 @@ async function deleteUser(userId) {
     
     // 6. Clean up Discussions
     await cleanupDiscussions(userId);
+
+    // 6b. Clean up Builder Center suggestions and claims
+    await cleanupBuilderContent(userId);
     
     // 7. Clean up S3 assets (Avatar)
     if (userProfile?.avatar) {
@@ -650,6 +654,62 @@ async function cleanupTableEntries(tableName, userId, arrayFields) {
     }
   } catch (error) {
     console.error(`Error cleaning up ${tableName}:`, error);
+    // Don't fail the whole process if one table cleanup fails
+  }
+}
+
+/** Delete one of the Builder Center table's locks if this member holds it. */
+async function releaseBuilderLock(partition, itemKey, userId) {
+  try {
+    await docClient.send(new DeleteCommand({
+      TableName: BUILDER_CONTENT_TABLE,
+      Key: { userId: partition, itemKey },
+      ConditionExpression: 'ownerUserId = :u',
+      ExpressionAttributeValues: { ':u': userId },
+    }));
+  } catch (lockError) {
+    if (lockError.name !== 'ConditionalCheckFailedException') throw lockError;
+  }
+}
+
+/**
+ * Remove the member's Builder Center items, and the locks they hold: claim
+ * locks, so another account matched to the same author can claim those
+ * articles, and the lock on a Builder Center account they linked.
+ */
+async function cleanupBuilderContent(userId) {
+  // Partitions starting with "__" hold the table's settings, locks and sync state.
+  if (!BUILDER_CONTENT_TABLE || String(userId).startsWith('__')) return;
+  try {
+    const items = [];
+    let ExclusiveStartKey;
+    do {
+      const page = await docClient.send(new QueryCommand({
+        TableName: BUILDER_CONTENT_TABLE,
+        KeyConditionExpression: 'userId = :u',
+        ExpressionAttributeValues: { ':u': userId },
+        ExclusiveStartKey,
+      }));
+      items.push(...(page.Items || []));
+      ExclusiveStartKey = page.LastEvaluatedKey;
+    } while (ExclusiveStartKey);
+
+    for (const item of items) {
+      const key = String(item.itemKey || '');
+      if (key.startsWith('article#') && item.status === 'claimed') {
+        await releaseBuilderLock('__claimed__', key, userId);
+      }
+      if (key.startsWith('link#') && item.status === 'verified' && item.alias) {
+        await releaseBuilderLock('__aliases__', item.alias, userId);
+      }
+      await docClient.send(new DeleteCommand({
+        TableName: BUILDER_CONTENT_TABLE,
+        Key: { userId, itemKey: item.itemKey },
+      }));
+    }
+    console.log(`Deleted ${items.length} Builder Center items for user ${userId}`);
+  } catch (error) {
+    console.error('Error cleaning up Builder Center items:', error);
     // Don't fail the whole process if one table cleanup fails
   }
 }

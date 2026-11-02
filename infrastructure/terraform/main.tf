@@ -625,10 +625,12 @@ resource "aws_lambda_function" "users_crud" {
       SPRINTS_TABLE_NAME     = aws_dynamodb_table.sprints.name
       DISCUSSIONS_TABLE_NAME = aws_dynamodb_table.discussions.name
       ORDERS_TABLE_NAME      = aws_dynamodb_table.orders.name
-      COGNITO_USER_POOL_ID   = aws_cognito_user_pool.user_pool.id
-      PROFILE_PHOTOS_BUCKET  = aws_s3_bucket.profile_photos.id
-      MEETUP_POSTERS_BUCKET  = aws_s3_bucket.meetup_posters.id
-      ADMIN_EMAILS           = var.admin_emails
+      # Account deletion removes the member's Builder Center items and claim locks.
+      BUILDER_CONTENT_TABLE_NAME = aws_dynamodb_table.builder_content.name
+      COGNITO_USER_POOL_ID       = aws_cognito_user_pool.user_pool.id
+      PROFILE_PHOTOS_BUCKET      = aws_s3_bucket.profile_photos.id
+      MEETUP_POSTERS_BUCKET      = aws_s3_bucket.meetup_posters.id
+      ADMIN_EMAILS               = var.admin_emails
     }
   }
 
@@ -2320,6 +2322,10 @@ resource "aws_api_gateway_deployment" "api" {
       aws_api_gateway_integration.hackathons_any_lambda.id,
       aws_api_gateway_integration.hackathons_proxy_any_lambda.id,
       aws_lambda_function.hackathons_crud.source_code_hash,
+      # Builder Center backfill (claimable articles) behind a greedy proxy
+      aws_api_gateway_integration.builder_center_any_lambda.id,
+      aws_api_gateway_integration.builder_center_proxy_any_lambda.id,
+      aws_lambda_function.builder_center_crud.source_code_hash,
     ]))
   }
 
@@ -2544,6 +2550,9 @@ resource "aws_api_gateway_deployment" "api" {
     # Hackathons
     aws_api_gateway_integration.hackathons_any_lambda,
     aws_api_gateway_integration.hackathons_proxy_any_lambda,
+    # Builder Center backfill
+    aws_api_gateway_integration.builder_center_any_lambda,
+    aws_api_gateway_integration.builder_center_proxy_any_lambda,
   ]
 
   rest_api_id = aws_api_gateway_rest_api.api.id

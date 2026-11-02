@@ -1,7 +1,10 @@
 import { callApi } from './api';
 
-/** 'coupon' is written only by redeeming a prize coupon, never by an admin award. */
-export type PointActivityType = 'adhoc' | 'submission' | 'badge' | 'event' | 'coupon';
+/**
+ * 'coupon' is written only by redeeming a prize coupon, and 'builder_center'
+ * only by claiming Builder Center articles, never by an admin award.
+ */
+export type PointActivityType = 'adhoc' | 'submission' | 'badge' | 'event' | 'coupon' | 'builder_center';
 
 export interface PointActivity {
   id: string;
@@ -17,7 +20,7 @@ export interface AwardPointsData {
   userId: string;
   points: number;
   reason: string;
-  type: Exclude<PointActivityType, 'coupon'>;
+  type: Exclude<PointActivityType, 'coupon' | 'builder_center'>;
   awardedBy: string;
 }
 

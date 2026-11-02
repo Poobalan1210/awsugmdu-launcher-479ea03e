@@ -13,7 +13,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import {
   Trophy, Calendar, Target, FileText, Medal, Zap,
   Linkedin, Github, Twitter, ExternalLink, Building, User,
-  Mic, BookOpen, CheckCircle, Clock, Award, Shield, ShoppingBag, Loader2, Package, Users, AlertCircle, Pencil
+  Mic, BookOpen, CheckCircle, Clock, Award, Shield, ShoppingBag, Loader2, Package, Users, AlertCircle, Pencil,
+  FolderGit2
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -26,7 +27,7 @@ import { getUserRoles } from '@/lib/userRoles';
 import { format, parseISO } from 'date-fns';
 import { getOrders, SHIPPING_WINDOW, type Order, type RedeemRequest } from '@/lib/store';
 import { getMeetups } from '@/lib/meetups';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { PrizeCouponCard } from '@/components/profile/PrizeCouponCard';
 import { CheckoutDialog } from '@/components/store/CheckoutDialog';
 import { usePrizeClaim } from '@/hooks/usePrizeClaim';
@@ -39,6 +40,15 @@ import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { Trash2 } from 'lucide-react';
 import { EditProfileDialog } from '@/components/profile/EditProfileDialog';
+import { ContentHistory } from '@/components/profile/ContentHistory';
+import { BuilderCenterActions } from '@/components/profile/BuilderCenterActions';
+import { BuilderCenterClaimCard } from '@/components/profile/BuilderCenterClaimCard';
+import { BuilderCenterClaimDialog } from '@/components/profile/BuilderCenterClaimDialog';
+import { BuilderCenterLinkDialog } from '@/components/profile/BuilderCenterLinkDialog';
+import {
+  buildContentHistory, getMemberBuilderArticles, getMyBuilderContent, remainingClaimPoints,
+} from '@/lib/builderCenter';
+import { getSpotlightSubmissions } from '@/lib/spotlight';
 
 export default function Profile() {
   const { slug } = useParams();
@@ -47,7 +57,10 @@ export default function Profile() {
   const [loading, setLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const { user: authUser, isLoading: authLoading, deleteAccount } = useAuth();
+  const { user: authUser, isLoading: authLoading, deleteAccount, refreshUser } = useAuth();
+  const queryClient = useQueryClient();
+  const [showBuilderDialog, setShowBuilderDialog] = useState(false);
+  const [showBuilderLinkDialog, setShowBuilderLinkDialog] = useState(false);
   // The signed-in member's Kiro University prize coupon, if they won one.
   const prizeClaim = usePrizeClaim();
   // Bumped after a prize is claimed, so the activity history refetches.
@@ -235,6 +248,30 @@ export default function Profile() {
   const user = profileUser;
   const isOwnProfile = !slug || (authUser && profileUser && profileUser.id === authUser.id);
 
+  // Builder Center articles this member claimed. Public, on every profile.
+  const { data: claimedArticles = [], isLoading: loadingClaimedArticles } = useQuery({
+    queryKey: ['builder-articles', profileUser?.id],
+    queryFn: () => getMemberBuilderArticles(profileUser!.id),
+    enabled: Boolean(profileUser?.id),
+    retry: 1,
+  });
+
+  // Their Community Spotlight entries, for the approved blogs among them.
+  const { data: profileSpotlight = [], isLoading: loadingProfileSpotlight } = useQuery({
+    queryKey: ['spotlight-user', profileUser?.id],
+    queryFn: () => getSpotlightSubmissions(undefined, profileUser!.id),
+    enabled: Boolean(profileUser?.id),
+    retry: 1,
+  });
+
+  // The signed-in member's own suggestions to claim.
+  const { data: myBuilderContent } = useQuery({
+    queryKey: ['builder-me', authUser?.id],
+    queryFn: getMyBuilderContent,
+    enabled: Boolean(isOwnProfile && authUser),
+    retry: 1,
+  });
+
   const handleMeetupVerification = async () => {
     if (!meetupUrl.trim() || !user) {
       setMeetupError('Please provide your Meetup profile URL.');
@@ -347,11 +384,62 @@ export default function Profile() {
     return communityRoles.find(r => r.value === role);
   };
 
+  // Claimed Builder Center articles, sprint blogs and repos, and approved
+  // Spotlight blogs and projects, each once.
+  const contentHistory = buildContentHistory({
+    claimed: claimedArticles,
+    sprintSubmissions: userSubmissions,
+    sprintTitle: (sprintId) => {
+      const title = sprints.find(s => s.id === sprintId)?.title;
+      return typeof title === 'string' ? title : undefined;
+    },
+    spotlight: profileSpotlight,
+  });
+
+  const builderClaimsOpen = Boolean(isOwnProfile && myBuilderContent?.settings.claimsOpen);
+  const builderSuggestedCount = myBuilderContent?.articles.filter(a => a.status === 'suggested').length ?? 0;
+  const builderReviewableCount = myBuilderContent?.articles
+    .filter(a => a.status === 'suggested' || a.status === 'dismissed').length ?? 0;
+  const builderLinked = Boolean(myBuilderContent?.links.some(l => l.status === 'verified'));
+  const historyLoading = loadingClaimedArticles || loadingProfileSpotlight || loadingSprints;
+
+  // After claiming or linking: new totals now, then refetch.
+  const handleBuilderAdded = (result: { pointsAdded: number; points: number | null; redeemablePoints: number | null }) => {
+    if (result.points !== null) {
+      setProfileUser((prev) => prev ? {
+        ...prev,
+        points: result.points ?? prev.points,
+        redeemablePoints: result.redeemablePoints ?? prev.redeemablePoints,
+      } : prev);
+    }
+    queryClient.invalidateQueries({ queryKey: ['builder-me'] });
+    queryClient.invalidateQueries({ queryKey: ['builder-articles'] });
+    if (result.pointsAdded > 0) {
+      setPointActivitiesVersion((v) => v + 1);
+      queryClient.invalidateQueries({ queryKey: ['all-users'] });
+      // The header reads the points from the signed-in user.
+      refreshUser();
+    }
+  };
+
+  const refreshBuilder = () => queryClient.invalidateQueries({ queryKey: ['builder-me'] });
+
+  const builderActions = builderClaimsOpen && myBuilderContent ? (
+    <BuilderCenterActions
+      content={myBuilderContent}
+      reviewableCount={builderReviewableCount}
+      onReview={() => setShowBuilderDialog(true)}
+      onLink={() => setShowBuilderLinkDialog(true)}
+      onChanged={refreshBuilder}
+    />
+  ) : null;
+
   const activitySummary = {
     sprintsCompleted: userSprintsParticipated.filter(s => s.status === 'completed').length,
     totalPoints: user.points,
     submissions: userSubmissions.length,
-    blogsWritten: userSubmissions.filter(s => s.blogUrl).length,
+    blogsWritten: contentHistory.blogs.length,
+    projects: contentHistory.projects.length,
     eventsAttended: (user.activities?.filter(a => a.type === 'meetup_attended' || a.type === 'meetup_organized').length || 0) + userSprintsParticipated.length,
   };
 
@@ -842,6 +930,43 @@ export default function Profile() {
           </motion.div>
         )}
 
+        {/* Until every suggestion is claimed or marked not mine. */}
+        {builderClaimsOpen && builderSuggestedCount > 0 && myBuilderContent && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.25 }}
+            className="mb-8"
+          >
+            <BuilderCenterClaimCard
+              suggestedCount={builderSuggestedCount}
+              potentialPoints={remainingClaimPoints(myBuilderContent)}
+              linked={builderLinked}
+              onReview={() => setShowBuilderDialog(true)}
+              onLink={() => setShowBuilderLinkDialog(true)}
+            />
+          </motion.div>
+        )}
+
+        {builderClaimsOpen && myBuilderContent && (
+          <>
+            <BuilderCenterClaimDialog
+              open={showBuilderDialog}
+              onOpenChange={setShowBuilderDialog}
+              content={myBuilderContent}
+              onClaimed={handleBuilderAdded}
+              onChanged={refreshBuilder}
+              onLink={() => { setShowBuilderDialog(false); setShowBuilderLinkDialog(true); }}
+            />
+            <BuilderCenterLinkDialog
+              open={showBuilderLinkDialog}
+              onOpenChange={(open) => { setShowBuilderLinkDialog(open); if (!open) refreshBuilder(); }}
+              content={myBuilderContent}
+              onLinked={handleBuilderAdded}
+            />
+          </>
+        )}
+
         {/* Stays mounted after the claim, so the dialog can close normally. */}
         {isOwnProfile && prizeClaim.prize && (
           <CheckoutDialog
@@ -855,10 +980,12 @@ export default function Profile() {
         )}
 
         <Tabs defaultValue="badges" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3 max-w-md">
-            <TabsTrigger value="badges">Badges</TabsTrigger>
-            <TabsTrigger value="activity">Activity</TabsTrigger>
-            <TabsTrigger value="submissions">Submissions</TabsTrigger>
+          <TabsList className="grid w-full grid-cols-5 max-w-2xl">
+            <TabsTrigger value="badges" className="px-1 text-xs sm:text-sm">Badges</TabsTrigger>
+            <TabsTrigger value="activity" className="px-1 text-xs sm:text-sm">Activity</TabsTrigger>
+            <TabsTrigger value="blogs" className="px-1 text-xs sm:text-sm">Blogs</TabsTrigger>
+            <TabsTrigger value="projects" className="px-1 text-xs sm:text-sm">Projects</TabsTrigger>
+            <TabsTrigger value="submissions" className="px-1 text-xs sm:text-sm">Submissions</TabsTrigger>
           </TabsList>
 
           {/* Badges Tab */}
@@ -959,10 +1086,14 @@ export default function Profile() {
                         <div className="text-sm text-muted-foreground">Blogs Written</div>
                       </div>
                       <div className="p-4 rounded-lg bg-muted/50 text-center">
+                        <div className="text-2xl font-bold text-primary">{activitySummary.projects}</div>
+                        <div className="text-sm text-muted-foreground">Projects</div>
+                      </div>
+                      <div className="p-4 rounded-lg bg-muted/50 text-center">
                         <div className="text-2xl font-bold text-primary">{activitySummary.eventsAttended}</div>
                         <div className="text-sm text-muted-foreground">Events Attended</div>
                       </div>
-                      <div className="p-4 rounded-lg bg-muted/50 text-center">
+                      <div className="col-span-2 p-4 rounded-lg bg-muted/50 text-center">
                         <div className="text-2xl font-bold text-primary">{user.badges.length}</div>
                         <div className="text-sm text-muted-foreground">Badges</div>
                       </div>
@@ -1210,6 +1341,78 @@ export default function Profile() {
                       )}
                     </div>
                   )}
+                </CardContent>
+              </Card>
+            </motion.div>
+          </TabsContent>
+
+          {/* Blogs Tab */}
+          <TabsContent value="blogs">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.3 }}
+            >
+              <Card className="glass-card">
+                <CardHeader>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <BookOpen className="h-5 w-5 text-primary" />
+                        {isOwnProfile ? 'Your Blogs' : `${user.name.split(' ')[0]}'s Blogs`}
+                      </CardTitle>
+                      <CardDescription>
+                        Blogs on AWS Builder Center, and blogs submitted to Skill Sprints and the Community Spotlight
+                      </CardDescription>
+                    </div>
+                    {builderActions}
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <ContentHistory
+                    entries={contentHistory.blogs}
+                    loading={historyLoading}
+                    emptyIcon={<BookOpen className="h-12 w-12" />}
+                    emptyText={isOwnProfile
+                      ? 'No blogs yet. Submit a blog to a Skill Sprint or the Community Spotlight.'
+                      : 'No blogs yet.'}
+                  />
+                </CardContent>
+              </Card>
+            </motion.div>
+          </TabsContent>
+
+          {/* Projects Tab */}
+          <TabsContent value="projects">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.3 }}
+            >
+              <Card className="glass-card">
+                <CardHeader>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <FolderGit2 className="h-5 w-5 text-primary" />
+                        {isOwnProfile ? 'Your Projects' : `${user.name.split(' ')[0]}'s Projects`}
+                      </CardTitle>
+                      <CardDescription>
+                        Projects on AWS Builder Center, repos submitted to Skill Sprints, and Community Spotlight projects
+                      </CardDescription>
+                    </div>
+                    {builderActions}
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <ContentHistory
+                    entries={contentHistory.projects}
+                    loading={historyLoading}
+                    emptyIcon={<FolderGit2 className="h-12 w-12" />}
+                    emptyText={isOwnProfile
+                      ? 'No projects yet. Submit a repo to a Skill Sprint or a project to the Community Spotlight.'
+                      : 'No projects yet.'}
+                  />
                 </CardContent>
               </Card>
             </motion.div>

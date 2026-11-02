@@ -25,7 +25,7 @@ export interface PointActivity {
   userId: string;
   points: number;
   reason: string;
-  type: 'adhoc' | 'submission' | 'badge' | 'event' | 'signup' | 'meetup_verification' | 'coupon';
+  type: 'adhoc' | 'submission' | 'badge' | 'event' | 'signup' | 'meetup_verification' | 'coupon' | 'builder_center';
   awardedBy?: string;
   awardedAt: string;
 }

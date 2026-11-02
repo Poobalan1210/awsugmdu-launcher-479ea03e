@@ -66,56 +66,8 @@ import { CloudClubTaskSubmissionsPanel } from '@/components/cloud-clubs/TaskSubm
 import { listMeetupFeedback, updateMeetupFeedbackSettings } from '@/lib/meetupFeedback';
 import type { MeetupFeedback } from '@/data/mockData';
 import { normalizeUrl } from '@/lib/utils';
-
-// Minimal CSV parser supporting quoted fields, escaped quotes ("") and
-// commas/newlines inside quotes. Returns an array of rows (arrays of cells).
-function parseCsv(text: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let field = '';
-  let inQuotes = false;
-
-  // Normalize line endings
-  const input = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-
-  for (let i = 0; i < input.length; i++) {
-    const char = input[i];
-
-    if (inQuotes) {
-      if (char === '"') {
-        if (input[i + 1] === '"') {
-          field += '"';
-          i++; // skip escaped quote
-        } else {
-          inQuotes = false;
-        }
-      } else {
-        field += char;
-      }
-    } else if (char === '"') {
-      inQuotes = true;
-    } else if (char === ',') {
-      row.push(field);
-      field = '';
-    } else if (char === '\n') {
-      row.push(field);
-      rows.push(row);
-      row = [];
-      field = '';
-    } else {
-      field += char;
-    }
-  }
-
-  // Flush trailing field/row
-  if (field.length > 0 || row.length > 0) {
-    row.push(field);
-    rows.push(row);
-  }
-
-  // Drop fully-empty rows
-  return rows.filter(r => r.some(cell => cell.trim().length > 0));
-}
+import { parseCsv } from '@/lib/csv';
+import BuilderCenterTab from '@/components/admin/tabs/BuilderCenterTab';
 
 // Mark Attendance Dialog
 function MarkAttendanceDialog({
@@ -7298,6 +7250,10 @@ export default function Admin() {
                       </Badge>
                     )}
                   </TabsTrigger>
+                  <TabsTrigger value="builder-center" className="gap-2">
+                    <FileText className="h-4 w-4" />
+                    Builder Center
+                  </TabsTrigger>
                   <TabsTrigger value="aws-events" className="gap-2">
                     <Award className="h-4 w-4" />
                     AWS Events
@@ -7334,6 +7290,10 @@ export default function Admin() {
               <>
                 <TabsContent value="kiro-university" className="space-y-6">
                   <KiroUniversityTab />
+                </TabsContent>
+
+                <TabsContent value="builder-center" className="space-y-6">
+                  <BuilderCenterTab />
                 </TabsContent>
 
                 <TabsContent value="meetups">

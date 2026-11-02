@@ -93,6 +93,32 @@ async function fetchProfile(alias) {
   };
 }
 
+/**
+ * One article from its public page, in the feed's shape (so
+ * feedArticleToIndexItem reads it), or null when there is no such article.
+ * Throws when the page cannot be read.
+ */
+async function fetchArticle(contentId) {
+  if (!CONTENT_ID_PATTERN.test(String(contentId || ''))) return null;
+  const r = await fetchWithRetry(`https://builder.aws.com/content/${contentId}`, { accept: 'text/html' });
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error(`Builder Center article page answered ${r.status}`);
+  const html = await r.text();
+  const m = /<script id="__bingo-ssr-query-state__" type="application\/json">([\s\S]*?)<\/script>/.exec(html);
+  if (!m) throw new Error('Builder Center article page has no article data');
+  let state;
+  try {
+    state = JSON.parse(m[1]);
+  } catch {
+    throw new Error('Builder Center article data could not be read');
+  }
+  const queries = state?.article?.queries || [];
+  const q = queries.find((x) => Array.isArray(x.queryKey) && String(x.queryKey[0]).startsWith('article'));
+  const data = q?.state?.data;
+  if (!data || !data.articleId) return null;
+  return { ...data, status: String(data.status || '').toLowerCase() };
+}
+
 /** One page of the public feed: { articles, cursor }. */
 async function fetchFeedPage(cursor) {
   const url = `${FEED_URL}?pageSize=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
@@ -158,6 +184,7 @@ function feedArticleToIndexItem(a) {
 module.exports = {
   normalizeAlias,
   fetchProfile,
+  fetchArticle,
   fetchFeedPage,
   feedArticleToIndexItem,
   guessContentType,

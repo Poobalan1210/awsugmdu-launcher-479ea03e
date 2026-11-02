@@ -260,6 +260,26 @@ export async function verifyBuilderLink(): Promise<LinkVerifyResult> {
   return callApi('/builder-center/me/link/verify', { method: 'POST', body: '{}' });
 }
 
+export interface AddArticleResult {
+  article: OwnBuilderArticle | null;
+  pointsAdded: number;
+  points: number | null;
+  redeemablePoints: number | null;
+}
+
+/**
+ * Add one of a linked account's Builder Center articles by its link, as a blog
+ * or a project, without waiting for the weekly sync.
+ */
+export async function addBuilderArticle(url: string, type: ContentType): Promise<AddArticleResult> {
+  return callApi('/builder-center/me/articles/add', { method: 'POST', body: JSON.stringify({ url, type }) });
+}
+
+/** Whether a link points at a Builder Center article. */
+export function isBuilderArticleUrl(url: string): boolean {
+  return /^https:\/\/builder\.aws\.com\/content\/[A-Za-z0-9]{10,40}(\/\S*)?$/.test(url.trim());
+}
+
 /** Stop adding new articles automatically. Articles already added stay. */
 export async function removeBuilderLink(alias: string): Promise<{ alias: string; removed: boolean }> {
   return callApi('/builder-center/me/link/remove', { method: 'POST', body: JSON.stringify({ alias }) });

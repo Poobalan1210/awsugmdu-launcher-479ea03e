@@ -182,11 +182,14 @@ function SpotlightFormDialog({
   onOpenChange,
   onSuccess,
   submission,
+  initialType,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess: () => void;
   submission?: SpotlightSubmission | null;
+  /** The type a new submission starts as, e.g. from "Add a project" on a profile. */
+  initialType?: SpotlightType;
 }) {
   const { user } = useAuth();
   const isEdit = !!submission;
@@ -207,7 +210,7 @@ function SpotlightFormDialog({
             imageUrl: submission.imageUrl || '',
             tagsRaw: (submission.tags || []).join(', '),
           }
-        : emptyForm
+        : { ...emptyForm, type: initialType || emptyForm.type }
     );
     // Keyed on the submission id on purpose: re-seeding on every identity change
     // would discard in-progress edits.
@@ -761,6 +764,7 @@ export default function CommunitySpotlight() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<SpotlightSubmission | null>(null);
+  const [createType, setCreateType] = useState<SpotlightType | undefined>(undefined);
   const [deleting, setDeleting] = useState<SpotlightSubmission | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
@@ -827,8 +831,24 @@ export default function CommunitySpotlight() {
 
   const openCreate = () => {
     setEditing(null);
+    setCreateType(undefined);
     setFormOpen(true);
   };
+
+  // "Add a project" or "Add a blog" on a profile links here with ?submit=<type>.
+  useEffect(() => {
+    const submit = searchParams.get('submit');
+    if (!submit || !user) return;
+    if (submit === 'project' || submit === 'blog') {
+      setEditing(null);
+      setCreateType(submit);
+      setFormOpen(true);
+    }
+    const next = new URLSearchParams(searchParams);
+    next.delete('submit');
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, user?.id]);
 
   // Opening a second modal in the same frame the detail dialog closes leaves Radix's
   // pointer-events lock on <body>, so hand off after the close animation settles.
@@ -1096,6 +1116,7 @@ export default function CommunitySpotlight() {
         }}
         onSuccess={fetchData}
         submission={editing}
+        initialType={createType}
       />
 
       <AlertDialog open={!!deleting} onOpenChange={(open) => !open && !deleteLoading && setDeleting(null)}>

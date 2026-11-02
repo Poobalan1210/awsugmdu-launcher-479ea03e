@@ -14,7 +14,7 @@ import {
   Trophy, Calendar, Target, FileText, Medal, Zap,
   Linkedin, Github, Twitter, ExternalLink, Building, User,
   Mic, BookOpen, CheckCircle, Clock, Award, Shield, ShoppingBag, Loader2, Package, Users, AlertCircle, Pencil,
-  FolderGit2
+  FolderGit2, Plus
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -45,6 +45,7 @@ import { BuilderCenterActions } from '@/components/profile/BuilderCenterActions'
 import { BuilderCenterClaimCard } from '@/components/profile/BuilderCenterClaimCard';
 import { BuilderCenterClaimDialog } from '@/components/profile/BuilderCenterClaimDialog';
 import { BuilderCenterLinkDialog } from '@/components/profile/BuilderCenterLinkDialog';
+import { AddContentDialog } from '@/components/profile/AddContentDialog';
 import {
   buildContentHistory, getMemberBuilderArticles, getMyBuilderContent, remainingClaimPoints,
 } from '@/lib/builderCenter';
@@ -61,6 +62,8 @@ export default function Profile() {
   const queryClient = useQueryClient();
   const [showBuilderDialog, setShowBuilderDialog] = useState(false);
   const [showBuilderLinkDialog, setShowBuilderLinkDialog] = useState(false);
+  // "Add a blog" or "Add a project" on the member's own tabs.
+  const [addContentType, setAddContentType] = useState<'blog' | 'project' | null>(null);
   // The signed-in member's Kiro University prize coupon, if they won one.
   const prizeClaim = usePrizeClaim();
   // Bumped after a prize is claimed, so the activity history refetches.
@@ -424,14 +427,23 @@ export default function Profile() {
 
   const refreshBuilder = () => queryClient.invalidateQueries({ queryKey: ['builder-me'] });
 
-  const builderActions = builderClaimsOpen && myBuilderContent ? (
-    <BuilderCenterActions
-      content={myBuilderContent}
-      reviewableCount={builderReviewableCount}
-      onReview={() => setShowBuilderDialog(true)}
-      onLink={() => setShowBuilderLinkDialog(true)}
-      onChanged={refreshBuilder}
-    />
+  // The member's own Blogs and Projects tabs: add one, and their Builder Center link.
+  const tabActions = (type: 'blog' | 'project') => isOwnProfile ? (
+    <div className="flex flex-col items-start gap-2 sm:items-end">
+      <Button size="sm" onClick={() => setAddContentType(type)}>
+        <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
+        Add a {type}
+      </Button>
+      {builderClaimsOpen && myBuilderContent && (
+        <BuilderCenterActions
+          content={myBuilderContent}
+          reviewableCount={builderReviewableCount}
+          onReview={() => setShowBuilderDialog(true)}
+          onLink={() => setShowBuilderLinkDialog(true)}
+          onChanged={refreshBuilder}
+        />
+      )}
+    </div>
   ) : null;
 
   const activitySummary = {
@@ -956,7 +968,9 @@ export default function Profile() {
               content={myBuilderContent}
               onClaimed={handleBuilderAdded}
               onChanged={refreshBuilder}
-              onLink={() => { setShowBuilderDialog(false); setShowBuilderLinkDialog(true); }}
+              // Wait for the claim dialog to close: opening one in the same frame
+              // leaves Radix's pointer-events lock on <body>.
+              onLink={() => { setShowBuilderDialog(false); window.setTimeout(() => setShowBuilderLinkDialog(true), 200); }}
             />
             <BuilderCenterLinkDialog
               open={showBuilderLinkDialog}
@@ -965,6 +979,17 @@ export default function Profile() {
               onLinked={handleBuilderAdded}
             />
           </>
+        )}
+
+        {isOwnProfile && (
+          <AddContentDialog
+            open={addContentType !== null}
+            onOpenChange={(open) => { if (!open) setAddContentType(null); }}
+            type={addContentType || 'project'}
+            builder={builderClaimsOpen && myBuilderContent ? myBuilderContent : null}
+            onAdded={handleBuilderAdded}
+            onLink={() => setShowBuilderLinkDialog(true)}
+          />
         )}
 
         {/* Stays mounted after the claim, so the dialog can close normally. */}
@@ -1365,7 +1390,7 @@ export default function Profile() {
                         Blogs on AWS Builder Center, and blogs submitted to Skill Sprints and the Community Spotlight
                       </CardDescription>
                     </div>
-                    {builderActions}
+                    {tabActions('blog')}
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -1401,7 +1426,7 @@ export default function Profile() {
                         Projects on AWS Builder Center, repos submitted to Skill Sprints, and Community Spotlight projects
                       </CardDescription>
                     </div>
-                    {builderActions}
+                    {tabActions('project')}
                   </div>
                 </CardHeader>
                 <CardContent>

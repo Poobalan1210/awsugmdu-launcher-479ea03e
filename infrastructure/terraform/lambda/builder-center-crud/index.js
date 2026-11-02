@@ -14,6 +14,7 @@
  *   POST /builder-center/me/link/start  {alias}       get a bio code for an alias
  *   POST /builder-center/me/link/verify               check the bio, link, add articles
  *   POST /builder-center/me/link/remove {alias}       unlink
+ *   POST /builder-center/me/articles/add {url, type}  add one of a linked account's articles now
  *   GET  /builder-center/users/{userId}/articles      a member's claimed articles (public)
  *   GET  /builder-center/admin/settings               points and the claims switch
  *   PUT  /builder-center/admin/settings
@@ -1126,6 +1127,98 @@ async function removeLink(userId, alias) {
   await docClient.send(new DeleteCommand({ TableName: TABLE, Key: { userId, itemKey: linkKey(alias) } }));
 }
 
+/**
+ * Add one Builder Center article by its link, without waiting for the weekly
+ * sync. Only for members with a linked account, and only articles whose
+ * author is that account: the author is read from the feed index, or from
+ * the article's own page when the sync has not seen it yet.
+ */
+async function handleAddArticle(event) {
+  const claims = await verifyIdToken(authHeader(event));
+  if (!claims) return res(401, { error: 'Sign in again to add your article.' });
+  const userId = claims.sub;
+  const body = parseBody(event);
+  if (!body) return res(400, { error: 'Invalid JSON body.' });
+  const m = BUILDER_URL_PATTERN.exec(String(body.url || '').trim());
+  if (!m) return res(400, { error: 'Paste the link to your article, like https://builder.aws.com/content/...' });
+  const contentId = m[1];
+  const type = TYPES.includes(body.type) ? body.type : null;
+  if (!type) return res(400, { error: 'type must be blog or project.' });
+
+  const settings = await getSettings();
+  if (!settings.claimsOpen) return res(403, { error: 'Adding Builder Center articles is not open right now.' });
+
+  const { articles, links } = splitUserItems(await queryUserItems(userId));
+  const verified = links.filter((l) => l.status === LINK.VERIFIED).map((l) => l.alias);
+  if (!verified.length) {
+    return res(403, { error: 'Link your Builder Center account first, so we can check the article is yours.' });
+  }
+  const existing = articles.find((a) => a.contentId === contentId);
+  if (existing?.status === STATUS.CLAIMED) return res(409, { error: 'That article is already on your profile.' });
+
+  // Who wrote it: the feed index, or the article page itself.
+  let f = null;
+  for (const alias of verified) {
+    const r = await docClient.send(new GetCommand({ TableName: FEED_TABLE, Key: { alias, contentId } }));
+    if (r.Item) { f = r.Item; break; }
+  }
+  if (!f) {
+    let article;
+    try {
+      article = await builder.fetchArticle(contentId);
+    } catch (err) {
+      console.warn('article fetch failed', { contentId, error: err.message });
+      return res(502, { error: 'Builder Center could not be reached. Try again in a minute.' });
+    }
+    const item = article && builder.feedArticleToIndexItem(article);
+    if (!item) return res(404, { error: 'There is no published Builder Center article at that link.' });
+    if (!verified.includes(item.alias)) {
+      return res(403, {
+        error: `That article is by @${item.alias}, not your linked account @${verified.join(', @')}.`,
+      });
+    }
+    f = { ...item, statsAsOf: today(), lastSeenRun: 'manual', updatedAt: nowIso() };
+    await docClient.send(new PutCommand({ TableName: FEED_TABLE, Item: f }));
+  }
+
+  if ((await platformContentIds()).has(contentId)) {
+    return res(409, { error: 'That article is already on the platform, in a Skill Sprint or the Community Spotlight.' });
+  }
+  const user = await getUser(userId);
+  if (!user) return res(404, { error: 'Your profile could not be found. Sign out and back in, then try again.' });
+
+  const c = claimer(userId, user, settings, articles);
+  let result;
+  if (existing) {
+    // A suggestion they hid, or one held back earlier: bring it back to claim it.
+    if (existing.status !== STATUS.SUGGESTED) {
+      await moveStatus(userId, contentId, existing.status, STATUS.SUGGESTED);
+    }
+    result = await c.claim({ contentId, existing: { ...existing, status: STATUS.SUGGESTED }, type });
+  } else {
+    const create = feedToItem(f, { alias: f.alias, source: 'builder-center-manual', matchMethod: 'bio-code' });
+    if (type !== create.contentType) {
+      create.importedType = create.contentType;
+      create.typeSource = 'member';
+    }
+    result = await c.claim({ contentId, create, type });
+  }
+
+  if (result.status !== 'claimed') {
+    const message = result.reason === STATUS.TAKEN
+      ? 'Another account already has this article on its profile. Ask an organiser if that is wrong.'
+      : 'That article could not be added just now. Try again.';
+    return res(409, { error: message, reason: result.reason });
+  }
+  const added = (await docClient.send(new GetCommand({ TableName: TABLE, Key: { userId, itemKey: articleKey(contentId) } }))).Item;
+  console.log('builder center article added', { userId, contentId, type, points: result.points });
+  return res(200, {
+    article: added ? ownArticle(added) : null,
+    pointsAdded: result.points,
+    ...(await pointTotals(userId)),
+  });
+}
+
 async function handleLinkRemove(event) {
   const claims = await verifyIdToken(authHeader(event));
   if (!claims) return res(401, { error: 'Sign in again to continue.' });
@@ -1817,6 +1910,7 @@ exports.handler = async (event, context) => {
       if (method === 'POST' && r[1] === 'link' && r[2] === 'start') return await handleLinkStart(event);
       if (method === 'POST' && r[1] === 'link' && r[2] === 'verify') return await handleLinkVerify(event);
       if (method === 'POST' && r[1] === 'link' && r[2] === 'remove') return await handleLinkRemove(event);
+      if (method === 'POST' && r[1] === 'articles' && r[2] === 'add') return await handleAddArticle(event);
     }
     if (method === 'GET' && r[0] === 'users' && r[1] && r[2] === 'articles' && !r[3]) {
       return await handlePublicArticles(r[1]);

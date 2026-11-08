@@ -41,10 +41,10 @@ export const NOMINATIONS: Nomination[] = [
   },
 ];
 
-// The 41 platform members invited to nominate: every member who holds an active
+// The platform members invited to nominate: every member who holds an active
 // AWS Hero, Community Builder, User Group Leader or Student Builder Group Leader
-// badge on AWS Builder Center (checked live on 2026-11-07), minus the organiser
-// sending the invite. Stored as SHA-256 hashes of their platform user IDs so the
+// badge on AWS Builder Center (checked live on 2026-11-07 and 2026-11-08), minus
+// the organiser sending the invite. DHILIP S E has two accounts; both are listed. Stored as SHA-256 hashes of their platform user IDs so the
 // site bundle does not list whose accounts these are.
 export const INVITED_USER_ID_HASHES: ReadonlySet<string> = new Set([
   '1e7c01e1e91be666be70e662a59c6038852efc42b72641540b3cfb797e1b723c',
@@ -88,4 +88,7 @@ export const INVITED_USER_ID_HASHES: ReadonlySet<string> = new Set([
   'ebca2e484ed89b306c1347e034836b3a707545c78f9581bb99c9c575db97629e',
   '578893478399285c74293b2d08c0d94508c10f81a4602212a332affe965695d7',
   '79dfcba763e9063854b695b3c753d48b251e0a7d189933376f4d52cdaa07f8f9',
+  'e12dbc2e28724098dc5b44e6836825d8a2e4f68867efc6a5bca15353fe8451a2',
+  '6958bdff16cc090d1d8272645667272a084f8401fe83acac84b9ae6d1d885ab4',
+  'eff932e7dd55d2d2f47fd4edfd699d5447bc1f6ed955e7fcb76f750a733988bf',
 ]);

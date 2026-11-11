@@ -100,9 +100,6 @@ export function isValidPinCode(value: string): boolean {
 // Store Items API
 export const getStoreItems = (): Promise<StoreItem[]> => callApi<StoreItem[]>('/store/items');
 
-export const getStoreItem = (id: string): Promise<StoreItem> =>
-  callApi<StoreItem>(`/store/items/${encodeURIComponent(id)}`);
-
 export const createStoreItem = (item: Omit<StoreItem, 'id' | 'createdAt' | 'updatedAt'>): Promise<StoreItem> =>
   callApi<StoreItem>('/store/items', { method: 'POST', body: JSON.stringify(item) });
 
@@ -124,9 +121,6 @@ export const redeemStoreItem = (itemId: string, request: RedeemRequest): Promise
 /** Members get their own orders. Organisers get anyone's, or every order without a userId. */
 export const getOrders = (userId?: string): Promise<Order[]> =>
   callApi<Order[]>(userId ? `/store/orders?userId=${encodeURIComponent(userId)}` : '/store/orders');
-
-export const getOrder = (id: string): Promise<Order> =>
-  callApi<Order>(`/store/orders/${encodeURIComponent(id)}`);
 
 export const updateOrderStatus = (id: string, status: Order['status'], adminNotes?: string): Promise<Order> =>
   callApi<Order>(`/store/orders/${encodeURIComponent(id)}/status`, {

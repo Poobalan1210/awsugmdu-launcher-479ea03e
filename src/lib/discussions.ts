@@ -73,12 +73,6 @@ export async function getDiscussionsBySprint(sprintId: string): Promise<ForumPos
   return response.discussions || [];
 }
 
-// Get single discussion
-export async function getDiscussion(id: string): Promise<ForumPost> {
-  const response = await callApi<DiscussionResponse>(`/discussions/${id}`);
-  return response.discussion;
-}
-
 // Create discussion
 export async function createDiscussion(data: CreateDiscussionData): Promise<ForumPost> {
   const response = await callApi<DiscussionResponse>('/discussions', {

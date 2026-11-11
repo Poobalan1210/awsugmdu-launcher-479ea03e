@@ -7,6 +7,7 @@ const {
   DeleteCommand,
 } = require('@aws-sdk/lib-dynamodb');
 const { randomUUID } = require('crypto');
+const { withVerifiedAuth, callerIsAdmin } = require('./verify-auth');
 
 const client = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(client);
@@ -15,7 +16,6 @@ const TABLE = process.env.ACHIEVEMENTS_TABLE_NAME;
 
 const headers = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Credentials': true,
   'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token',
   'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
 };
@@ -23,8 +23,8 @@ const headers = {
 // Fields the client is allowed to set; everything else (id, timestamps) is server-managed.
 const EDITABLE_FIELDS = ['title', 'imageUrl', 'linkedInUrl'];
 
-exports.handler = async (event) => {
-  console.log('Event:', JSON.stringify(event, null, 2));
+const handleRequest = async (event) => {
+  console.log('Request:', event.httpMethod, event.path || event.resource);
 
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers, body: '' };
@@ -33,6 +33,11 @@ exports.handler = async (event) => {
   try {
     const resource = event.resource;
     const method = event.httpMethod;
+
+    // Reading the wall is public; changing it is organiser-only.
+    if (method !== 'GET' && !(await callerIsAdmin(event))) {
+      return { statusCode: 403, headers, body: JSON.stringify({ message: 'Only organisers can do that.' }) };
+    }
 
     // /achievements
     if (resource === '/achievements') {
@@ -113,3 +118,5 @@ exports.handler = async (event) => {
     };
   }
 };
+
+exports.handler = withVerifiedAuth(handleRequest);

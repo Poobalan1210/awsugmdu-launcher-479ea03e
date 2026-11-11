@@ -10,11 +10,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { RichText } from '@/components/ui/rich-text';
 import { RichTextEditor } from '@/components/ui/rich-text-editor';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { 
-  Award, Users, BookOpen, Calendar, CheckCircle, ArrowRight, 
-  MessageSquare, Send, ThumbsUp, Pin, PinOff, Video, Clock,
-  ChevronDown, Crown, ArrowLeft, Link2, Trash2, Bot, Briefcase
-} from 'lucide-react';
+import { Award, Users, Calendar, ArrowRight, MessageSquare, Send, ThumbsUp, Pin, PinOff, Video, Clock, ChevronDown, Crown, ArrowLeft, Link2, Trash2, Bot, Briefcase } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Circle } from '@/lib/circles';
 import { format, parseISO } from 'date-fns';

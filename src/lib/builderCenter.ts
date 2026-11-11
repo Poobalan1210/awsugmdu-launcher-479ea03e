@@ -298,13 +298,6 @@ export function builderProfileUrl(alias: string): string {
   return `https://builder.aws.com/community/@${encodeURIComponent(alias)}`;
 }
 
-// ── Admin ─────────────────────────────────────────────────────────
-
-export async function getBuilderCenterSettings(): Promise<AdminBuilderCenterSettings> {
-  const r = await callApi<{ settings: AdminBuilderCenterSettings }>('/builder-center/admin/settings');
-  return r.settings;
-}
-
 export async function updateBuilderCenterSettings(settings: BuilderCenterSettings): Promise<AdminBuilderCenterSettings> {
   const r = await callApi<{ settings: AdminBuilderCenterSettings }>('/builder-center/admin/settings', {
     method: 'PUT',

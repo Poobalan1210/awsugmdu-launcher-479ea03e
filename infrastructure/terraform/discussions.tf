@@ -1,8 +1,8 @@
 # DynamoDB Table for Discussions
 resource "aws_dynamodb_table" "discussions" {
-  name           = "${var.project_name}-discussions"
-  billing_mode   = "PAY_PER_REQUEST"
-  hash_key       = "id"
+  name         = "${var.project_name}-discussions"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "id"
 
   attribute {
     name = "id"
@@ -20,9 +20,9 @@ resource "aws_dynamodb_table" "discussions" {
   }
 
   global_secondary_index {
-    name     = "sprintId-index"
-    hash_key = "sprintId"
-    range_key = "createdAt"
+    name            = "sprintId-index"
+    hash_key        = "sprintId"
+    range_key       = "createdAt"
     projection_type = "ALL"
   }
 
@@ -53,14 +53,19 @@ data "archive_file" "discussions_crud" {
 resource "aws_lambda_function" "discussions_crud" {
   filename         = data.archive_file.discussions_crud.output_path
   function_name    = "${var.project_name}-discussions-crud"
-  role            = aws_iam_role.lambda_execution.arn
-  handler         = "index.handler"
+  role             = aws_iam_role.lambda_execution.arn
+  handler          = "index.handler"
   source_code_hash = data.archive_file.discussions_crud.output_base64sha256
-  runtime         = "nodejs20.x"
-  timeout         = 30
+  runtime          = "nodejs20.x"
+  timeout          = 30
 
   environment {
     variables = {
+      # Read by verify-auth.js to check sign-in tokens and organiser access.
+      COGNITO_USER_POOL_ID   = aws_cognito_user_pool.user_pool.id
+      COGNITO_CLIENT_ID      = aws_cognito_user_pool_client.web_client.id
+      USERS_TABLE_NAME       = aws_dynamodb_table.users.name
+      ADMIN_EMAILS           = var.admin_emails
       DISCUSSIONS_TABLE_NAME = aws_dynamodb_table.discussions.name
     }
   }
@@ -290,7 +295,7 @@ resource "aws_api_gateway_integration" "discussions_options_lambda" {
   http_method = aws_api_gateway_method.discussions_options.http_method
 
   type = "MOCK"
-  
+
   request_templates = {
     "application/json" = "{\"statusCode\": 200}"
   }
@@ -305,7 +310,7 @@ resource "aws_api_gateway_method_response" "discussions_options_200" {
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = true
     "method.response.header.Access-Control-Allow-Methods" = true
-    "method.response.header.Access-Control-Allow-Origin" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
   }
 
   depends_on = [aws_api_gateway_method.discussions_options]
@@ -320,7 +325,7 @@ resource "aws_api_gateway_integration_response" "discussions_options" {
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
     "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
-    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
   }
 
   depends_on = [aws_api_gateway_integration.discussions_options_lambda]
@@ -362,7 +367,7 @@ resource "aws_api_gateway_integration" "discussions_id_options_lambda" {
   http_method = aws_api_gateway_method.discussions_id_options.http_method
 
   type = "MOCK"
-  
+
   request_templates = {
     "application/json" = "{\"statusCode\": 200}"
   }
@@ -377,7 +382,7 @@ resource "aws_api_gateway_method_response" "discussions_id_options_200" {
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = true
     "method.response.header.Access-Control-Allow-Methods" = true
-    "method.response.header.Access-Control-Allow-Origin" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
   }
 }
 
@@ -390,7 +395,7 @@ resource "aws_api_gateway_integration_response" "discussions_id_options" {
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
     "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
-    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
   }
 }
 
@@ -410,7 +415,7 @@ resource "aws_api_gateway_integration" "discussions_id_replies_options_lambda" {
   http_method = aws_api_gateway_method.discussions_id_replies_options.http_method
 
   type = "MOCK"
-  
+
   request_templates = {
     "application/json" = "{\"statusCode\": 200}"
   }
@@ -425,7 +430,7 @@ resource "aws_api_gateway_method_response" "discussions_id_replies_options_200" 
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = true
     "method.response.header.Access-Control-Allow-Methods" = true
-    "method.response.header.Access-Control-Allow-Origin" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
   }
 }
 
@@ -438,7 +443,7 @@ resource "aws_api_gateway_integration_response" "discussions_id_replies_options"
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
     "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
-    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
   }
 }
 
@@ -468,7 +473,7 @@ resource "aws_api_gateway_integration" "discussions_id_replies_replyid_options_l
   http_method = aws_api_gateway_method.discussions_id_replies_replyid_options.http_method
 
   type = "MOCK"
-  
+
   request_templates = {
     "application/json" = "{\"statusCode\": 200}"
   }
@@ -483,7 +488,7 @@ resource "aws_api_gateway_method_response" "discussions_id_replies_replyid_optio
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = true
     "method.response.header.Access-Control-Allow-Methods" = true
-    "method.response.header.Access-Control-Allow-Origin" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
   }
 }
 
@@ -496,7 +501,7 @@ resource "aws_api_gateway_integration_response" "discussions_id_replies_replyid_
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
     "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
-    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
   }
 }
 
@@ -516,7 +521,7 @@ resource "aws_api_gateway_integration" "discussions_id_like_options_lambda" {
   http_method = aws_api_gateway_method.discussions_id_like_options.http_method
 
   type = "MOCK"
-  
+
   request_templates = {
     "application/json" = "{\"statusCode\": 200}"
   }
@@ -531,7 +536,7 @@ resource "aws_api_gateway_method_response" "discussions_id_like_options_200" {
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = true
     "method.response.header.Access-Control-Allow-Methods" = true
-    "method.response.header.Access-Control-Allow-Origin" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
   }
 }
 
@@ -544,7 +549,7 @@ resource "aws_api_gateway_integration_response" "discussions_id_like_options" {
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
     "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
-    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
   }
 }
 
@@ -564,7 +569,7 @@ resource "aws_api_gateway_integration" "discussions_id_replies_like_options_lamb
   http_method = aws_api_gateway_method.discussions_id_replies_like_options.http_method
 
   type = "MOCK"
-  
+
   request_templates = {
     "application/json" = "{\"statusCode\": 200}"
   }
@@ -579,7 +584,7 @@ resource "aws_api_gateway_method_response" "discussions_id_replies_like_options_
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = true
     "method.response.header.Access-Control-Allow-Methods" = true
-    "method.response.header.Access-Control-Allow-Origin" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
   }
 }
 
@@ -592,7 +597,7 @@ resource "aws_api_gateway_integration_response" "discussions_id_replies_like_opt
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
     "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
-    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
   }
 }
 

@@ -1,5 +1,6 @@
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, PutCommand, GetCommand, UpdateCommand, DeleteCommand, ScanCommand, QueryCommand } = require('@aws-sdk/lib-dynamodb');
+const { withVerifiedAuth, callerId, callerIsAdmin } = require('./verify-auth');
 
 const client = new DynamoDBClient({ region: process.env.AWS_REGION });
 const docClient = DynamoDBDocumentClient.from(client);
@@ -58,8 +59,8 @@ function createResponse(statusCode, body, headers = {}) {
   };
 }
 
-exports.handler = async (event) => {
-  console.log('Event:', JSON.stringify(event, null, 2));
+const handleRequest = async (event) => {
+  console.log('Request:', event.httpMethod, event.path || event.resource);
 
   // Handle CORS preflight
   if (event.httpMethod === 'OPTIONS') {
@@ -83,6 +84,19 @@ exports.handler = async (event) => {
     const resource = routeParts[0]; // 'spotlight'
     const id = routeParts[1];
     const action = routeParts[2]; // 'review'
+
+    // Every write needs a signed-in member, and is made as them: the userId
+    // and reviewedBy in the body are replaced with the verified caller.
+    if (method !== 'GET') {
+      const uid = callerId(event);
+      if (!uid) return createResponse(401, { error: 'Please sign in again.' });
+      if (action === 'review' && !(await callerIsAdmin(event))) {
+        return createResponse(403, { error: 'Only organisers can review submissions.' });
+      }
+      let body = {};
+      try { body = (typeof event.body === 'string' ? JSON.parse(event.body) : event.body) || {}; } catch { body = {}; }
+      event.body = JSON.stringify(action === 'review' ? { ...body, reviewedBy: uid } : { ...body, userId: uid });
+    }
 
     if (resource === 'spotlight') {
       if (method === 'GET' && !id) {
@@ -466,7 +480,7 @@ async function reviewSubmission(id, event) {
 // When a userId is supplied (submitter deleting their own entry) ownership is enforced.
 // Admin callers omit userId and keep the previous unrestricted behaviour.
 async function deleteSubmission(id, event) {
-  const requesterId = (event?.queryStringParameters || {}).userId;
+  const requesterId = callerId(event);
 
   const existing = await docClient.send(new GetCommand({
     TableName: SPOTLIGHT_TABLE,
@@ -477,7 +491,7 @@ async function deleteSubmission(id, event) {
     return createResponse(404, { error: 'Spotlight submission not found' });
   }
 
-  if (requesterId && existing.Item.userId !== requesterId) {
+  if (existing.Item.userId !== requesterId && !(await callerIsAdmin(event))) {
     return createResponse(403, { error: 'You can only delete your own submissions' });
   }
 
@@ -488,3 +502,5 @@ async function deleteSubmission(id, event) {
 
   return createResponse(200, { message: 'Spotlight submission deleted successfully', id });
 }
+
+exports.handler = withVerifiedAuth(handleRequest);

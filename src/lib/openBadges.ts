@@ -128,9 +128,9 @@ export const getPublicBadgeUrl = (
 };
 
 /**
- * OG proxy URL — use this as the share URL on all social platforms.
- * Points to /og/badge/ which is handled by the Vercel function and
- * serves correct OG meta tags to crawlers.
+ * Share URL for social platforms. The Vercel function at /og/badge/ serves the
+ * preview (badge card image, title) to crawlers and sends people on to the
+ * badge page. `u` lets it confirm the award before naming the member.
  */
 export const getOgProxyUrl = (
   badge: Badge,
@@ -138,245 +138,57 @@ export const getOgProxyUrl = (
   userId: string
 ): string => {
   const slug = generateProfileSlug(userName, userId);
-  const base = `${BASE_URL}/og/badge/${badge.id}/${slug}`;
-  const params = new URLSearchParams();
-  if (badge.imageUrl) params.set('img', badge.imageUrl);
-  params.set('name', badge.name);
-  params.set('desc', badge.description);
-  return `${base}?${params.toString()}`;
+  return `${BASE_URL}/og/badge/${badge.id}/${slug}?u=${encodeURIComponent(userId)}`;
 };
-
-// ─── Recipient hashing ────────────────────────────────────────────────────────
-
-/**
- * Hash a recipient email using SHA-256 + salt.
- * OB v2 §4.4 requires: identity = "sha256$" + hex(sha256(email + salt))
- *
- * Uses the Web Crypto API (available in all modern browsers and Node 18+).
- */
-export async function hashRecipientEmail(
-  email: string,
-  salt: string
-): Promise<string> {
-  const input = email.toLowerCase().trim() + salt;
-  const encoder = new TextEncoder();
-  const data = encoder.encode(input);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const hex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-  return `sha256$${hex}`;
-}
-
-/**
- * Build the OB v2 recipient identity object.
- * The salt is derived deterministically from the userId so the same
- * assertion always produces the same hash (needed for HostedBadge verification).
- */
-export async function buildRecipient(
-  email: string,
-  userId: string
-): Promise<OB2RecipientProfile> {
-  // Deterministic salt: "awsugmdu-" + first 8 chars of userId
-  const salt = `awsugmdu-${userId.slice(0, 8)}`;
-  const identity = await hashRecipientEmail(email, salt);
-  return { type: 'email', hashed: true, salt, identity };
-}
-
-// ─── OB v2 Document Generators ───────────────────────────────────────────────
-
-/**
- * Generate the Issuer Profile document.
- * Served at: GET /ob2/issuer.json
- */
-export function generateOB2Issuer(): OB2Issuer {
-  return {
-    '@context': OB2_CONTEXT,
-    id: issuerUrl(),
-    type: 'Profile',
-    name: 'AWS User Group Madurai',
-    url: BASE_URL,
-    email: 'badges@awsugmdu.in',
-    description:
-      'AWS User Group Madurai is a community of cloud enthusiasts, developers, and architects ' +
-      'who learn and grow together through events, sprints, and certifications.',
-    image: `${BASE_URL}/logo.png`,
-  };
-}
-
-/**
- * Generate a BadgeClass document.
- * Served at: GET /ob2/badges/{badgeId}.json
- */
-export function generateOB2BadgeClass(badge: Badge): OB2BadgeClass {
-  const id = badgeClassUrl(badge.id);
-  return {
-    '@context': OB2_CONTEXT,
-    id,
-    type: 'BadgeClass',
-    name: badge.name,
-    description: badge.description,
-    // Prefer the uploaded image URL; fall back to the Lambda-served SVG
-    image: badge.imageUrl || `${BASE_URL}/ob2/badge-images/${badge.id}.svg`,
-    criteria: {
-      id: `${id}/criteria`,
-      narrative: badge.criteria.description,
-    },
-    issuer: issuerUrl(),
-    tags: ['AWS', 'Cloud', 'Community', 'AWSUG'],
-  };
-}
-
-/**
- * Generate an Assertion document (async — needs email hashing).
- * Served at: GET /ob2/assertions/{badgeId}-{userId}.json
- */
-export async function generateOB2Assertion(
-  badge: Badge,
-  recipient: Pick<User, 'id' | 'name' | 'email'>
-): Promise<OB2Assertion> {
-  const id = assertionUrl(badge.id, recipient.id);
-  const recipientProfile = await buildRecipient(recipient.email, recipient.id);
-
-  return {
-    '@context': OB2_CONTEXT,
-    id,
-    type: 'Assertion',
-    recipient: recipientProfile,
-    badge: badgeClassUrl(badge.id),
-    verification: { type: 'HostedBadge' },
-    issuedOn: new Date(badge.earnedDate).toISOString(),
-    evidence: [
-      {
-        type: 'Evidence',
-        id: `${BASE_URL}/u/${generateProfileSlug(recipient.name, recipient.id)}`,
-        name: `${recipient.name}'s AWS UG Madurai Profile`,
-        description:
-          `View ${recipient.name}'s full profile and achievements on AWS User Group Madurai.`,
-      },
-    ],
-    narrative:
-      `${recipient.name} earned the "${badge.name}" badge from AWS User Group Madurai ` +
-      `for: ${badge.criteria.description}`,
-  };
-}
 
 // ─── Download helpers ─────────────────────────────────────────────────────────
 
+const API_ENDPOINT = import.meta.env.VITE_API_ENDPOINT;
+
+/** Save a server response as a file, or throw a message the member can act on. */
+async function downloadFromApi(path: string, filename: string): Promise<void> {
+  const res = await fetch(`${API_ENDPOINT}${path}`);
+  if (res.status === 404) {
+    throw new Error('This badge has no Open Badges credential yet. Ask an organiser to award it again.');
+  }
+  if (res.status === 410) throw new Error('This badge has been revoked.');
+  if (!res.ok) throw new Error(`Download failed (HTTP ${res.status})`);
+  const url = URL.createObjectURL(await res.blob());
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 /**
- * Download the OB v2 Assertion JSON.
- * This is the file that can be uploaded to Badgr, Credly, or any OB2 platform.
+ * Download the hosted OB v2 Assertion JSON, the file Badgr, Credly or any
+ * Open Badges backpack imports.
  */
 export async function downloadBadgeAssertion(
   badge: Badge,
-  recipient: Pick<User, 'id' | 'name' | 'email'>
+  recipient: Pick<User, 'id'>
 ): Promise<void> {
-  const assertion = await generateOB2Assertion(badge, recipient);
-  const json = JSON.stringify(assertion, null, 2);
-  const blob = new Blob([json], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `ob2-assertion-${badge.id}-${recipient.name.toLowerCase().replace(/\s+/g, '-')}.json`;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  await downloadFromApi(
+    `/ob2/assertions/${encodeURIComponent(`${badge.id}-${recipient.id}`)}.json`,
+    `awsugmdu-${badge.id}-assertion.json`,
+  );
 }
 
 /**
- * Download a baked SVG badge.
- * OB v2 baking spec: embed the assertion URL in an SVG <metadata> tag.
- * The verifier fetches the assertion URL to verify.
- *
- * Note: OB v2 baking officially supports PNG (via iTXt chunk) and SVG.
- * We use SVG since we generate it client-side.
+ * Download the baked badge: the badge SVG with its signed-off assertion
+ * embedded (OB v2 baking), so the file itself verifies, even offline.
  */
 export async function downloadBakedBadge(
   badge: Badge,
-  recipient: Pick<User, 'id' | 'name' | 'email'>
+  recipient: Pick<User, 'id'>
 ): Promise<void> {
-  const assertion = await generateOB2Assertion(badge, recipient);
-  // OB v2 SVG baking: embed the assertion URL (not the full JSON) in <metadata>
-  const svg = generateBadgeSvg(badge.icon, badge.name, badge.description, assertion.id, badge.imageUrl);
-  const blob = new Blob([svg], { type: 'image/svg+xml' });
-  const url = URL.createObjectURL(blob);
-
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `badge-${badge.id}-${recipient.name.toLowerCase().replace(/\s+/g, '-')}.svg`;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-}
-
-// ─── SVG Badge Generator ──────────────────────────────────────────────────────
-
-/**
- * Generate a 200×200 SVG badge image.
- * When assertionUrl is provided the SVG is "baked" per the OB v2 spec.
- * When imageUrl is provided it is embedded as a <image> element instead of the emoji.
- */
-export function generateBadgeSvg(
-  icon: string,
-  name: string,
-  description?: string,
-  assertionHref?: string,
-  imageUrl?: string
-): string {
-  const esc = (s: string) =>
-    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-  const escapedName = esc(name);
-  const escapedDesc = esc(description || '');
-  const nameLines = wrapText(escapedName, 18);
-
-  // OB v2 SVG baking: <openbadges:assertion> contains the assertion URL
-  const metadataBlock = assertionHref
-    ? `  <metadata xmlns:openbadges="https://w3id.org/openbadges/v2">
-    <openbadges:assertion verify="${esc(assertionHref)}" />
-  </metadata>`
-    : '';
-
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
-     viewBox="0 0 200 200" width="200" height="200" role="img" aria-label="${escapedName} badge">
-  <title>${escapedName}</title>
-  <desc>${escapedDesc}</desc>
-${metadataBlock}
-  <circle cx="100" cy="100" r="96" fill="#FF9900"/>
-  <circle cx="100" cy="100" r="88" fill="#1a1a2e"/>
-  <circle cx="100" cy="100" r="80" fill="none" stroke="#FF9900" stroke-width="2" stroke-dasharray="8 4"/>
-  ${imageUrl
-    ? `<clipPath id="iconClip"><circle cx="100" cy="88" r="36"/></clipPath>
-  <image href="${esc(imageUrl)}" x="64" y="52" width="72" height="72" clip-path="url(#iconClip)" preserveAspectRatio="xMidYMid slice"/>`
-    : `<text x="100" y="90" text-anchor="middle" dominant-baseline="middle"
-        font-size="48" font-family="Apple Color Emoji,Segoe UI Emoji,Noto Color Emoji,sans-serif">${icon}</text>`
-  }
-  ${nameLines.map((line, i) =>
-    `<text x="100" y="${118 + i * 18}" text-anchor="middle" font-size="13" font-weight="bold"
-        fill="#FFFFFF" font-family="system-ui,-apple-system,sans-serif">${line}</text>`
-  ).join('\n  ')}
-  <text x="100" y="172" text-anchor="middle" font-size="9" fill="#FF9900" letter-spacing="1"
-        font-family="system-ui,-apple-system,sans-serif">AWS UG MADURAI</text>
-</svg>`;
-}
-
-function wrapText(text: string, maxChars: number): string[] {
-  const words = text.split(' ');
-  const lines: string[] = [];
-  let current = '';
-  for (const word of words) {
-    if ((current + ' ' + word).trim().length <= maxChars) {
-      current = (current + ' ' + word).trim();
-    } else {
-      if (current) lines.push(current);
-      current = word;
-    }
-  }
-  if (current) lines.push(current);
-  return lines;
+  await downloadFromApi(
+    `/ob2/assertions/${encodeURIComponent(`${badge.id}-${recipient.id}`)}.svg`,
+    `awsugmdu-${badge.id}-badge.svg`,
+  );
 }
 
 // ─── Verification helpers ─────────────────────────────────────────────────────
@@ -386,18 +198,45 @@ export function getBadgeVerificationUrl(badgeId: string, userId: string): string
   return assertionUrl(badgeId, userId);
 }
 
-/** LinkedIn "Add to Profile" deep-link */
-export function getLinkedInBadgeUrl(badge: Badge, earnedDate: string): string {
+/**
+ * LinkedIn "Add to profile" → Licenses & certifications, prefilled. The
+ * credential URL is the public badge page, so profile visitors land on it.
+ */
+export function getLinkedInBadgeUrl(
+  badge: Badge,
+  earnedDate: string,
+  recipient?: Pick<User, 'id' | 'name'>
+): string {
+  const date = new Date(earnedDate);
   const params = new URLSearchParams({
     startTask: 'CERTIFICATION_NAME',
     name: badge.name,
     organizationName: 'AWS User Group Madurai',
-    issueYear: new Date(earnedDate).getFullYear().toString(),
-    issueMonth: (new Date(earnedDate).getMonth() + 1).toString(),
-    certUrl: badgeClassUrl(badge.id),
-    certId: badge.id,
+    issueYear: date.getFullYear().toString(),
+    issueMonth: (date.getMonth() + 1).toString(),
+    certUrl: recipient ? getPublicBadgeUrl(badge, recipient.name, recipient.id) : badgeClassUrl(badge.id),
+    certId: recipient ? `${badge.id}-${recipient.id}` : badge.id,
   });
   return `https://www.linkedin.com/profile/add?${params.toString()}`;
+}
+
+/** The text a member posts on LinkedIn about a badge, ending with its link. */
+export function linkedInPostText(badge: Badge, shareUrl: string): string {
+  return [
+    `I'm happy to share that I've earned the "${badge.name}" badge from AWS User Group Madurai! 🎉`,
+    badge.description,
+    'Grateful to the community for the learning and support.',
+    `Verify it here: ${shareUrl}`,
+    '#AWS #AWSUserGroup #AWSCommunity #CloudComputing #OpenBadges',
+  ].filter(Boolean).join('\n\n');
+}
+
+/**
+ * LinkedIn's post composer with the text already in it. LinkedIn builds the
+ * preview card (badge image and title) from the link in the text.
+ */
+export function getLinkedInPostUrl(text: string): string {
+  return `https://www.linkedin.com/feed/?shareActive=true&text=${encodeURIComponent(text)}`;
 }
 
 // ─── Client-side verification ─────────────────────────────────────────────────
@@ -442,6 +281,12 @@ export async function verifyOB2Assertion(
     const res = await fetch(assertionHref, {
       headers: { Accept: 'application/json' },
     });
+    // OB v2 hosted verification: a revoked assertion answers 410 Gone.
+    if (res.status === 410) {
+      const body = await res.json().catch(() => ({}));
+      steps.push({ label: 'Badge has not been revoked', status: 'fail', detail: body.revocationReason || 'Revoked by the issuer' });
+      return { valid: false, steps };
+    }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     assertion = await res.json();
     steps.push({ label: 'Fetch assertion JSON', status: 'pass', detail: assertionHref });
@@ -457,7 +302,8 @@ export async function verifyOB2Assertion(
     [typeof assertion.id === 'string' && assertion.id.startsWith('http'), 'id is a public URL', assertion.id],
     [assertion.id === assertionHref, 'id matches the URL it was fetched from', assertion.id],
     [typeof assertion.badge === 'string', 'badge is a URL string', String(assertion.badge)],
-    [assertion.verification?.type === 'HostedBadge', 'verification.type is "HostedBadge"', assertion.verification?.type],
+    // Credly (and so AWS certification badges) uses "hosted"; both are valid OB v2.
+    [['HostedBadge', 'hosted'].includes(assertion.verification?.type ?? ''), 'verification is hosted', assertion.verification?.type],
     [typeof assertion.issuedOn === 'string', 'issuedOn is present', assertion.issuedOn],
     [assertion.recipient?.hashed === true, 'recipient is hashed', String(assertion.recipient?.hashed)],
     [assertion.recipient?.type === 'email', 'recipient.type is "email"', assertion.recipient?.type],

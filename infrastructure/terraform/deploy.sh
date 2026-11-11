@@ -163,6 +163,7 @@ echo ""
 # Lambdas that consume the master lambda/shared/email.js helper. Keep the master
 # copy in lambda/shared/email.js and let deploy sync it in so they never drift.
 EMAIL_SHARED_CONSUMERS=(
+  "badges-crud"
   "meetups-crud"
   "meetup-reminder"
   "hackathons-crud"
@@ -193,6 +194,20 @@ if [ -f "lambda/shared/checkout.js" ]; then
       mkdir -p "lambda/$func/shared"
       cp "lambda/shared/checkout.js" "lambda/$func/shared/checkout.js"
       ok "Synced shared/checkout.js → $func"
+    fi
+  done
+  echo ""
+fi
+
+# Sign-in verification (lambda/shared/verify-auth.js) for every Lambda that
+# requires it. Consumers are found from their require(), so a new one is
+# picked up without editing this list.
+if [ -f "lambda/shared/verify-auth.js" ]; then
+  for index in lambda/*/index.js; do
+    func=$(basename "$(dirname "$index")")
+    if grep -q "require('./verify-auth')" "$index"; then
+      cp "lambda/shared/verify-auth.js" "lambda/$func/verify-auth.js"
+      ok "Synced shared/verify-auth.js → $func"
     fi
   done
   echo ""

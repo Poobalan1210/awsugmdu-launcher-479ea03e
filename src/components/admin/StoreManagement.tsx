@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Edit, Trash2, Package, ShoppingBag, Loader2, Upload, ChevronDown, ChevronUp, Truck, MapPin, Gift } from 'lucide-react';
+import { Plus, Edit, Trash2, Loader2, Upload, ChevronDown, ChevronUp, Truck, MapPin, Gift } from 'lucide-react';
 import { toast } from 'sonner';
 import { getStoreItems, createStoreItem, updateStoreItem, deleteStoreItem, getOrders, assignCodeToOrder, updateOrderStatus, fulfillmentOf, SHIPPING_WINDOW, type FulfillmentMethod, type StoreItem, type Order } from '@/lib/store';
 import { uploadFileToS3 } from '@/lib/s3Upload';

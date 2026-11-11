@@ -20,8 +20,7 @@ const MEETUP_GROUP_URLNAME = 'AWS-User-Group-Madurai';
 // Update this with your Meetup group ID
 // You can find this in the membership details URL: https://www.meetup.com/members/{user_id}/group/{group_id}/
 // The group_id part (e.g., 36938462) is what we use to verify membership
-const MEETUP_GROUP_ID = '36938462'; // Update with your actual group ID
-const MEETUP_API_BASE_URL = 'https://api.meetup.com';
+const MEETUP_GROUP_ID = '36938462';
 
 export interface MeetupVerificationResult {
   isMember: boolean;
@@ -140,27 +139,6 @@ export function normalizeMeetupProfileUrl(input: string): string {
 }
 
 /**
- * Get Meetup OAuth authorization URL
- * This redirects users to Meetup to authorize your app
- */
-export function getMeetupOAuthUrl(): string {
-  const clientId = import.meta.env.VITE_MEETUP_CLIENT_ID;
-  const redirectUri = `${window.location.origin}/signup?meetup_callback=true`;
-  
-  if (!clientId) {
-    throw new Error('Meetup OAuth client ID not configured');
-  }
-
-  const params = new URLSearchParams({
-    client_id: clientId,
-    response_type: 'code',
-    redirect_uri: redirectUri,
-  });
-
-  return `https://secure.meetup.com/oauth2/authorize?${params.toString()}`;
-}
-
-/**
  * Get pending Meetup verifications (for admin use)
  * In production, this should fetch from your backend
  */
@@ -170,20 +148,6 @@ export function getPendingMeetupVerifications(): MeetupVerificationRequest[] {
     return pending ? JSON.parse(pending) : [];
   } catch {
     return [];
-  }
-}
-
-/**
- * Approve Meetup verification (for admin use)
- * In production, this should update your backend
- */
-export function approveMeetupVerification(email: string): void {
-  try {
-    const pending = getPendingMeetupVerifications();
-    const updated = pending.filter(v => v.email !== email);
-    localStorage.setItem('pendingMeetupVerifications', JSON.stringify(updated));
-  } catch (error) {
-    console.error('Failed to approve verification:', error);
   }
 }
 

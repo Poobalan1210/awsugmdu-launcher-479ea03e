@@ -20,7 +20,7 @@ const USER_POOL_ID = process.env.COGNITO_USER_POOL_ID;
 const PROFILE_PHOTOS_BUCKET = process.env.PROFILE_PHOTOS_BUCKET;
 const MEETUP_POSTERS_BUCKET = process.env.MEETUP_POSTERS_BUCKET;
 
-const { isOrganiserEmail } = require('./adminUtils');
+const { withVerifiedAuth, callerId, callerIsAdmin } = require('./verify-auth');
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -46,51 +46,32 @@ const PRIVATE_USER_FIELDS = [
   'meetupVerificationStatus',
 ];
 
-/**
- * Read claims from the Cognito Authorization header. The payload is base64url,
- * so it is decoded without verifying the signature — consistent with
- * lambda/shared/auth.js and kironomics-crud across this stack.
- *
- * Note this means a crafted token could claim any `sub`. That is acceptable for
- * *widening* a response to the owner, but it is why the organiser check below
- * also confirms the role against the users table rather than trusting `email`.
- */
+/** Claims of the verified Cognito ID token (see verify-auth.js), or null. */
 function extractClaims(event) {
-  const header = event?.headers?.Authorization || event?.headers?.authorization;
-  if (!header) return null;
-  const token = String(header).replace(/^Bearer\s+/i, '').trim();
-  if (!token || !token.includes('.')) return null;
-  try {
-    const parts = token.split('.');
-    if (parts.length !== 3) return null;
-    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-    const payload = JSON.parse(Buffer.from(base64, 'base64').toString('utf8'));
-    return {
-      sub: payload.sub || payload['cognito:username'] || null,
-      email: payload.email || null,
-    };
-  } catch (error) {
-    return null;
-  }
+  const claims = event?.verifiedClaims;
+  return claims ? { sub: claims.sub, email: claims.email || null } : null;
 }
 
-/** Organiser by configured email, or by the role stored on their own record. */
+/** Organiser by verified configured email, or by an admin/organiser role. */
 async function callerIsOrganiser(event) {
-  const claims = extractClaims(event);
-  if (!claims) return false;
-  if (claims.email && isOrganiserEmail(claims.email)) return true;
-  if (!claims.sub) return false;
-  try {
-    const r = await docClient.send(new GetCommand({
-      TableName: USERS_TABLE,
-      Key: { userId: claims.sub },
-    }));
-    const role = r.Item?.role;
-    return role === 'admin' || role === 'organiser';
-  } catch (error) {
-    return false;
-  }
+  return callerIsAdmin(event);
 }
+
+// Fields only organisers may set. Points, badges and roles are awarded by
+// organisers or by the server; a member setting them on their own record
+// would let anyone give themselves admin or any number of points.
+const ORGANISER_ONLY_FIELDS = [
+  'role', 'roles', 'points', 'redeemablePoints', 'rank', 'badges',
+  'pointActivities', 'activities', 'hideFromLeaderboard',
+  'meetupVerified', 'meetupVerificationStatus',
+  'isCollegeChamp', 'champCollegeId', 'isCloudClub', 'cloudClubId',
+];
+
+const SIGNUP_AFFILIATION_FIELDS = ['isCollegeChamp', 'champCollegeId', 'isCloudClub', 'cloudClubId'];
+
+// Same rule as the meetup-verification Lambda: a membership URL for the AWS
+// User Group Madurai group is accepted straight away.
+const MEETUP_GROUP_PATH = '/group/36938462';
 
 function redactUser(user) {
   if (!user) return user;
@@ -99,8 +80,8 @@ function redactUser(user) {
   return copy;
 }
 
-exports.handler = async (event) => {
-  console.log('Event:', JSON.stringify(event, null, 2));
+const handleRequest = async (event) => {
+  console.log('Request:', event.httpMethod, event.path || event.resource);
   
   // Handle CORS preflight
   if (event.httpMethod === 'OPTIONS') {
@@ -126,8 +107,9 @@ exports.handler = async (event) => {
         }
       
       case 'POST':
-        // Create new user
-        return await createUser(requestBody);
+        // Create new user: a member creates their own profile, an organiser anyone's.
+        if (!callerId(event)) return forbidden(401, 'Please sign in again.');
+        return await createUser(requestBody, event);
       
       case 'PUT':
         // Update user
@@ -138,7 +120,11 @@ exports.handler = async (event) => {
             body: JSON.stringify({ error: 'userId is required' }),
           };
         }
-        return await updateUser(userId, requestBody);
+        if (!callerId(event)) return forbidden(401, 'Please sign in again.');
+        if (callerId(event) !== userId && !(await callerIsAdmin(event))) {
+          return forbidden(403, 'You can only edit your own profile.');
+        }
+        return await updateUser(userId, requestBody, event);
       
       case 'DELETE':
         // Delete user (complete wipe)
@@ -148,6 +134,10 @@ exports.handler = async (event) => {
             headers: corsHeaders,
             body: JSON.stringify({ error: 'userId is required' }),
           };
+        }
+        if (!callerId(event)) return forbidden(401, 'Please sign in again.');
+        if (callerId(event) !== userId && !(await callerIsAdmin(event))) {
+          return forbidden(403, 'You can only delete your own account.');
         }
         return await deleteUser(userId);
       
@@ -169,6 +159,10 @@ exports.handler = async (event) => {
     };
   }
 };
+
+function forbidden(statusCode, error) {
+  return { statusCode, headers: corsHeaders, body: JSON.stringify({ error }) };
+}
 
 async function getUser(userId, event) {
   try {
@@ -240,9 +234,23 @@ async function getAllUsers(event) {
   }
 }
 
-async function createUser(requestBody) {
+async function createUser(requestBody, event) {
   try {
     const body = typeof requestBody === 'string' ? JSON.parse(requestBody) : requestBody;
+    const organiser = await callerIsAdmin(event);
+    if (!organiser) {
+      // A member only ever creates their own profile, with the email Cognito
+      // holds for them, and without organiser-only fields.
+      if (body.userId && body.userId !== callerId(event)) {
+        return forbidden(403, 'You can only create your own profile.');
+      }
+      body.userId = callerId(event);
+      body.email = event.verifiedClaims.email || body.email;
+      // Signup is where a member picks their own College Champ or Cloud Club.
+      for (const field of ORGANISER_ONLY_FIELDS) {
+        if (!SIGNUP_AFFILIATION_FIELDS.includes(field)) delete body[field];
+      }
+    }
     const { userId, email, name, ...profileData } = body;
     
     if (!userId || !email || !name) {
@@ -256,6 +264,13 @@ async function createUser(requestBody) {
     }
     
     const now = new Date().toISOString();
+
+    // A repeated POST (signup retried, or the sign-in recovery racing the
+    // signup form) must never wipe what the member has already earned.
+    const existing = (await docClient.send(new GetCommand({
+      TableName: USERS_TABLE,
+      Key: { userId },
+    }))).Item;
 
     // Default role is 'member' for all users
     const userProfile = {
@@ -276,6 +291,11 @@ async function createUser(requestBody) {
       createdAt: now,
       updatedAt: now,
     };
+    if (existing) {
+      for (const field of [...ORGANISER_ONLY_FIELDS, 'joinedDate', 'createdAt']) {
+        if (existing[field] !== undefined) userProfile[field] = existing[field];
+      }
+    }
     
     await docClient.send(new PutCommand({
       TableName: USERS_TABLE,
@@ -355,9 +375,23 @@ async function createUser(requestBody) {
   }
 }
 
-async function updateUser(userId, requestBody) {
+async function updateUser(userId, requestBody, event) {
   try {
     const body = typeof requestBody === 'string' ? JSON.parse(requestBody) : requestBody;
+    if (!(await callerIsAdmin(event))) {
+      // The owner's own Meetup verification is the one organiser-only change a
+      // member may make, and only on the same terms as the verification Lambda.
+      const wantsVerified = body.meetupVerified === true;
+      const wantsStatus = body.meetupVerificationStatus;
+      for (const field of ORGANISER_ONLY_FIELDS) delete body[field];
+      const url = String(body.meetupEmail || '');
+      if (wantsVerified && url.includes(MEETUP_GROUP_PATH)) {
+        body.meetupVerified = true;
+        body.meetupVerificationStatus = 'approved';
+      } else if (wantsStatus === 'pending') {
+        body.meetupVerificationStatus = 'pending';
+      }
+    }
     
     // First check if user exists
     const existingUser = await docClient.send(new GetCommand({
@@ -798,3 +832,5 @@ async function cleanupDiscussions(userId) {
     console.error('Error cleaning up discussions:', error);
   }
 }
+
+exports.handler = withVerifiedAuth(handleRequest);

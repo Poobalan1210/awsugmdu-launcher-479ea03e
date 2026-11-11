@@ -1,5 +1,6 @@
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+const { withVerifiedAuth, callerId } = require('./verify-auth');
 
 const s3Client = new S3Client({ region: process.env.AWS_REGION });
 
@@ -30,14 +31,19 @@ function createResponse(statusCode, body, headers = {}) {
   };
 }
 
-exports.handler = async (event) => {
-  console.log('Event:', JSON.stringify(event, null, 2));
+const handleRequest = async (event) => {
+  console.log('Request:', event.httpMethod, event.path || event.resource);
   
   // Handle CORS preflight
   if (event.httpMethod === 'OPTIONS') {
     return createResponse(200, {});
   }
   
+  // Upload URLs are only for signed-in members.
+  if (!callerId(event)) {
+    return createResponse(401, { error: 'Please sign in to upload files.' });
+  }
+
   try {
     const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
     const { fileName, contentType, bucketType = 'meetup-posters' } = body;
@@ -140,9 +146,8 @@ exports.handler = async (event) => {
     });
   } catch (error) {
     console.error('Error:', error);
-    return createResponse(500, { 
-      error: 'Internal server error',
-      message: error.message 
-    });
+    return createResponse(500, { error: 'Internal server error' });
   }
 };
+
+exports.handler = withVerifiedAuth(handleRequest);

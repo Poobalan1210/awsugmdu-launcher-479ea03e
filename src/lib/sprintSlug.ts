@@ -17,14 +17,6 @@ export function generateSprintSlug(title: string, sprintId: string): string {
 }
 
 /**
- * Extract the hash suffix from a sprint slug (last 4 chars after final hyphen).
- */
-export function extractHashFromSprintSlug(slug: string): string {
-  const parts = slug.split('-');
-  return parts[parts.length - 1];
-}
-
-/**
  * Check if a sprint matches a given slug.
  */
 export function matchesSprintSlug(slug: string, title: string, sprintId: string): boolean {

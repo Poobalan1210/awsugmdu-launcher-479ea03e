@@ -31,7 +31,6 @@ const {
   GetCommand,
   PutCommand,
   UpdateCommand,
-  DeleteCommand,
   QueryCommand,
   BatchGetCommand,
   ScanCommand,
@@ -43,6 +42,7 @@ const { sendEmail, renderEmail, APP_URL } = require('./shared/email');
 // Mirrored from lambda/shared/checkout.js by deploy.sh — edit the master copy.
 // The store's own checkout uses the same checks.
 const { validateCheckout } = require('./shared/checkout');
+const { withVerifiedAuth } = require('./verify-auth');
 
 const client = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(client);
@@ -217,22 +217,10 @@ function isReservedId(id) {
   return String(id).startsWith('__');
 }
 
-function extractEmail(authHeader) {
-  if (!authHeader) return null;
-  const token = String(authHeader).replace(/^Bearer\s+/i, '').trim();
-  if (!token.includes('.')) return null;
-  try {
-    const base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-    return JSON.parse(Buffer.from(base64, 'base64').toString('utf8')).email || null;
-  } catch {
-    return null;
-  }
-}
-
 // ── Verified sign-in, for routes that return other members' data ──
-// extractUserId and isAdmin read the token without checking its signature,
-// like the rest of this stack, so a hand-made token passes them. Routes that
-// hand out other members' profiles verify the Cognito ID token for real.
+// withVerifiedAuth (verify-auth.js) now drops any token that fails this same
+// check before the handler runs, so extractUserId and isAdmin only see genuine
+// tokens. The routes below kept their own verification as well.
 const COGNITO_USER_POOL_ID = process.env.COGNITO_USER_POOL_ID || '';
 const COGNITO_CLIENT_ID = process.env.COGNITO_CLIENT_ID || '';
 const COGNITO_ISSUER = COGNITO_USER_POOL_ID
@@ -318,16 +306,17 @@ async function verifiedAdmin(event) {
   return { status: 403 };
 }
 
+// The token was verified by withVerifiedAuth, so this is verifiedAdmin's rule
+// on the claims already checked.
 async function isAdmin(event) {
-  const email = (extractEmail(event.headers?.Authorization || event.headers?.authorization) || '')
-    .toLowerCase();
-  if (email && ADMIN_EMAILS.includes(email)) return true;
-  const userId = extractUserId(event.headers?.Authorization || event.headers?.authorization);
-  if (!userId) return false;
+  const claims = event.verifiedClaims;
+  if (!claims) return false;
+  const email = String(claims.email || '').toLowerCase();
+  const emailVerified = claims.email_verified === true || claims.email_verified === 'true';
+  if (email && emailVerified && ADMIN_EMAILS.includes(email)) return true;
   try {
-    const r = await docClient.send(new GetCommand({ TableName: USERS_TABLE, Key: { userId } }));
-    const role = r.Item?.role;
-    return role === 'admin' || role === 'organiser';
+    const r = await docClient.send(new GetCommand({ TableName: USERS_TABLE, Key: { userId: claims.sub } }));
+    return hasAdminRole(r.Item);
   } catch {
     return false;
   }
@@ -3659,7 +3648,7 @@ async function runSweep(campaignId) {
 }
 
 // ── Router ────────────────────────────────────────────────────────
-exports.handler = async (event) => {
+const handleRequest = async (event) => {
   // EventBridge and direct invokes arrive without an httpMethod. `task` picks
   // the job; anything else is the GitHub sweep, which is what the original
   // schedule sends.
@@ -3729,3 +3718,5 @@ exports.handler = async (event) => {
     return res(500, { error: 'Internal server error', message: error.message });
   }
 };
+
+exports.handler = withVerifiedAuth(handleRequest);

@@ -32,12 +32,6 @@ export interface PointActivityResponse {
   activity: PointActivity;
 }
 
-// Get all point activities
-export async function getAllPointActivities(): Promise<PointActivity[]> {
-  const response = await callApi<PointActivitiesResponse>('/users/points/activities');
-  return response.activities || [];
-}
-
 // Get point activities for a specific user
 export async function getUserPointActivities(userId: string): Promise<PointActivity[]> {
   const response = await callApi<PointActivitiesResponse>(`/users/${userId}/points/activities`);
@@ -51,13 +45,4 @@ export async function awardPoints(data: AwardPointsData): Promise<PointActivity>
     body: JSON.stringify(data),
   });
   return response.activity;
-}
-
-// Get user's total points
-export async function getUserPoints(userId: string): Promise<{ points: number; redeemablePoints: number }> {
-  const response = await callApi<{ points: number; redeemablePoints: number }>(`/users/${userId}/points`);
-  return {
-    points: response.points || 0,
-    redeemablePoints: response.redeemablePoints ?? response.points ?? 0,
-  };
 }

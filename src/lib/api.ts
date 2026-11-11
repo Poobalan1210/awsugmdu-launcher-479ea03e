@@ -2,12 +2,6 @@ import { fetchAuthSession } from 'aws-amplify/auth';
 
 const API_ENDPOINT = import.meta.env.VITE_API_ENDPOINT;
 
-export interface ApiResponse<T = any> {
-  success?: boolean;
-  error?: string;
-  data?: T;
-}
-
 export async function callApi<T = any>(
   path: string,
   options: RequestInit = {}

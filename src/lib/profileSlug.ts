@@ -19,14 +19,6 @@ export function generateProfileSlug(name: string, userId: string): string {
 }
 
 /**
- * Extract the hash suffix from a profile slug (last 4 chars after final hyphen).
- */
-export function extractHashFromSlug(slug: string): string {
-  const parts = slug.split('-');
-  return parts[parts.length - 1];
-}
-
-/**
  * Check if a user matches a given profile slug.
  */
 export function matchesSlug(slug: string, userName: string, userId: string): boolean {

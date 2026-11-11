@@ -25,18 +25,12 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { getAllUsers, getUserProfile } from '@/lib/userProfile';
 import { mockBadges, Badge, User as UserType } from '@/data/mockData';
 import { matchesSlug, getShareableProfileUrl } from '@/lib/profileSlug';
-import {
-  downloadBadgeAssertion,
-  downloadBakedBadge,
-  getLinkedInBadgeUrl,
-  getBadgeVerificationUrl,
-  assertionUrl,
-  getOgProxyUrl,
-} from '@/lib/openBadges';
+import { downloadBadgeAssertion, downloadBakedBadge, getLinkedInBadgeUrl, assertionUrl, getOgProxyUrl } from '@/lib/openBadges';
 import { toast } from 'sonner';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
 import { BadgeShareDialog } from '@/components/badges/BadgeShareDialog';
+import { BadgeImage } from '@/components/badges/BadgeImage';
 
 export default function BadgePublic() {
   const { badgeId, userSlug } = useParams<{ badgeId: string; userSlug: string }>();
@@ -141,21 +135,29 @@ export default function BadgePublic() {
 
   const handleDownloadJson = async () => {
     if (!badge || !recipient) return;
-    await downloadBadgeAssertion(badge, recipient);
-    toast.success('OB v2 assertion downloaded!', {
-      description: 'Upload to Badgr, Credly, or any Open Badges v2 platform.',
-    });
+    try {
+      await downloadBadgeAssertion(badge, recipient);
+      toast.success('OB v2 assertion downloaded!', {
+        description: 'Upload to Badgr, Credly, or any Open Badges v2 platform.',
+      });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Download failed');
+    }
   };
 
   const handleDownloadSvg = async () => {
     if (!badge || !recipient) return;
-    await downloadBakedBadge(badge, recipient);
-    toast.success('Baked badge SVG downloaded!');
+    try {
+      await downloadBakedBadge(badge, recipient);
+      toast.success('Baked badge SVG downloaded!');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Download failed');
+    }
   };
 
   const handleLinkedIn = () => {
     if (!badge) return;
-    window.open(getLinkedInBadgeUrl(badge, badge.earnedDate), '_blank', 'noopener,noreferrer');
+    window.open(getLinkedInBadgeUrl(badge, badge.earnedDate, recipient ?? undefined), '_blank', 'noopener,noreferrer');
   };
 
   if (loading) {
@@ -234,17 +236,17 @@ export default function BadgePublic() {
                 <div className="flex-shrink-0">
                   <div className="relative">
                     {/* Outer glow ring */}
-                    <div className="w-36 h-36 rounded-full bg-gradient-to-br from-amber-400 to-orange-600 p-1 shadow-lg shadow-amber-500/30">
-                      <div className="w-full h-full rounded-full bg-gradient-to-br from-slate-900 to-slate-800 flex items-center justify-center overflow-hidden">
-                        {badge.imageUrl ? (
-                          <img src={badge.imageUrl} alt={badge.name} className="w-full h-full object-cover rounded-full" />
-                        ) : (
-                          <span className="text-6xl" role="img" aria-label={badge.name}>
-                            {badge.icon}
-                          </span>
-                        )}
+                    {badge.imageUrl ? (
+                      <div className="w-36 h-36 rounded-full bg-gradient-to-br from-amber-400 to-orange-600 p-1 shadow-lg shadow-amber-500/30">
+                        <div className="w-full h-full rounded-full bg-gradient-to-br from-slate-900 to-slate-800 flex items-center justify-center overflow-hidden">
+                          <BadgeImage badge={badge} className="rounded-full" emojiClassName="text-6xl" />
+                        </div>
                       </div>
-                    </div>
+                    ) : (
+                      <div className="w-40 h-[184px] flex items-center justify-center drop-shadow-xl">
+                        <BadgeImage badge={badge} emojiClassName="text-6xl" />
+                      </div>
+                    )}
                     {/* Verified checkmark */}
                     <div className="absolute -bottom-1 -right-1 bg-green-500 rounded-full p-1.5 shadow-md border-2 border-background">
                       <CheckCircle2 className="h-4 w-4 text-white" />

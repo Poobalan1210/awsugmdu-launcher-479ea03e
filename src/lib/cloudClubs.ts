@@ -152,45 +152,6 @@ export async function completeClubTask(clubId: string, taskId: string, bonusPoin
   });
 }
 
-// Update a completed task
-export async function updateClubTask(clubId: string, taskId: string, data: Partial<CloudClubTaskCompletion>): Promise<{ success: boolean; club: CloudClub }> {
-  return callApi(`/cloud-clubs/${clubId}/tasks/${taskId}`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-  });
-}
-
-// Remove a completed task
-export async function removeClubTask(clubId: string, taskId: string): Promise<{ success: boolean; club: CloudClub }> {
-  return callApi(`/cloud-clubs/${clubId}/tasks/${taskId}`, {
-    method: 'DELETE',
-  });
-}
-
-// Add an event
-export async function addClubEvent(clubId: string, event: CloudClubEvent): Promise<{ success: boolean; club: CloudClub }> {
-  return callApi(`/cloud-clubs/${clubId}/events`, {
-    method: 'POST',
-    body: JSON.stringify(event),
-  });
-}
-
-// Add a member to cloud club
-export async function addClubMember(clubId: string, userId: string): Promise<{ success: boolean; club: CloudClub }> {
-  return callApi(`/cloud-clubs/${clubId}/members`, {
-    method: 'POST',
-    body: JSON.stringify({ userId }),
-  });
-}
-
-// Remove a member from cloud club
-export async function removeClubMember(clubId: string, userId: string): Promise<{ success: boolean; club: CloudClub }> {
-  return callApi(`/cloud-clubs/${clubId}/members`, {
-    method: 'DELETE',
-    body: JSON.stringify({ userId }),
-  });
-}
-
 // Assign tasks to cloud club
 export async function assignTasksToClub(clubId: string, taskIds: string[]): Promise<{ success: boolean; club: CloudClub }> {
   return callApi(`/cloud-clubs/${clubId}/assign-tasks`, {

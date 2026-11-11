@@ -10,12 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import {
-  Trophy, Calendar, Target, FileText, Medal, Zap,
-  Linkedin, Github, Twitter, ExternalLink, Building, User,
-  Mic, BookOpen, CheckCircle, Clock, Award, Shield, ShoppingBag, Loader2, Package, Users, AlertCircle, Pencil,
-  FolderGit2, Plus
-} from 'lucide-react';
+import { Trophy, Calendar, Target, FileText, Medal, Zap, Linkedin, Github, Twitter, ExternalLink, Building, User, Mic, BookOpen, CheckCircle, Clock, Award, ShoppingBag, Loader2, Package, Users, AlertCircle, Pencil, FolderGit2, Plus } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { submitMeetupVerification, normalizeMeetupProfileUrl, getMeetupGroupUrl } from '@/lib/meetup';
@@ -50,6 +45,7 @@ import {
   buildContentHistory, getMemberBuilderArticles, getMyBuilderContent, remainingClaimPoints,
 } from '@/lib/builderCenter';
 import { getSpotlightSubmissions } from '@/lib/spotlight';
+import { BadgeImage } from '@/components/badges/BadgeImage';
 
 export default function Profile() {
   const { slug } = useParams();
@@ -381,7 +377,6 @@ export default function Profile() {
 
   // Check if user is a Champ Captain (college lead)
   const isChampCaptain = colleges.some(college => college.champsLeadId === user.id);
-  const champCollege = colleges.find(college => college.champsLeadId === user.id);
 
   const getRoleInfo = (role: CommunityRole) => {
     return communityRoles.find(r => r.value === role);
@@ -528,9 +523,6 @@ export default function Profile() {
 
   const generateActivityHistory = (): ActivityHistoryItem[] => {
     const activities: ActivityHistoryItem[] = [];
-
-    // Helper to extract plain text string from potentially complex titles
-    const getStringTitle = (sprintTitle: any) => typeof sprintTitle === 'string' ? sprintTitle : 'Skill Sprint';
 
     // Sprint attendance
     userSprintsParticipated.forEach(sprint => {
@@ -1037,7 +1029,7 @@ export default function Profile() {
                         <OpenBadgeCard
                           key={badge.id}
                           badge={badge}
-                          user={{ id: user.id, name: user.name, email: user.email }}
+                          user={{ id: user.id, name: user.name, email: user.email, avatar: user.avatar, designation: user.designation, company: user.company }}
                           isOwnProfile={isOwnProfile}
                           index={index}
                         />
@@ -1060,7 +1052,9 @@ export default function Profile() {
                           .map((badge) => (
                             <Card key={badge.id} className="border-dashed opacity-60">
                               <CardContent className="p-4 flex items-start gap-4">
-                                <div className="text-4xl grayscale">{badge.icon}</div>
+                                <div className="w-12 h-14 flex-shrink-0 flex items-center justify-center grayscale">
+                                  <BadgeImage badge={badge} emojiClassName="text-4xl" />
+                                </div>
                                 <div className="flex-1">
                                   <h3 className="font-semibold">{badge.name}</h3>
                                   <p className="text-sm text-muted-foreground">{badge.description}</p>

@@ -18,6 +18,8 @@ import { Separator } from '@/components/ui/separator';
 import { Badge, User } from '@/data/mockData';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { toast } from 'sonner';
+import { getLinkedInBadgeUrl, getLinkedInPostUrl, linkedInPostText } from '@/lib/openBadges';
+import { BadgeImage } from './BadgeImage';
 
 interface BadgeShareDialogProps {
   open: boolean;
@@ -45,26 +47,31 @@ export function BadgeShareDialog({
   const shareText = `I earned the "${badge.name}" badge from AWS User Group Madurai! ${badge.icon} ${badge.description}`;
   const hashtags = ['AWSUG', 'OpenBadges', 'AWS', 'CloudComputing'];
   const hashtagStr = hashtags.map(t => `#${t}`).join(' ');
-
-  // Use the human-readable badge page as the article URL for LinkedIn
-  const articleUrl = badgeViewUrl || badgePageUrl;
   const encodedUrl = encodeURIComponent(badgePageUrl);
   const encodedText = encodeURIComponent(`${shareText}\n\n${hashtagStr}`);
 
+  // LinkedIn opens its post composer with this text; the link at the end
+  // makes LinkedIn show the badge card (image, name) under the post.
+  const linkedInText = linkedInPostText(badge, badgePageUrl);
+
+  const handlePostOnLinkedIn = () => {
+    window.open(getLinkedInPostUrl(linkedInText), '_blank', 'noopener,noreferrer');
+  };
+
+  const handleCopyLinkedInText = async () => {
+    try {
+      await navigator.clipboard.writeText(linkedInText);
+      toast.success('Post text copied', { description: 'Paste it into LinkedIn if the text did not appear.' });
+    } catch {
+      toast.error('Could not copy. Select the text and copy it manually.');
+    }
+  };
+
+  const handleAddToProfile = () => {
+    window.open(getLinkedInBadgeUrl(badge, badge.earnedDate, recipient), '_blank', 'noopener,noreferrer');
+  };
+
   const platforms = [
-    {
-      name: 'LinkedIn',
-      icon: <Linkedin className="h-4 w-4" />,
-      color: 'text-blue-600 border-blue-500/30 hover:bg-blue-500/10',
-      action: async () => {
-        // Copy the badge URL — LinkedIn will crawl it and show the badge image
-        try { await navigator.clipboard.writeText(badgePageUrl); } catch { /* ignore */ }
-        toast.success('Badge link copied!', {
-          description: 'Paste it into your LinkedIn post to show the badge preview.',
-        });
-        window.open('https://www.linkedin.com/feed/?shareActive=true', '_blank', 'noopener,noreferrer');
-      },
-    },
     {
       name: 'Twitter / X',
       icon: <Twitter className="h-4 w-4" />,
@@ -133,13 +140,9 @@ export function BadgeShareDialog({
 
             <div className="p-4 flex gap-4 items-start bg-card">
               {/* Badge icon */}
-              <div className="flex-shrink-0 w-16 h-16 rounded-full bg-gradient-to-br from-amber-400 to-orange-600 p-0.5 shadow-md shadow-amber-500/20">
-                <div className="w-full h-full rounded-full bg-slate-900 flex items-center justify-center overflow-hidden">
-                  {badge.imageUrl ? (
-                    <img src={badge.imageUrl} alt={badge.name} className="w-full h-full object-cover rounded-full" />
-                  ) : (
-                    <span className="text-3xl" role="img" aria-label={badge.name}>{badge.icon}</span>
-                  )}
+              <div className="flex-shrink-0 w-16 h-[74px] flex items-center justify-center">
+                <div className="w-full h-full flex items-center justify-center overflow-hidden">
+                  <BadgeImage badge={badge} className={badge.imageUrl ? 'rounded-full' : undefined} />
                 </div>
               </div>
 
@@ -152,7 +155,7 @@ export function BadgeShareDialog({
 
                 <div className="flex items-center gap-2 mt-2">
                   <Avatar className="h-5 w-5">
-                    <AvatarImage src={(recipient as any).avatar} alt={recipient.name} />
+                    <AvatarImage src={recipient.avatar} alt={recipient.name} />
                     <AvatarFallback className="text-xs">{recipient.name.charAt(0)}</AvatarFallback>
                   </Avatar>
                   <span className="text-xs text-muted-foreground">
@@ -201,18 +204,41 @@ export function BadgeShareDialog({
             </Button>
           </div>
           <p className="text-xs text-muted-foreground mt-1.5">
-            Paste this link on LinkedIn to show the badge preview.
+            Anywhere you paste this link, it shows the badge card.
           </p>
         </div>
 
         <Separator />
 
-        {/* ── Platform buttons ──────────────────────────────────────── */}
+        {/* ── LinkedIn ──────────────────────────────────────────────── */}
+        <div className="px-6 py-4 space-y-2">
+          <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">
+            LinkedIn
+          </p>
+          <Button className="w-full gap-2 bg-[#0A66C2] hover:bg-[#004182] text-white" onClick={handlePostOnLinkedIn}>
+            <Linkedin className="h-4 w-4" />
+            Post on LinkedIn
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            Opens LinkedIn with your post written and the badge card attached. Edit it if you like, then post.{' '}
+            <button type="button" className="underline underline-offset-2 hover:text-foreground" onClick={handleCopyLinkedInText}>
+              Copy the text
+            </button>
+          </p>
+          <Button variant="outline" className="w-full gap-2 text-[#0A66C2] border-[#0A66C2]/30 hover:bg-[#0A66C2]/10" onClick={handleAddToProfile}>
+            <Linkedin className="h-4 w-4" />
+            Add to LinkedIn profile
+          </Button>
+        </div>
+
+        <Separator />
+
+        {/* ── Other platforms ───────────────────────────────────────── */}
         <div className="px-6 py-4">
           <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wide font-medium">
-            Share On
+            More places to share
           </p>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             {platforms.map(p => (
               <Button
                 key={p.name}

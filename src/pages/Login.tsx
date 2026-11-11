@@ -25,7 +25,7 @@ export default function Login() {
   const [searchParams] = useSearchParams();
   const redirectTo = searchParams.get('redirect');
   // Only allow same-origin relative redirects to avoid open-redirect issues.
-  const safeRedirect = redirectTo && redirectTo.startsWith('/') ? redirectTo : null;
+  const safeRedirect = redirectTo && redirectTo.startsWith('/') && !redirectTo.startsWith('//') ? redirectTo : null;
   const { signIn, confirmSignUp, resendConfirmationCode } = useAuth();
   const { toast } = useToast();
 

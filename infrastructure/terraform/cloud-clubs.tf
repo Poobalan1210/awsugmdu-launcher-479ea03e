@@ -1,8 +1,8 @@
 # DynamoDB Table for Cloud Clubs
 resource "aws_dynamodb_table" "cloud_clubs" {
-  name           = "${var.project_name}-cloud_clubs"
-  billing_mode   = "PAY_PER_REQUEST"
-  hash_key       = "id"
+  name         = "${var.project_name}-cloud_clubs"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "id"
 
   attribute {
     name = "id"
@@ -20,14 +20,14 @@ resource "aws_dynamodb_table" "cloud_clubs" {
   }
 
   global_secondary_index {
-    name     = "rank-index"
-    hash_key = "rank"
+    name            = "rank-index"
+    hash_key        = "rank"
     projection_type = "ALL"
   }
 
   global_secondary_index {
-    name     = "clubLeadId-index"
-    hash_key = "clubLeadId"
+    name            = "clubLeadId-index"
+    hash_key        = "clubLeadId"
     projection_type = "ALL"
   }
 
@@ -60,16 +60,20 @@ data "archive_file" "cloud_clubs_crud" {
 resource "aws_lambda_function" "cloud_clubs_crud" {
   filename         = data.archive_file.cloud_clubs_crud.output_path
   function_name    = "${var.project_name}-cloud-clubs-crud"
-  role            = aws_iam_role.lambda_execution.arn
-  handler         = "index.handler"
+  role             = aws_iam_role.lambda_execution.arn
+  handler          = "index.handler"
   source_code_hash = data.archive_file.cloud_clubs_crud.output_base64sha256
-  runtime         = "nodejs20.x"
-  timeout         = 30
+  runtime          = "nodejs20.x"
+  timeout          = 30
 
   environment {
     variables = {
+      # Read by verify-auth.js to check sign-in tokens and organiser access.
+      COGNITO_USER_POOL_ID   = aws_cognito_user_pool.user_pool.id
+      COGNITO_CLIENT_ID      = aws_cognito_user_pool_client.web_client.id
+      ADMIN_EMAILS           = var.admin_emails
       CLOUD_CLUBS_TABLE_NAME = aws_dynamodb_table.cloud_clubs.name
-      USERS_TABLE_NAME    = aws_dynamodb_table.users.name
+      USERS_TABLE_NAME       = aws_dynamodb_table.users.name
     }
   }
 

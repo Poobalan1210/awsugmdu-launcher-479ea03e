@@ -30,20 +30,6 @@ export interface PointActivity {
   awardedAt: string;
 }
 
-// Badge award tracking
-export interface BadgeAward {
-  id: string;
-  badgeId: string;
-  userId: string;
-  awardedAt: string;
-  awardedBy?: string;
-  reason?: string;
-  isAdhoc: boolean; // true if manually awarded, false if auto-earned
-}
-
-// Mock badge awards - tracks all badge assignments
-export const mockBadgeAwards: BadgeAward[] = [];
-
 // Role metadata for display
 export const communityRoles: { value: CommunityRole; label: string; description: string; color: string; icon: string }[] = [
   { value: 'member', label: 'Member', description: 'Community member with basic access', color: 'bg-gray-500', icon: '👤' },
@@ -573,13 +559,6 @@ export interface AWSEventSubmission {
   reviewedAt?: string;
 }
 
-export interface AgendaItem {
-  time: string;
-  title: string;
-  description?: string;
-  speakerId?: string;
-}
-
 export type MeetupType = 'virtual' | 'in-person' | 'hybrid' | 'skill-sprint' | 'circles' | 'college-champ' | 'cloud-club' | 'hackathon';
 
 export interface Meetup {
@@ -762,7 +741,6 @@ export interface GroupReply {
   likedBy?: string[];
   isPinned?: boolean;
 }
-
 
 // Mock Users with roles - 5 users with rich profiles
 export const mockUsers: User[] = [
@@ -1619,150 +1597,6 @@ export const mockMeetups: Meetup[] = [
   }
 ];
 
-
-// Note: mockEvents is generated after mockColleges is defined (see end of file)
-
-// Mock Forum Posts
-export const mockForumPosts: ForumPost[] = [
-  {
-    id: 'f1',
-    sprintId: 's1',
-    userId: '3',
-    userName: 'Ananya Patel',
-    userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Ananya',
-    title: 'Stuck with Lambda cold starts - any tips?',
-    content: 'I am experiencing significant cold start times with my Lambda function. Has anyone found effective ways to reduce this? I have tried provisioned concurrency but it is expensive for my use case.',
-    createdAt: '2025-01-08',
-    replies: [
-      { id: 'r1', postId: 'f1', userId: '2', userName: 'Rahul Verma', userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Rahul', content: 'Try using SnapStart if you are using Java! It reduces cold starts significantly.', createdAt: '2025-01-08', likes: 5 },
-      { id: 'r2', postId: 'f1', userId: '1', userName: 'Priya Sharma', userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Priya', content: 'Keep your package size small - only include what you need. Also consider using layers for shared dependencies.', createdAt: '2025-01-09', likes: 3 }
-    ],
-    likes: 8
-  },
-  {
-    id: 'f2',
-    sprintId: 's1',
-    userId: '2',
-    userName: 'Rahul Verma',
-    userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Rahul',
-    title: 'Best practices for DynamoDB single-table design',
-    content: 'Sharing my learnings from implementing single-table design in my sprint project. Key takeaway: access patterns first, then model your data!',
-    createdAt: '2025-01-10',
-    replies: [
-      { id: 'r3', postId: 'f2', userId: '3', userName: 'Ananya Patel', userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Ananya', content: 'Great tips! I found the access pattern analysis really helpful.', createdAt: '2025-01-10', likes: 2 }
-    ],
-    likes: 15
-  },
-  {
-    id: 'f3',
-    sprintId: 's1',
-    userId: '1',
-    userName: 'Priya Sharma',
-    userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Priya',
-    title: 'Sprint Challenge Hints - Week 2',
-    content: 'Here are some hints for this week\'s challenge. Remember to use Step Functions for orchestration! Also check out the new EventBridge Scheduler for time-based workflows.',
-    createdAt: '2025-01-12',
-    replies: [],
-    likes: 42
-  }
-];
-
-// Mock Circles
-export const mockCertificationGroups: Circle[] = [
-  {
-    id: 'cg1',
-    name: 'Cloud Practitioner',
-    level: 'Foundational',
-    description: 'Start your AWS journey here! Perfect for beginners looking to understand cloud concepts.',
-    members: ['3', '4', '5', '6', '7', '8'],
-    owners: ['1', 'admin1'],
-    color: 'bg-green-500/10 text-green-600 border-green-500/30',
-    scheduledSessions: [
-      { id: 'gs1', groupId: 'cg1', title: 'Weekly Study Session', description: 'Going through Domain 1: Cloud Concepts', date: '2025-01-18', time: '19:00 IST', hostId: '1', hostName: 'Priya Sharma', meetingLink: 'https://meet.example.com/cp-study' }
-    ],
-    messages: [
-      {
-        id: 'gm1', groupId: 'cg1', userId: '1', userName: 'Priya Sharma', userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Priya', content: 'Welcome everyone! Let us use this channel to discuss Cloud Practitioner exam prep. Share resources, ask questions, and support each other!', createdAt: '2025-01-01', replies: [
-          { id: 'gr1', messageId: 'gm1', userId: '5', userName: 'Sneha Reddy', userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sneha', content: 'Thanks for setting this up! Super helpful.', createdAt: '2025-01-01', likes: 3 }
-        ], likes: 12, isPinned: true
-      },
-      {
-        id: 'gm2', groupId: 'cg1', userId: '6', userName: 'Arjun Nair', userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Arjun', content: 'Anyone have good resources for understanding the shared responsibility model?', createdAt: '2025-01-05', replies: [
-          { id: 'gr2', messageId: 'gm2', userId: '1', userName: 'Priya Sharma', userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Priya', content: 'Check out the AWS Well-Architected Framework whitepaper. It explains this really well!', createdAt: '2025-01-05', likes: 5 },
-          { id: 'gr3', messageId: 'gm2', userId: '3', userName: 'Ananya Patel', userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Ananya', content: 'Also Stephane Maarek has a great video on this topic.', createdAt: '2025-01-05', likes: 4 }
-        ], likes: 6
-      }
-    ]
-  },
-  {
-    id: 'cg2',
-    name: 'Solutions Architect Associate',
-    level: 'Associate',
-    description: 'Design distributed systems on AWS. Most popular certification for architects and developers.',
-    members: ['1', '2', '3', '4', '5'],
-    owners: ['2', 'admin1'],
-    color: 'bg-blue-500/10 text-blue-600 border-blue-500/30',
-    scheduledSessions: [
-      { id: 'gs2', groupId: 'cg2', title: 'Practice Exam Review', description: 'Reviewing answers from practice test #3', date: '2025-01-20', time: '18:00 IST', hostId: '2', hostName: 'Rahul Verma' }
-    ],
-    messages: [
-      { id: 'gm3', groupId: 'cg2', userId: '2', userName: 'Rahul Verma', userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Rahul', content: 'This week we are focusing on VPC and networking concepts. Make sure to understand VPC peering vs Transit Gateway!', createdAt: '2025-01-10', replies: [], likes: 8, isPinned: true }
-    ]
-  },
-  {
-    id: 'cg3',
-    name: 'Developer Associate',
-    level: 'Associate',
-    description: 'Focus on developing and maintaining AWS applications. Great for developers.',
-    members: ['2', '3', '5', '6'],
-    owners: ['1'],
-    color: 'bg-blue-500/10 text-blue-600 border-blue-500/30',
-    scheduledSessions: [],
-    messages: [
-      {
-        id: 'gm4', groupId: 'cg3', userId: '5', userName: 'Sneha Reddy', userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sneha', content: 'Just passed my DVA-C02! Happy to share my study notes.', createdAt: '2025-01-08', replies: [
-          { id: 'gr4', messageId: 'gm4', userId: '6', userName: 'Arjun Nair', userAvatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Arjun', content: 'Congrats! Would love to see your notes!', createdAt: '2025-01-08', likes: 2 }
-        ], likes: 15
-      }
-    ]
-  },
-  {
-    id: 'cg4',
-    name: 'SysOps Administrator',
-    level: 'Associate',
-    description: 'Operations and deployment on AWS. Perfect for sysadmins transitioning to cloud.',
-    members: ['2', '4', '7'],
-    owners: ['admin1'],
-    color: 'bg-blue-500/10 text-blue-600 border-blue-500/30',
-    scheduledSessions: [],
-    messages: []
-  },
-  {
-    id: 'cg5',
-    name: 'Solutions Architect Professional',
-    level: 'Professional',
-    description: 'Advanced architectural concepts. Recommended after SAA certification.',
-    members: ['1', '2'],
-    owners: ['1'],
-    color: 'bg-purple-500/10 text-purple-600 border-purple-500/30',
-    scheduledSessions: [
-      { id: 'gs3', groupId: 'cg5', title: 'Case Study Deep Dive', description: 'Analyzing complex architecture scenarios', date: '2025-01-25', time: '20:00 IST', hostId: '1', hostName: 'Priya Sharma' }
-    ],
-    messages: []
-  },
-  {
-    id: 'cg6',
-    name: 'DevOps Engineer Professional',
-    level: 'Professional',
-    description: 'CI/CD and automation on AWS. Combines development and operations expertise.',
-    members: ['2'],
-    owners: ['2'],
-    color: 'bg-purple-500/10 text-purple-600 border-purple-500/30',
-    scheduledSessions: [],
-    messages: []
-  }
-];
-
 // ==================== COLLEGE CHAMPS DATA ====================
 
 export interface CollegeTask {
@@ -2053,69 +1887,12 @@ export const getTaskById = (taskId: string): CollegeTask | undefined => {
 };
 
 // Current logged in user (for demo - can be switched between roles)
-export const organiserUser: User = mockUsers[0]; // Organiser (admin)
-export const speakerUser: User = mockUsers[1]; // Speaker (Priya)
-export const memberUser: User = mockUsers[3]; // Member (Ananya)
+export const organiserUser: User = mockUsers[0]; // Member (Ananya)
 
 // Default current user - change this to test different roles
 export const currentUser: User = organiserUser;
 
-// Helper function to get user by ID (synchronous - for mock data only)
-// Use getUserByIdAsync for real user data
-export const getUserById = (id: string): User | undefined => {
-  return mockUsers.find(user => user.id === id);
-};
-
 // Async version to fetch real users from API
-let usersCache: User[] | null = null;
-let cacheTimestamp = 0;
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
-
-export const getUserByIdAsync = async (id: string): Promise<User | undefined> => {
-  try {
-    // Import dynamically to avoid circular dependency
-    const { getAllUsers } = await import('@/lib/userProfile');
-
-    // Check cache
-    const now = Date.now();
-    if (usersCache && (now - cacheTimestamp) < CACHE_DURATION) {
-      return usersCache.find(user => user.id === id);
-    }
-
-    // Fetch fresh data
-    const users = await getAllUsers();
-    usersCache = users;
-    cacheTimestamp = now;
-
-    return users.find(user => user.id === id);
-  } catch (error) {
-    console.error('Failed to fetch user:', error);
-    return undefined;
-  }
-};
-
-// Clear users cache (useful after updates)
-export const clearUsersCache = () => {
-  usersCache = null;
-  cacheTimestamp = 0;
-};
-
-// Helper to get event link based on category
-export const getEventLink = (event: Event): string => {
-  switch (event.category) {
-    case 'sprint':
-      return `/skill-sprint?id=${event.linkedEventId}`;
-    case 'meetup':
-    case 'workshop':
-    case 'certification':
-      return `/meetups?id=${event.linkedEventId}`;
-    case 'champs':
-      return '/college-champs';
-    default:
-      return '/';
-  }
-};
-
 
 // Helper function to generate unified events from all sources
 // NOTE: This must be defined AFTER mockColleges to avoid circular dependency
@@ -2177,6 +1954,3 @@ export const generateUnifiedEvents = (): Event[] => {
   // Sort by date (newest first for upcoming, oldest first for past)
   return events.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 };
-
-// Generate unified events from sprints, meetups, and college champs
-export const mockEvents: Event[] = generateUnifiedEvents();

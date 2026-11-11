@@ -1,12 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Eye, EyeOff, Mail, Lock, User, Building2, GraduationCap, 
-  Briefcase, MapPin, Globe, ChevronRight, ChevronLeft, Check, 
-  Loader2, Shield, Camera, Upload, ExternalLink, Users, XCircle,
-  Linkedin, Github, Twitter
-} from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, User, Building2, GraduationCap, Briefcase, MapPin, Globe, ChevronRight, ChevronLeft, Check, Loader2, Shield, Camera, Upload, Linkedin, Github, Twitter } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -20,7 +15,6 @@ import { getCurrentUser } from 'aws-amplify/auth';
 import logo from '@/assets/logo.png';
 import { getAllColleges, College } from '@/lib/colleges';
 import { getAllCloudClubs, CloudClub } from '@/lib/cloudClubs';
-import { submitMeetupVerification, normalizeMeetupProfileUrl, getMeetupGroupUrl } from '@/lib/meetup';
 import { createUserProfile } from '@/lib/userProfile';
 import { UnconfirmedAccountError, messageOf, nameOf } from '@/lib/authErrors';
 
@@ -209,7 +203,7 @@ export default function Signup() {
         title: "You already have an account",
         description: "We've signed you in.",
       });
-      navigate(redirectTo && redirectTo.startsWith('/') ? redirectTo : '/');
+      navigate(redirectTo && redirectTo.startsWith('/') && !redirectTo.startsWith('//') ? redirectTo : '/');
     } catch (error) {
       if (error instanceof UnconfirmedAccountError) {
         try {
@@ -301,7 +295,13 @@ export default function Signup() {
 
     setIsLoading(true);
     try {
-      // Upload profile photo to S3 first (before sign in)
+      // Sign in first: uploads and profile creation both need a signed-in
+      // session (a resumed signup is already signed in from the email-code step)
+      if (!signedInEarly) {
+        await signIn(formData.email, formData.password, true);
+      }
+
+      // Upload profile photo to S3
       let avatarUrl = '';
       if (formData.profilePhoto && formData.profilePhoto.startsWith('data:')) {
         try {
@@ -334,14 +334,8 @@ export default function Signup() {
         }
       }
 
-      // Create user profile in DynamoDB BEFORE signing in
+      // Create user profile in DynamoDB
       try {
-        // Sign in temporarily to get auth token for API call (a resumed
-        // signup is already signed in from the email-code step)
-        if (!signedInEarly) {
-          await signIn(formData.email, formData.password, true);
-        }
-        
         // Wait for auth session
         await new Promise(resolve => setTimeout(resolve, 1000));
 
@@ -396,7 +390,7 @@ export default function Signup() {
 
       // Navigate to home (or back to the page that sent the user here, e.g. a
       // speaker invitation acceptance page). Only allow same-origin paths.
-      if (redirectTo && redirectTo.startsWith('/')) {
+      if (redirectTo && redirectTo.startsWith('/') && !redirectTo.startsWith('//')) {
         navigate(redirectTo);
       } else {
         navigate('/');
@@ -823,7 +817,7 @@ export default function Signup() {
                           onValueChange={(value) => {
                             setFormData((prev) => ({
                               ...prev,
-                              affiliationType: value,
+                              affiliationType: value as OnboardingData['affiliationType'],
                               isCollegeChamp: value === 'champ',
                               isCloudClub: value === 'club',
                               champCollegeId: value === 'champ' ? prev.champCollegeId : '',

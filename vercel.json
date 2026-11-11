@@ -5,6 +5,14 @@
       "destination": "/api/og/badge/:badgeId/:userSlug"
     },
     {
+      "source": "/ob2/issuer.json",
+      "destination": "https://2q4zt5zl9e.execute-api.us-east-1.amazonaws.com/dev/ob2/issuer.json"
+    },
+    {
+      "source": "/ob2/:kind(badges|assertions|badge-images)/:file",
+      "destination": "https://2q4zt5zl9e.execute-api.us-east-1.amazonaws.com/dev/ob2/:kind/:file"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }

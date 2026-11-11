@@ -29,12 +29,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import {
-  Search, Filter, ExternalLink, Plus, Loader2, Image as ImageIcon,
-  Code2, FileText, Video, Sparkles, X, Tag, Upload, CheckCircle, Clock, XCircle,
-  Share2, Calendar, User as UserIcon, Copy, Check, ChevronRight,
-  MoreVertical, Pencil, Trash2, Lock, EyeOff
-} from 'lucide-react';
+import { Search, Filter, ExternalLink, Plus, Loader2, Code2, FileText, Video, Sparkles, X, Tag, Upload, CheckCircle, Clock, XCircle, Share2, Calendar, ChevronRight, MoreVertical, Pencil, Trash2, Lock, EyeOff } from 'lucide-react';
 import { SpotlightSubmission, SpotlightType } from '@/data/mockData';
 import {
   getSpotlightSubmissions,

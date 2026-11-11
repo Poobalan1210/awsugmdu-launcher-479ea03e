@@ -16,7 +16,3 @@ export const isOrganiserEmail = (email: string): boolean => {
 export const getOrganiserEmails = (): string[] => {
   return import.meta.env.VITE_ADMIN_EMAILS?.split(',').map((e: string) => e.trim()) || [];
 };
-
-// Legacy alias for backward compatibility
-export const isAdminEmail = isOrganiserEmail;
-export const getAdminEmails = getOrganiserEmails;

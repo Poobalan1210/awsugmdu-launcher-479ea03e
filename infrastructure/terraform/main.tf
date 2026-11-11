@@ -542,12 +542,19 @@ resource "aws_lambda_function" "meetups_crud" {
 
   environment {
     variables = {
+      # Read by verify-auth.js to check sign-in tokens and organiser access.
+      COGNITO_USER_POOL_ID       = aws_cognito_user_pool.user_pool.id
+      COGNITO_CLIENT_ID          = aws_cognito_user_pool_client.web_client.id
+      ADMIN_EMAILS               = var.admin_emails
       MEETUPS_TABLE_NAME         = aws_dynamodb_table.meetups.name
       USERS_TABLE_NAME           = aws_dynamodb_table.users.name
       COLLEGES_TABLE_NAME        = aws_dynamodb_table.colleges.name
       MEETUP_FEEDBACK_TABLE_NAME = aws_dynamodb_table.meetup_feedback.name
-      SES_FROM_EMAIL             = "info@awsugmdu.in"
-      APP_URL                    = "https://www.awsugmdu.in"
+      # Posters copied from Meetup by "Sync from Meetup" (meetup-sync.js)
+      MEETUP_POSTERS_BUCKET            = aws_s3_bucket.meetup_posters.id
+      CLOUDFRONT_MEETUP_POSTERS_DOMAIN = aws_cloudfront_distribution.meetup_posters.domain_name
+      SES_FROM_EMAIL                   = "info@awsugmdu.in"
+      APP_URL                          = "https://www.awsugmdu.in"
     }
   }
 
@@ -568,6 +575,11 @@ resource "aws_lambda_function" "s3_upload" {
 
   environment {
     variables = {
+      # Read by verify-auth.js to check sign-in tokens and organiser access.
+      COGNITO_USER_POOL_ID             = aws_cognito_user_pool.user_pool.id
+      COGNITO_CLIENT_ID                = aws_cognito_user_pool_client.web_client.id
+      USERS_TABLE_NAME                 = aws_dynamodb_table.users.name
+      ADMIN_EMAILS                     = var.admin_emails
       MEETUP_POSTERS_BUCKET            = aws_s3_bucket.meetup_posters.id
       PROFILE_PHOTOS_BUCKET            = aws_s3_bucket.profile_photos.id
       CLOUDFRONT_PROFILE_PHOTOS_DOMAIN = aws_cloudfront_distribution.profile_photos.domain_name
@@ -593,8 +605,12 @@ resource "aws_lambda_function" "sprints_crud" {
 
   environment {
     variables = {
-      SPRINTS_TABLE_NAME = aws_dynamodb_table.sprints.name
-      USERS_TABLE_NAME   = aws_dynamodb_table.users.name
+      # Read by verify-auth.js to check sign-in tokens and organiser access.
+      COGNITO_USER_POOL_ID = aws_cognito_user_pool.user_pool.id
+      COGNITO_CLIENT_ID    = aws_cognito_user_pool_client.web_client.id
+      ADMIN_EMAILS         = var.admin_emails
+      SPRINTS_TABLE_NAME   = aws_dynamodb_table.sprints.name
+      USERS_TABLE_NAME     = aws_dynamodb_table.users.name
     }
   }
 
@@ -618,6 +634,8 @@ resource "aws_lambda_function" "users_crud" {
 
   environment {
     variables = {
+      # Read by verify-auth.js to check sign-in tokens and organiser access.
+      COGNITO_CLIENT_ID      = aws_cognito_user_pool_client.web_client.id
       USERS_TABLE_NAME       = aws_dynamodb_table.users.name
       COLLEGES_TABLE_NAME    = aws_dynamodb_table.colleges.name
       CLOUD_CLUBS_TABLE_NAME = aws_dynamodb_table.cloud_clubs.name
@@ -2235,6 +2253,8 @@ resource "aws_api_gateway_deployment" "api" {
       aws_api_gateway_integration.meetups_id_delete_lambda.id,
       aws_api_gateway_integration.meetups_id_end_lambda.id,
       aws_api_gateway_integration.meetups_id_end_options_lambda.id,
+      aws_api_gateway_integration.meetups_sync_meetup_lambda.id,
+      aws_api_gateway_integration.meetups_sync_meetup_options_lambda.id,
       aws_api_gateway_integration.meetups_id_photos_post_lambda.id,
       aws_api_gateway_integration.meetups_id_photos_delete_lambda.id,
       aws_api_gateway_integration.meetups_id_photos_options_lambda.id,
@@ -2299,6 +2319,9 @@ resource "aws_api_gateway_deployment" "api" {
       aws_api_gateway_integration.badges_id_get.id,
       aws_api_gateway_integration.badges_id_put.id,
       aws_api_gateway_integration.badges_id_delete.id,
+      aws_api_gateway_integration.badges_id_award_post.id,
+      aws_api_gateway_integration.badges_id_award_delete.id,
+      aws_api_gateway_integration.badges_id_award_options.id,
       # Stats endpoint (lightweight home-page aggregate counts)
       aws_api_gateway_integration.stats_get_lambda.id,
       aws_api_gateway_integration.stats_options.id,
@@ -2343,6 +2366,9 @@ resource "aws_api_gateway_deployment" "api" {
     aws_api_gateway_integration.meetups_id_delete_lambda,
     aws_api_gateway_integration.meetups_id_publish_lambda,
     aws_api_gateway_integration.meetups_id_end_lambda,
+    aws_api_gateway_integration.meetups_sync_meetup_lambda,
+    aws_api_gateway_integration.meetups_sync_meetup_options_lambda,
+    aws_api_gateway_integration_response.meetups_sync_meetup_options,
     aws_api_gateway_integration.meetups_id_photos_post_lambda,
     aws_api_gateway_integration.meetups_id_photos_delete_lambda,
     aws_api_gateway_integration.meetups_id_photos_options_lambda,
@@ -2535,6 +2561,9 @@ resource "aws_api_gateway_deployment" "api" {
     aws_api_gateway_integration.badges_id_get,
     aws_api_gateway_integration.badges_id_put,
     aws_api_gateway_integration.badges_id_delete,
+    aws_api_gateway_integration.badges_id_award_post,
+    aws_api_gateway_integration.badges_id_award_delete,
+    aws_api_gateway_integration_response.badges_id_award_options,
     aws_api_gateway_integration.badges_id_options,
     aws_api_gateway_integration_response.badges_id_options,
     # Stats endpoint
@@ -2557,6 +2586,21 @@ resource "aws_api_gateway_deployment" "api" {
 
   rest_api_id = aws_api_gateway_rest_api.api.id
   stage_name  = var.environment
+}
+
+# Throttle every method on the stage. Without it the only limit was the
+# account-wide default (10,000 req/s), so one script could run up Lambda and
+# DynamoDB costs or starve real members. These limits sit far above the
+# site's normal traffic; raise them before a large live event if needed.
+resource "aws_api_gateway_method_settings" "throttle" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  stage_name  = aws_api_gateway_deployment.api.stage_name
+  method_path = "*/*"
+
+  settings {
+    throttling_rate_limit  = 100
+    throttling_burst_limit = 200
+  }
 }
 
 # Cognito User Pool

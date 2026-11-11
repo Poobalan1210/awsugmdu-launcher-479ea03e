@@ -1,8 +1,5 @@
 import { useState } from 'react';
-import {
-  Share2, Twitter, Linkedin, Facebook, Link2, Check,
-  Copy, X, MessageCircle,
-} from 'lucide-react';
+import { Share2, Twitter, Linkedin, Facebook, Link2, Check, Copy, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,

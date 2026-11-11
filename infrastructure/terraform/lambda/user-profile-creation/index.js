@@ -5,7 +5,7 @@ const client = new DynamoDBClient({ region: process.env.AWS_REGION });
 const docClient = DynamoDBDocumentClient.from(client);
 
 exports.handler = async (event) => {
-  console.log('Event:', JSON.stringify(event, null, 2));
+  console.log('Request:', event.httpMethod || event.triggerSource);
   
   // Handle CORS preflight
   if (event.httpMethod === 'OPTIONS') {

@@ -17,6 +17,8 @@ const EVENTS_TABLE = process.env.AWS_EVENTS_TABLE_NAME;
 const SUBMISSIONS_TABLE = process.env.AWS_EVENT_SUBMISSIONS_TABLE_NAME;
 const USERS_TABLE = process.env.USERS_TABLE_NAME;
 
+const { withVerifiedAuth, callerId, callerIsAdmin } = require('./verify-auth');
+
 const headers = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Credentials': true,
@@ -24,8 +26,8 @@ const headers = {
   'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
 };
 
-exports.handler = async (event) => {
-  console.log('Event:', JSON.stringify(event, null, 2));
+const handleRequest = async (event) => {
+  console.log('Request:', event.httpMethod, event.resource);
 
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers, body: '' };
@@ -34,6 +36,15 @@ exports.handler = async (event) => {
   try {
     const resource = event.resource;
     const method = event.httpMethod;
+
+    // Everything except reads and a member's own submission is organiser-only.
+    const isMemberSubmission = resource === '/aws-events/{id}/submissions' && method === 'POST';
+    if (method !== 'GET' && !isMemberSubmission && !(await callerIsAdmin(event))) {
+      return { statusCode: 403, headers, body: JSON.stringify({ message: 'Only organisers can do that.' }) };
+    }
+    if (isMemberSubmission && !callerId(event)) {
+      return { statusCode: 401, headers, body: JSON.stringify({ message: 'Please sign in again.' }) };
+    }
 
     // Route: /aws-events
     if (resource === '/aws-events') {
@@ -147,7 +158,8 @@ exports.handler = async (event) => {
         const submission = {
           id: uuidv4(),
           eventId: eventId,
-          userId: body.userId,
+          // A member submits for themselves; an organiser may submit for anyone.
+          userId: (await callerIsAdmin(event)) ? (body.userId || callerId(event)) : callerId(event),
           userName: body.userName,
           userAvatar: body.userAvatar,
           linkedInUrl: body.linkedInUrl,
@@ -193,7 +205,7 @@ exports.handler = async (event) => {
       if (method === 'POST') {
         const submissionId = event.pathParameters.id;
         const body = JSON.parse(event.body);
-        const { status, reviewerName, reviewerId } = body;
+        const { status, reviewerName } = body;
 
         // 1. Get submission
         const getSubResult = await docClient.send(new GetCommand({
@@ -205,6 +217,8 @@ exports.handler = async (event) => {
         if (!submission) {
           return { statusCode: 404, headers, body: JSON.stringify({ message: 'Submission not found' }) };
         }
+        // Approving twice must not award the points twice.
+        const alreadyApproved = submission.status === 'approved';
 
         // 2. Update submission
         const result = await docClient.send(new UpdateCommand({
@@ -214,7 +228,7 @@ exports.handler = async (event) => {
           ExpressionAttributeNames: { '#status': 'status' },
           ExpressionAttributeValues: {
             ':status': status,
-            ':reviewedBy': reviewerId || 'system',
+            ':reviewedBy': callerId(event),
             ':reviewerName': reviewerName || 'Admin',
             ':reviewedAt': new Date().toISOString()
           },
@@ -222,7 +236,7 @@ exports.handler = async (event) => {
         }));
 
         // 3. Award points if approved
-        if (status === 'approved') {
+        if (status === 'approved' && !alreadyApproved) {
           // Get event to find points
           const getEventResult = await docClient.send(new GetCommand({
             TableName: EVENTS_TABLE,
@@ -250,7 +264,7 @@ exports.handler = async (event) => {
                 points: pointsToAward,
                 reason: `Attendance approved for ${awsEvent.title}`,
                 type: 'event',
-                awardedBy: reviewerId || 'system',
+                awardedBy: callerId(event),
                 awardedAt: new Date().toISOString()
               };
               
@@ -261,7 +275,7 @@ exports.handler = async (event) => {
                 points: pointsToAward,
                 reason: `Attendance approved for ${awsEvent.title}`,
                 pointType: 'event',
-                awardedBy: reviewerId || 'system',
+                awardedBy: callerId(event),
                 timestamp: new Date().toISOString()
               });
 
@@ -304,3 +318,5 @@ exports.handler = async (event) => {
     };
   }
 };
+
+exports.handler = withVerifiedAuth(handleRequest);

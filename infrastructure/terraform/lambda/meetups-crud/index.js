@@ -3,6 +3,8 @@ const { DynamoDBDocumentClient, PutCommand, GetCommand, UpdateCommand, ScanComma
 const crypto = require('crypto');
 const { authorize, createUnauthorizedResponse, extractUserId, getUserRoles } = require('./shared/auth');
 const { sendEmail, renderEmail, APP_URL } = require('./shared/email');
+const { withVerifiedAuth, callerId, callerIsAdmin } = require('./verify-auth');
+const { syncFromMeetup } = require('./meetup-sync');
 
 const client = new DynamoDBClient({ region: process.env.AWS_REGION });
 let docClient = DynamoDBDocumentClient.from(client, {
@@ -38,30 +40,8 @@ function createResponse(statusCode, body, headers = {}) {
   };
 }
 
-// Helper function to parse path parameters
-function parsePath(event) {
-  // API Gateway proxy integration provides path in event.path
-  // Path parameters are also available in event.pathParameters
-  const path = event.path || event.requestContext?.path || '';
-  const pathParts = path.split('/').filter(p => p);
-
-  // Remove stage name if present (e.g., /dev/meetups -> meetups)
-  const stageIndex = pathParts.findIndex(p => ['dev', 'staging', 'prod'].includes(p));
-  const startIndex = stageIndex >= 0 ? stageIndex + 1 : 0;
-  const relevantParts = pathParts.slice(startIndex);
-
-  // Also check pathParameters (from API Gateway)
-  const pathParams = event.pathParameters || {};
-
-  const resource = relevantParts[0] || pathParams.resource;
-  const id = pathParams.id || relevantParts[1];
-  const action = relevantParts[2] || pathParams.action;
-
-  return { resource, id, action };
-}
-
-exports.handler = async (event) => {
-  console.log('Event:', JSON.stringify(event, null, 2));
+const handleRequest = async (event) => {
+  console.log('Request:', event.httpMethod, event.path || event.resource);
 
   // Handle CORS preflight - must be first
   if (event.httpMethod === 'OPTIONS') {
@@ -90,6 +70,21 @@ exports.handler = async (event) => {
       userId: authResult.userId,
       roles: authResult.roles,
     };
+
+    // Members register, give feedback and answer a speaker invitation, always
+    // as themselves. Every other write is for organisers and volunteers; the
+    // role table alone left routes it does not map open to any member.
+    if (event.httpMethod !== 'GET') {
+      const memberAction = event.httpMethod === 'POST' &&
+        /\/meetups\/[^/]+\/(register|feedback|speaker-invite\/[^/]+)\/?$/.test(_path);
+      if (memberAction) {
+        let body = {};
+        try { body = (typeof event.body === 'string' ? JSON.parse(event.body) : event.body) || {}; } catch { body = {}; }
+        event.body = JSON.stringify({ ...body, userId: callerId(event) });
+      } else if (!authResult.roles.includes('volunteer') && !(await callerIsAdmin(event))) {
+        return createUnauthorizedResponse('Only organisers can do that.', getCorsHeaders());
+      }
+    }
   }
 
   try {
@@ -108,6 +103,20 @@ exports.handler = async (event) => {
 
     // Route handling
     if (resource === 'meetups') {
+      if (method === 'POST' && id === 'sync-meetup' && !action) {
+        // POST /meetups/sync-meetup - Create drafts for new Meetup.com events (organisers only)
+        if (!(await callerIsAdmin(event))) {
+          return createResponse(403, { error: 'Only organisers can sync from Meetup.' });
+        }
+        let body = {};
+        try { body = (typeof event.body === 'string' ? JSON.parse(event.body) : event.body) || {}; } catch { body = {}; }
+        try {
+          return createResponse(200, await syncFromMeetup({ docClient, table: MEETUPS_TABLE, body }));
+        } catch (error) {
+          console.error('Meetup sync failed:', error);
+          return createResponse(502, { error: `Could not reach Meetup: ${error.message}` });
+        }
+      }
       if (method === 'GET' && !id) {
         // GET /meetups - List all meetups
         return await listMeetups(event);
@@ -2220,3 +2229,5 @@ exports.__test__ = {
   __setDocClient: (fake) => { docClient = fake; },
   __getCommands: () => ({ UpdateCommand, GetCommand, ScanCommand }),
 };
+
+exports.handler = withVerifiedAuth(handleRequest);

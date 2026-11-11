@@ -88,8 +88,8 @@ resource "aws_dynamodb_table" "badges" {
     type = "S"
   }
 
-  point_in_time_recovery      { enabled = true }
-  deletion_protection_enabled = false   # allow deletes from admin
+  point_in_time_recovery { enabled = true }
+  deletion_protection_enabled = false # allow deletes from admin
 
   tags = { Name = "${var.project_name}-badges-table" }
 }
@@ -116,9 +116,9 @@ resource "aws_dynamodb_table" "ob2_assertions" {
     projection_type = "ALL"
   }
 
-  point_in_time_recovery      { enabled = true }
+  point_in_time_recovery { enabled = true }
   deletion_protection_enabled = true
-  lifecycle                   { prevent_destroy = true }
+  lifecycle { prevent_destroy = true }
 
   tags = { Name = "${var.project_name}-ob2-assertions-table" }
 }
@@ -144,10 +144,15 @@ resource "aws_lambda_function" "badges_crud" {
 
   environment {
     variables = {
-      ASSERTIONS_TABLE    = aws_dynamodb_table.ob2_assertions.name
-      BADGES_TABLE        = aws_dynamodb_table.badges.name
-      BADGE_IMAGES_BUCKET = aws_s3_bucket.badge_images.id
-      BASE_URL            = "https://www.awsugmdu.in"
+      # Read by verify-auth.js to check sign-in tokens and organiser access.
+      COGNITO_USER_POOL_ID = aws_cognito_user_pool.user_pool.id
+      COGNITO_CLIENT_ID    = aws_cognito_user_pool_client.web_client.id
+      USERS_TABLE_NAME     = aws_dynamodb_table.users.name
+      ADMIN_EMAILS         = var.admin_emails
+      ASSERTIONS_TABLE     = aws_dynamodb_table.ob2_assertions.name
+      BADGES_TABLE         = aws_dynamodb_table.badges.name
+      BADGE_IMAGES_BUCKET  = aws_s3_bucket.badge_images.id
+      BASE_URL             = "https://www.awsugmdu.in"
     }
   }
 
@@ -285,10 +290,10 @@ resource "aws_api_gateway_method" "ob2_issuer_options" {
   authorization = "NONE"
 }
 resource "aws_api_gateway_integration" "ob2_issuer_options" {
-  rest_api_id = aws_api_gateway_rest_api.api.id
-  resource_id = aws_api_gateway_resource.ob2_issuer.id
-  http_method = aws_api_gateway_method.ob2_issuer_options.http_method
-  type        = "MOCK"
+  rest_api_id       = aws_api_gateway_rest_api.api.id
+  resource_id       = aws_api_gateway_resource.ob2_issuer.id
+  http_method       = aws_api_gateway_method.ob2_issuer_options.http_method
+  type              = "MOCK"
   request_templates = { "application/json" = "{\"statusCode\": 200}" }
 }
 resource "aws_api_gateway_method_response" "ob2_issuer_options_200" {
@@ -329,10 +334,10 @@ resource "aws_api_gateway_method" "ob2_badges_id_options" {
   authorization = "NONE"
 }
 resource "aws_api_gateway_integration" "ob2_badges_id_options" {
-  rest_api_id = aws_api_gateway_rest_api.api.id
-  resource_id = aws_api_gateway_resource.ob2_badges_id.id
-  http_method = aws_api_gateway_method.ob2_badges_id_options.http_method
-  type        = "MOCK"
+  rest_api_id       = aws_api_gateway_rest_api.api.id
+  resource_id       = aws_api_gateway_resource.ob2_badges_id.id
+  http_method       = aws_api_gateway_method.ob2_badges_id_options.http_method
+  type              = "MOCK"
   request_templates = { "application/json" = "{\"statusCode\": 200}" }
 }
 resource "aws_api_gateway_method_response" "ob2_badges_id_options_200" {
@@ -373,10 +378,10 @@ resource "aws_api_gateway_method" "ob2_images_id_options" {
   authorization = "NONE"
 }
 resource "aws_api_gateway_integration" "ob2_images_id_options" {
-  rest_api_id = aws_api_gateway_rest_api.api.id
-  resource_id = aws_api_gateway_resource.ob2_badge_images_id.id
-  http_method = aws_api_gateway_method.ob2_images_id_options.http_method
-  type        = "MOCK"
+  rest_api_id       = aws_api_gateway_rest_api.api.id
+  resource_id       = aws_api_gateway_resource.ob2_badge_images_id.id
+  http_method       = aws_api_gateway_method.ob2_images_id_options.http_method
+  type              = "MOCK"
   request_templates = { "application/json" = "{\"statusCode\": 200}" }
 }
 resource "aws_api_gateway_method_response" "ob2_images_id_options_200" {
@@ -432,10 +437,10 @@ resource "aws_api_gateway_method" "ob2_assertions_options" {
   authorization = "NONE"
 }
 resource "aws_api_gateway_integration" "ob2_assertions_options" {
-  rest_api_id = aws_api_gateway_rest_api.api.id
-  resource_id = aws_api_gateway_resource.ob2_assertions.id
-  http_method = aws_api_gateway_method.ob2_assertions_options.http_method
-  type        = "MOCK"
+  rest_api_id       = aws_api_gateway_rest_api.api.id
+  resource_id       = aws_api_gateway_resource.ob2_assertions.id
+  http_method       = aws_api_gateway_method.ob2_assertions_options.http_method
+  type              = "MOCK"
   request_templates = { "application/json" = "{\"statusCode\": 200}" }
 }
 resource "aws_api_gateway_method_response" "ob2_assertions_options_200" {
@@ -476,10 +481,10 @@ resource "aws_api_gateway_method" "ob2_assert_id_options" {
   authorization = "NONE"
 }
 resource "aws_api_gateway_integration" "ob2_assert_id_options" {
-  rest_api_id = aws_api_gateway_rest_api.api.id
-  resource_id = aws_api_gateway_resource.ob2_assertions_id.id
-  http_method = aws_api_gateway_method.ob2_assert_id_options.http_method
-  type        = "MOCK"
+  rest_api_id       = aws_api_gateway_rest_api.api.id
+  resource_id       = aws_api_gateway_resource.ob2_assertions_id.id
+  http_method       = aws_api_gateway_method.ob2_assert_id_options.http_method
+  type              = "MOCK"
   request_templates = { "application/json" = "{\"statusCode\": 200}" }
 }
 resource "aws_api_gateway_method_response" "ob2_assert_id_options_200" {
@@ -520,10 +525,10 @@ resource "aws_api_gateway_method" "ob2_verify_options" {
   authorization = "NONE"
 }
 resource "aws_api_gateway_integration" "ob2_verify_options" {
-  rest_api_id = aws_api_gateway_rest_api.api.id
-  resource_id = aws_api_gateway_resource.ob2_verify.id
-  http_method = aws_api_gateway_method.ob2_verify_options.http_method
-  type        = "MOCK"
+  rest_api_id       = aws_api_gateway_rest_api.api.id
+  resource_id       = aws_api_gateway_resource.ob2_verify.id
+  http_method       = aws_api_gateway_method.ob2_verify_options.http_method
+  type              = "MOCK"
   request_templates = { "application/json" = "{\"statusCode\": 200}" }
 }
 resource "aws_api_gateway_method_response" "ob2_verify_options_200" {
@@ -595,10 +600,10 @@ resource "aws_api_gateway_method" "og_badge_options" {
 }
 
 resource "aws_api_gateway_integration" "og_badge_options" {
-  rest_api_id = aws_api_gateway_rest_api.api.id
-  resource_id = aws_api_gateway_resource.og_badge_id_slug.id
-  http_method = aws_api_gateway_method.og_badge_options.http_method
-  type        = "MOCK"
+  rest_api_id       = aws_api_gateway_rest_api.api.id
+  resource_id       = aws_api_gateway_resource.og_badge_id_slug.id
+  http_method       = aws_api_gateway_method.og_badge_options.http_method
+  type              = "MOCK"
   request_templates = { "application/json" = "{\"statusCode\": 200}" }
 }
 
@@ -673,10 +678,10 @@ resource "aws_api_gateway_method" "badges_options" {
   authorization = "NONE"
 }
 resource "aws_api_gateway_integration" "badges_options" {
-  rest_api_id = aws_api_gateway_rest_api.api.id
-  resource_id = aws_api_gateway_resource.badges_resource.id
-  http_method = aws_api_gateway_method.badges_options.http_method
-  type        = "MOCK"
+  rest_api_id       = aws_api_gateway_rest_api.api.id
+  resource_id       = aws_api_gateway_resource.badges_resource.id
+  http_method       = aws_api_gateway_method.badges_options.http_method
+  type              = "MOCK"
   request_templates = { "application/json" = "{\"statusCode\": 200}" }
 }
 resource "aws_api_gateway_method_response" "badges_options_200" {
@@ -751,10 +756,10 @@ resource "aws_api_gateway_method" "badges_id_options" {
   authorization = "NONE"
 }
 resource "aws_api_gateway_integration" "badges_id_options" {
-  rest_api_id = aws_api_gateway_rest_api.api.id
-  resource_id = aws_api_gateway_resource.badges_id_resource.id
-  http_method = aws_api_gateway_method.badges_id_options.http_method
-  type        = "MOCK"
+  rest_api_id       = aws_api_gateway_rest_api.api.id
+  resource_id       = aws_api_gateway_resource.badges_id_resource.id
+  http_method       = aws_api_gateway_method.badges_id_options.http_method
+  type              = "MOCK"
   request_templates = { "application/json" = "{\"statusCode\": 200}" }
 }
 resource "aws_api_gateway_method_response" "badges_id_options_200" {
@@ -783,4 +788,71 @@ output "badge_images_bucket_name" {
 output "ob2_assertions_table_name" {
   description = "DynamoDB table for OB v2 assertions"
   value       = aws_dynamodb_table.ob2_assertions.name
+}
+
+# /badges/{id}/award — POST awards a badge, DELETE revokes it (organisers only;
+# the check is in badges-crud).
+resource "aws_api_gateway_resource" "badges_id_award" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  parent_id   = aws_api_gateway_resource.badges_id_resource.id
+  path_part   = "award"
+}
+
+resource "aws_api_gateway_method" "badges_id_award_post" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.badges_id_award.id
+  http_method   = "POST"
+  authorization = "NONE"
+}
+resource "aws_api_gateway_integration" "badges_id_award_post" {
+  rest_api_id             = aws_api_gateway_rest_api.api.id
+  resource_id             = aws_api_gateway_resource.badges_id_award.id
+  http_method             = aws_api_gateway_method.badges_id_award_post.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.badges_crud.invoke_arn
+}
+
+resource "aws_api_gateway_method" "badges_id_award_delete" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.badges_id_award.id
+  http_method   = "DELETE"
+  authorization = "NONE"
+}
+resource "aws_api_gateway_integration" "badges_id_award_delete" {
+  rest_api_id             = aws_api_gateway_rest_api.api.id
+  resource_id             = aws_api_gateway_resource.badges_id_award.id
+  http_method             = aws_api_gateway_method.badges_id_award_delete.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = aws_lambda_function.badges_crud.invoke_arn
+}
+
+resource "aws_api_gateway_method" "badges_id_award_options" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.badges_id_award.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+resource "aws_api_gateway_integration" "badges_id_award_options" {
+  rest_api_id       = aws_api_gateway_rest_api.api.id
+  resource_id       = aws_api_gateway_resource.badges_id_award.id
+  http_method       = aws_api_gateway_method.badges_id_award_options.http_method
+  type              = "MOCK"
+  request_templates = { "application/json" = "{\"statusCode\": 200}" }
+}
+resource "aws_api_gateway_method_response" "badges_id_award_options_200" {
+  rest_api_id         = aws_api_gateway_rest_api.api.id
+  resource_id         = aws_api_gateway_resource.badges_id_award.id
+  http_method         = aws_api_gateway_method.badges_id_award_options.http_method
+  status_code         = "200"
+  response_parameters = local.cors_response_params
+}
+resource "aws_api_gateway_integration_response" "badges_id_award_options" {
+  rest_api_id         = aws_api_gateway_rest_api.api.id
+  resource_id         = aws_api_gateway_resource.badges_id_award.id
+  http_method         = aws_api_gateway_method.badges_id_award_options.http_method
+  status_code         = aws_api_gateway_method_response.badges_id_award_options_200.status_code
+  response_parameters = local.cors_headers
+  depends_on          = [aws_api_gateway_integration.badges_id_award_options]
 }

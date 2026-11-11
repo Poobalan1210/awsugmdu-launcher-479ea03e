@@ -9,15 +9,19 @@ data "archive_file" "points_crud" {
 resource "aws_lambda_function" "points_crud" {
   filename         = data.archive_file.points_crud.output_path
   function_name    = "awsug-points-crud"
-  role            = aws_iam_role.lambda_execution.arn
-  handler         = "index.handler"
+  role             = aws_iam_role.lambda_execution.arn
+  handler          = "index.handler"
   source_code_hash = data.archive_file.points_crud.output_base64sha256
-  runtime         = "nodejs18.x"
-  timeout         = 30
+  runtime          = "nodejs18.x"
+  timeout          = 30
 
   environment {
     variables = {
-      USERS_TABLE_NAME = aws_dynamodb_table.users.name
+      # Read by verify-auth.js to check sign-in tokens and organiser access.
+      COGNITO_USER_POOL_ID = aws_cognito_user_pool.user_pool.id
+      COGNITO_CLIENT_ID    = aws_cognito_user_pool_client.web_client.id
+      ADMIN_EMAILS         = var.admin_emails
+      USERS_TABLE_NAME     = aws_dynamodb_table.users.name
     }
   }
 

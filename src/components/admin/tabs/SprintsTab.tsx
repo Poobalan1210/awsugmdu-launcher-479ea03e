@@ -12,24 +12,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import {
-  Plus, Calendar, Users, CheckCircle, XCircle, Clock,
-  Rocket, ExternalLink, MessageSquare, Award, Link2,
-  Copy, Mail, Edit, Trash2, Eye, FileText, User as UserIcon, Video,
-  Upload, X, Check, ChevronDown, ChevronUp, GraduationCap,
-  ListTodo, Medal, Github, Star, Quote, List, Hash, Type, CheckSquare
-} from 'lucide-react';
+import { Plus, Calendar, Users, CheckCircle, XCircle, Clock, ExternalLink, Award, Edit, Trash2, FileText, Video, Upload, ChevronDown, ListTodo, Github, Star, List, Hash, Type, CheckSquare } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 import { 
   Sprint, Submission, SubmissionField, User as UserType, 
   mockSprints, mockUsers 
 } from '@/data/mockData';
-import { 
-  getSprints, createSprint, updateSprint, deleteSprint, 
-  addSession, deleteSession, reviewSubmission,
-  CreateSprintData, UpdateSprintData, CreateSessionData 
-} from '@/lib/sprints';
+import { getSprints, createSprint, updateSprint, deleteSprint, addSession, reviewSubmission, CreateSessionData } from '@/lib/sprints';
 import { uploadFileToS3 } from '@/lib/s3Upload';
 import { SessionPerson, SessionPeopleManager } from '@/components/admin/shared/AdminShared';
 import { SubmissionFormBuilder } from '@/components/shared/SubmissionFormBuilder';
@@ -135,7 +125,7 @@ function SubmissionReview({ submission, submissionFormConfig, onAction }: {
 
                           let Icon = List;
                           let isLong = false;
-                          let displayValue = String(value);
+                          const displayValue = String(value);
 
                           if (typeof value === 'boolean') Icon = CheckSquare;
                           else if (typeof value === 'number') Icon = Hash;

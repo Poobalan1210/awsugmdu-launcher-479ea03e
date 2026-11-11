@@ -2,20 +2,20 @@ import { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { Calendar, Award, ExternalLink, Image as ImageIcon, Upload, Loader2, CheckCircle, Clock } from 'lucide-react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Calendar, Award, Upload, Loader2, CheckCircle, Clock } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getAWSEvents, submitEventProof, getPendingEventSubmissions } from '@/lib/awsEvents';
 import { uploadFileToS3 } from '@/lib/s3Upload';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { format, parseISO } from 'date-fns';
-import { AWSEvent, AWSEventSubmission } from '@/data/mockData';
+import { AWSEvent } from '@/data/mockData';
 
 function SubmitProofDialog({ event, user, onSubmitted }: { event: AWSEvent, user: any, onSubmitted: () => void }) {
   const [open, setOpen] = useState(false);

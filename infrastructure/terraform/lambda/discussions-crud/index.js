@@ -1,5 +1,6 @@
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
-const { DynamoDBDocumentClient, PutCommand, GetCommand, UpdateCommand, ScanCommand, QueryCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
+const { DynamoDBDocumentClient, PutCommand, GetCommand, UpdateCommand, QueryCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
+const { withVerifiedAuth, callerId, callerIsAdmin } = require('./verify-auth');
 
 const client = new DynamoDBClient({ region: process.env.AWS_REGION });
 const docClient = DynamoDBDocumentClient.from(client);
@@ -27,8 +28,8 @@ function createResponse(statusCode, body, headers = {}) {
   };
 }
 
-exports.handler = async (event) => {
-  console.log('Event:', JSON.stringify(event, null, 2));
+const handleRequest = async (event) => {
+  console.log('Request:', event.httpMethod, event.path || event.resource);
   
   // Handle CORS preflight
   if (event.httpMethod === 'OPTIONS') {
@@ -53,6 +54,15 @@ exports.handler = async (event) => {
     const id = routeParts[1]; // post id
     const action = routeParts[2]; // replies, like, share
     const replyId = routeParts[3]; // reply id for nested operations
+
+    // Every write is by the signed-in member, whatever userId the body names.
+    if (method !== 'GET') {
+      const uid = callerId(event);
+      if (!uid) return createResponse(401, { error: 'Please sign in again.' });
+      let body = {};
+      try { body = (typeof event.body === 'string' ? JSON.parse(event.body) : event.body) || {}; } catch { body = {}; }
+      event.body = JSON.stringify({ ...body, userId: uid });
+    }
     
     // Route handling
     if (resource === 'discussions') {
@@ -70,7 +80,7 @@ exports.handler = async (event) => {
         return await updateDiscussion(id, event);
       } else if (method === 'DELETE' && id && !action) {
         // DELETE /discussions/{id} - Delete discussion
-        return await deleteDiscussion(id);
+        return await deleteDiscussion(id, event);
       } else if (method === 'POST' && id && action === 'like') {
         // POST /discussions/{id}/like - Like/unlike discussion
         return await toggleLike(id, event);
@@ -85,7 +95,7 @@ exports.handler = async (event) => {
         return await updateReply(id, replyId, event);
       } else if (method === 'DELETE' && id && action === 'replies' && replyId) {
         // DELETE /discussions/{id}/replies/{replyId} - Delete reply
-        return await deleteReply(id, replyId);
+        return await deleteReply(id, replyId, event);
       }
     }
     
@@ -99,6 +109,11 @@ exports.handler = async (event) => {
     });
   }
 };
+
+/** Only the author or an organiser may edit or delete a post or reply. */
+async function canModify(authorId, event) {
+  return (authorId && authorId === callerId(event)) || (await callerIsAdmin(event));
+}
 
 // List discussions by sprint
 async function listDiscussions(event) {
@@ -199,6 +214,9 @@ async function updateDiscussion(id, event) {
   if (!existing.Item) {
     return createResponse(404, { error: 'Discussion not found' });
   }
+  if (!(await canModify(existing.Item.userId, event))) {
+    return createResponse(403, { error: 'You can only edit your own posts.' });
+  }
   
   const { title, content } = body;
   
@@ -239,7 +257,7 @@ async function updateDiscussion(id, event) {
 }
 
 // Delete discussion
-async function deleteDiscussion(id) {
+async function deleteDiscussion(id, event) {
   // Check if discussion exists
   const existing = await docClient.send(new GetCommand({
     TableName: DISCUSSIONS_TABLE,
@@ -248,6 +266,9 @@ async function deleteDiscussion(id) {
   
   if (!existing.Item) {
     return createResponse(404, { error: 'Discussion not found' });
+  }
+  if (!(await canModify(existing.Item.userId, event))) {
+    return createResponse(403, { error: 'You can only delete your own posts.' });
   }
   
   await docClient.send(new DeleteCommand({
@@ -348,6 +369,9 @@ async function updateReply(id, replyId, event) {
   if (replyIndex === -1) {
     return createResponse(404, { error: 'Reply not found' });
   }
+  if (!(await canModify(replies[replyIndex].userId, event))) {
+    return createResponse(403, { error: 'You can only edit your own replies.' });
+  }
   
   // Update reply
   replies[replyIndex].content = content;
@@ -373,7 +397,7 @@ async function updateReply(id, replyId, event) {
 }
 
 // Delete reply
-async function deleteReply(id, replyId) {
+async function deleteReply(id, replyId, event) {
   // Get discussion
   const existing = await docClient.send(new GetCommand({
     TableName: DISCUSSIONS_TABLE,
@@ -390,6 +414,10 @@ async function deleteReply(id, replyId) {
   
   if (replies.length === updatedReplies.length) {
     return createResponse(404, { error: 'Reply not found' });
+  }
+  const target = replies.find(r => r.id === replyId);
+  if (!(await canModify(target.userId, event))) {
+    return createResponse(403, { error: 'You can only delete your own replies.' });
   }
   
   await docClient.send(new UpdateCommand({
@@ -528,3 +556,5 @@ async function toggleReplyLike(id, event) {
   
   return createResponse(200, { discussion: updated.Item, liked: !hasLiked });
 }
+
+exports.handler = withVerifiedAuth(handleRequest);

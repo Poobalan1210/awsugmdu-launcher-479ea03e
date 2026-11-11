@@ -1,17 +1,5 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { 
-  signIn as amplifySignIn, 
-  signOut as amplifySignOut,
-  signUp as amplifySignUp,
-  confirmSignUp as amplifyConfirmSignUp,
-  resendSignUpCode as amplifyResendSignUpCode,
-  resetPassword as amplifyResetPassword,
-  confirmResetPassword as amplifyConfirmResetPassword,
-  getCurrentUser,
-  fetchAuthSession,
-  type SignInOutput,
-  type SignUpOutput,
-} from 'aws-amplify/auth';
+import { signIn as amplifySignIn, signOut as amplifySignOut, signUp as amplifySignUp, confirmSignUp as amplifyConfirmSignUp, resendSignUpCode as amplifyResendSignUpCode, resetPassword as amplifyResetPassword, confirmResetPassword as amplifyConfirmResetPassword, getCurrentUser, fetchAuthSession, type SignUpOutput } from 'aws-amplify/auth';
 import { uploadData } from 'aws-amplify/storage';
 import { User } from '@/data/mockData';
 import { createUserProfile, getUserProfile, hasCreatedProfileThisSession } from '@/lib/userProfile';

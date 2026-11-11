@@ -21,13 +21,6 @@ export async function createAWSEvent(data: { title: string; description: string;
   });
 }
 
-export async function updateAWSEvent(id: string, data: Partial<AWSEvent>): Promise<AWSEvent> {
-  return callApi(`/aws-events/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-  });
-}
-
 export async function deleteAWSEvent(id: string): Promise<void> {
   return callApi(`/aws-events/${id}`, {
     method: 'DELETE',
@@ -63,13 +56,4 @@ export async function reviewEventSubmission(
     method: 'POST',
     body: JSON.stringify({ status, reviewerName, reviewerId }),
   });
-}
-
-export async function getEventSubmissions(eventId: string): Promise<AWSEventSubmission[]> {
-  try {
-    return await callApi(`/aws-events/${eventId}/submissions`, { method: 'GET' });
-  } catch (error) {
-    console.error('Error fetching submissions for event:', error);
-    return [];
-  }
 }

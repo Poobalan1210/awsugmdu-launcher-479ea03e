@@ -6,11 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
-import { 
-  MessageSquare, Send, ThumbsUp, Clock, Link2, Edit, Trash2, 
-  Share2, Copy, Check, MoreVertical, AlertCircle
-} from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { MessageSquare, Send, ThumbsUp, Clock, Edit, Trash2, Share2, Copy, Check, MoreVertical } from 'lucide-react';
 import { toast } from 'sonner';
 import { format, parseISO } from 'date-fns';
 import { useAuth } from '@/contexts/AuthContext';

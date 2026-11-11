@@ -3,7 +3,6 @@ import { motion } from 'framer-motion';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
@@ -12,14 +11,8 @@ import {
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell
 } from 'recharts';
-import {
-  GraduationCap, Calendar, Rocket, Users, TrendingUp,
-  Trophy, Target, Activity, CheckCircle, Clock, XCircle
-} from 'lucide-react';
-import { format, parseISO, startOfWeek, endOfWeek, startOfMonth, endOfMonth,
-  startOfYear, endOfYear, eachWeekOfInterval, eachMonthOfInterval, isWithinInterval,
-  subMonths, subWeeks, subYears
-} from 'date-fns';
+import { GraduationCap, Calendar, Rocket, Activity, Clock, XCircle } from 'lucide-react';
+import { format, parseISO, endOfWeek, endOfMonth, startOfYear, endOfYear, eachWeekOfInterval, eachMonthOfInterval, isWithinInterval, subMonths, subWeeks, subYears } from 'date-fns';
 import { getAllColleges, getAllCollegeTasks, College, CollegeTask } from '@/lib/colleges';
 import { getMeetups } from '@/lib/meetups';
 import { getSprints } from '@/lib/sprints';

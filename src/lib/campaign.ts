@@ -823,13 +823,6 @@ export async function setLessons(ticks: string[]): Promise<LessonState[]> {
   return res.lessons ?? [];
 }
 
-export async function confirmExternalEntry(): Promise<void> {
-  await callApi(`/campaign/${CAMPAIGN_ID}/confirm-entry`, {
-    method: 'POST',
-    body: JSON.stringify({ confirmed: true }),
-  });
-}
-
 // ── Presentation helpers ──────────────────────────────────────────
 
 export function timeLeftToDeadline(now: Date = new Date()) {

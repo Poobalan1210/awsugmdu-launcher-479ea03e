@@ -283,18 +283,6 @@ export async function addHackathonResource(
   return response.hackathon;
 }
 
-export async function updateHackathonResource(
-  hackathonId: string,
-  resourceId: string,
-  updates: Partial<Omit<HackathonResource, 'id' | 'addedAt'>>,
-): Promise<Hackathon> {
-  const response = await callApi<HackathonResponse>(
-    `/hackathons/${hackathonId}/resources/${resourceId}`,
-    { method: 'PUT', body: JSON.stringify(updates) },
-  );
-  return response.hackathon;
-}
-
 export async function deleteHackathonResource(
   hackathonId: string,
   resourceId: string,
@@ -329,19 +317,6 @@ export async function removeHackathonMentor(
   const response = await callApi<HackathonResponse>(`/hackathons/${hackathonId}/mentors`, {
     method: 'DELETE',
     body: JSON.stringify({ scope: 'pool', mentorUserId }),
-  });
-  return response.hackathon;
-}
-
-/** Assign a mentor to a solo participant who isn't on a team. */
-export async function assignIndividualMentor(
-  hackathonId: string,
-  participantUserId: string,
-  mentor: HackathonPerson,
-): Promise<Hackathon> {
-  const response = await callApi<HackathonResponse>(`/hackathons/${hackathonId}/mentors`, {
-    method: 'POST',
-    body: JSON.stringify({ scope: 'individual', participantUserId, mentor }),
   });
   return response.hackathon;
 }
@@ -616,13 +591,6 @@ export async function reviewHackathonSubmission(
   );
 }
 
-export async function deleteHackathonSubmission(
-  hackathonId: string,
-  submissionId: string,
-): Promise<{ message: string; id: string }> {
-  return callApi(`/hackathons/${hackathonId}/submissions/${submissionId}`, { method: 'DELETE' });
-}
-
 // ---------------------------------------------------------------------------
 // Client-side helpers
 // ---------------------------------------------------------------------------
@@ -726,10 +694,6 @@ export function findUserTeam(teams: HackathonTeam[], userId?: string): Hackathon
 export function isTeamLead(team: HackathonTeam | undefined, userId?: string): boolean {
   if (!team || !userId) return false;
   return team.leadUserId === userId;
-}
-
-export function isTeamFull(team: HackathonTeam, config: HackathonTeamConfig): boolean {
-  return team.members.length >= config.maxSize;
 }
 
 /**

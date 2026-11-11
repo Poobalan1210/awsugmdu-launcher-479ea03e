@@ -1,6 +1,7 @@
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
-const { DynamoDBDocumentClient, PutCommand, GetCommand, UpdateCommand, DeleteCommand, QueryCommand, ScanCommand } = require('@aws-sdk/lib-dynamodb');
+const { DynamoDBDocumentClient, PutCommand, GetCommand, UpdateCommand, DeleteCommand, ScanCommand } = require('@aws-sdk/lib-dynamodb');
 const { authorize, createUnauthorizedResponse } = require('./shared/auth');
+const { withVerifiedAuth, callerId, callerIsAdmin } = require('./verify-auth');
 
 const client = new DynamoDBClient({ region: process.env.AWS_REGION });
 const docClient = DynamoDBDocumentClient.from(client);
@@ -14,8 +15,8 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
 };
 
-exports.handler = async (event) => {
-  console.log('Event:', JSON.stringify(event, null, 2));
+const handleRequest = async (event) => {
+  console.log('Request:', event.httpMethod, event.path || event.resource);
   
   // Handle CORS preflight
   if (event.httpMethod === 'OPTIONS') {
@@ -35,6 +36,19 @@ exports.handler = async (event) => {
       return createUnauthorizedResponse(authResult.error, corsHeaders);
     }
     
+    // Submitting a task is the only write a member makes, and it is always
+    // made as themselves. Every other write is organiser-only; the role table
+    // alone left routes it does not map (all of /cloud-clubs) open to anyone.
+    const isTaskSubmit = /\/tasks\/[^/]+\/submit\/?$/.test(event.path || '');
+    if (!isTaskSubmit && !(await callerIsAdmin(event))) {
+      return createUnauthorizedResponse('Only organisers can do that.', corsHeaders);
+    }
+    if (isTaskSubmit) {
+      let body = {};
+      try { body = (typeof event.body === 'string' ? JSON.parse(event.body) : event.body) || {}; } catch { body = {}; }
+      event.body = JSON.stringify({ ...body, submittedBy: callerId(event) });
+    }
+
     // Add user context to event for use in handlers
     event.userContext = {
       userId: authResult.userId,
@@ -1341,3 +1355,5 @@ async function updateUserCollegeInfo(userId, collegeId, isLead) {
     // Don't throw - this is a non-critical operation
   }
 }
+
+exports.handler = withVerifiedAuth(handleRequest);

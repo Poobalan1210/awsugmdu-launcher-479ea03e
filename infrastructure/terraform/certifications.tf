@@ -1,8 +1,8 @@
 # DynamoDB Table for Circles
 resource "aws_dynamodb_table" "certification_groups" {
-  name           = "${var.project_name}-circles"
-  billing_mode   = "PAY_PER_REQUEST"
-  hash_key       = "id"
+  name         = "${var.project_name}-circles"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "id"
 
   attribute {
     name = "id"
@@ -15,8 +15,8 @@ resource "aws_dynamodb_table" "certification_groups" {
   }
 
   global_secondary_index {
-    name     = "level-index"
-    hash_key = "level"
+    name            = "level-index"
+    hash_key        = "level"
     projection_type = "ALL"
   }
 
@@ -45,14 +45,17 @@ data "archive_file" "certifications_crud" {
 resource "aws_lambda_function" "certifications_crud" {
   filename         = data.archive_file.certifications_crud.output_path
   function_name    = "${var.project_name}-circles-crud"
-  role            = aws_iam_role.lambda_execution.arn
-  handler         = "index.handler"
+  role             = aws_iam_role.lambda_execution.arn
+  handler          = "index.handler"
   source_code_hash = data.archive_file.certifications_crud.output_base64sha256
-  runtime         = "nodejs20.x"
-  timeout         = 30
+  runtime          = "nodejs20.x"
+  timeout          = 30
 
   environment {
     variables = {
+      # Read by verify-auth.js to check sign-in tokens and organiser access.
+      COGNITO_USER_POOL_ID            = aws_cognito_user_pool.user_pool.id
+      COGNITO_CLIENT_ID               = aws_cognito_user_pool_client.web_client.id
       CERTIFICATION_GROUPS_TABLE_NAME = aws_dynamodb_table.certification_groups.name
       # Needed to resolve the caller's platform roles for moderator-only actions
       # (pin/unpin a post, hand-add an entry to an agent circle). Read access to

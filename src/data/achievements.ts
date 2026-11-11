@@ -1,12 +1,4 @@
-import {
-  Trophy,
-  Zap,
-  Users,
-  CalendarCheck,
-  Mic,
-  Globe,
-  type LucideIcon,
-} from 'lucide-react';
+import { Trophy, Zap, Users, CalendarCheck, type LucideIcon } from 'lucide-react';
 
 /**
  * Central source of truth for AWS User Group Madurai achievements.
@@ -94,39 +86,3 @@ export interface SpeakerHighlight {
   /** Optional LinkedIn post for this highlight. */
   linkedInUrl?: string;
 }
-
-export const speakerHighlights: SpeakerHighlight[] = [
-  {
-    name: 'Vivek Raja P S',
-    role: 'Keynotes & technical sessions across India’s AWS community',
-    talks: [
-      'AWS Community Day — Bengaluru, Pune & Mumbai',
-      'AWS Student Community Day — South TN',
-      'GenAI Loft, Bengaluru',
-      'Developer Lounge session — AWS Summit Bengaluru 2025',
-      'Featured on an AWS Podcast',
-    ],
-    upcoming: ['Speaking at AWS re:Invent, Las Vegas 2025'],
-    spotlight:
-      'His project WeWake AgentStudio, showcased at AWS DevSphere Bengaluru 2025, received appreciation from Dr. Swami Sivasubramanian (VP, Agentic AI, AWS).',
-    featured: true,
-  },
-  {
-    name: 'Poobalan P',
-    role: 'Speaker on student & GenAI stages',
-    talks: [
-      'AWS Student Community Day — South TN',
-      'AWS Student Community Day — Tirupathi',
-      'GenAI Loft, Bengaluru',
-    ],
-  },
-  {
-    name: 'Logesh S',
-    role: 'Community speaker',
-    talks: ['AWS Student Community Day — South TN'],
-  },
-];
-
-/** Icon used for the "Community on Stage" section heading. */
-export const stageIcon: LucideIcon = Mic;
-export const globalIcon: LucideIcon = Globe;

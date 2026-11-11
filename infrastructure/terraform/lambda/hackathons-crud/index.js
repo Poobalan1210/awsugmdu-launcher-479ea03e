@@ -37,6 +37,7 @@ const AdmZip = require('adm-zip');
 
 const { extractUserId } = require('./shared/auth');
 const { sendEmail, renderEmail, APP_URL } = require('./shared/email');
+const { withVerifiedAuth } = require('./verify-auth');
 
 const client = new DynamoDBClient({ region: process.env.AWS_REGION });
 const docClient = DynamoDBDocumentClient.from(client);
@@ -112,20 +113,6 @@ const nowIso = () => new Date().toISOString();
 /** Today as a YYYY-MM-DD string in UTC. */
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
-/**
- * Compare date-only deadline strings instead of constructing Date objects.
- *
- * Deadlines are stored as YYYY-MM-DD with no timezone. `new Date('2026-08-23T23:59:59')`
- * parses as *local* time, so comparing that against `new Date()` shifts the
- * boundary by the server's UTC offset — a deadline could read as expired hours
- * early or late depending on where the Lambda runs. Lexicographic comparison of
- * ISO date strings is exact and timezone-stable, and "through the end of that
- * day" is what an organiser picking a date means.
- */
-function isOnOrBeforeToday(dateStr) {
-  return String(dateStr) <= todayStr();
-}
-
 function isTodayOnOrBefore(dateStr) {
   return todayStr() <= String(dateStr);
 }
@@ -192,8 +179,15 @@ async function resolveCaller(event) {
   const userId = extractUserId(authHeader);
   if (!userId) return { userId: null, user: null };
   const user = await getUserRecord(userId);
+  // The organiser-email check uses the email Cognito verified for this
+  // caller, never the one stored on the profile row.
+  const claims = event.verifiedClaims;
+  const emailVerified = claims?.email_verified === true || claims?.email_verified === 'true';
+  if (user && emailVerified) verifiedEmails.set(user, normalizeEmail(claims.email));
   return { userId, user };
 }
+
+const verifiedEmails = new WeakMap();
 
 /** Does the user hold any of the given roles, via profile.role or roles[]? */
 function hasAnyRole(user, allowed) {
@@ -211,7 +205,7 @@ function hasAnyRole(user, allowed) {
 function isAdminUser(user, userId) {
   if (!user) return false;
 
-  const email = normalizeEmail(user.email);
+  const email = verifiedEmails.get(user);
   if (email && ADMIN_EMAILS.includes(email)) return true;
 
   return hasAnyRole(user, ADMIN_ROLES);
@@ -390,7 +384,7 @@ async function findExistingMembership(hackathonId, userId) {
 // Router
 // ----------------------------------------------------------------------------
 
-exports.handler = async (event) => {
+const handleRequest = async (event) => {
   console.log('Event:', JSON.stringify({
     method: event.httpMethod,
     path: event.path,
@@ -3459,3 +3453,5 @@ async function deleteSubmission(hackathonId, submissionId, event) {
   await docClient.send(new DeleteCommand({ TableName: SUBMISSIONS_TABLE, Key: { id: submissionId } }));
   return createResponse(200, { message: 'Submission deleted', id: submissionId });
 }
+
+exports.handler = withVerifiedAuth(handleRequest);

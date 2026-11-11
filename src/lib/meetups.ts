@@ -98,6 +98,26 @@ export async function publishMeetup(id: string, publish: boolean): Promise<Meetu
   return response.meetup;
 }
 
+export interface MeetupSyncResult {
+  since: string;
+  checked: number;
+  alreadyOnPlatform: number;
+  created: { id: string; title: string; date: string }[];
+  failed: { meetupId: string; error: string }[];
+  remaining: number;
+}
+
+/**
+ * Create draft meetups for Meetup.com events not yet on the platform.
+ * Organisers only. Drafts are never published and no attendance is marked.
+ */
+export async function syncFromMeetup(since?: string): Promise<MeetupSyncResult> {
+  return callApi<MeetupSyncResult>('/meetups/sync-meetup', {
+    method: 'POST',
+    body: JSON.stringify(since ? { since } : {}),
+  });
+}
+
 export async function deleteMeetup(id: string): Promise<void> {
   await callApi(`/meetups/${id}`, {
     method: 'DELETE',

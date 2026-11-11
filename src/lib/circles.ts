@@ -172,18 +172,6 @@ export async function joinCircle(id: string, userId: string): Promise<Circle> {
   return data.group;
 }
 
-// Leave a circle
-export async function leaveCircle(id: string, userId: string): Promise<Circle> {
-  const response = await fetch(`${API_BASE_URL}/circles/${id}/leave`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId })
-  });
-  if (!response.ok) throw new Error('Failed to leave circle');
-  const data = await response.json();
-  return data.group;
-}
-
 // Post a message to a circle
 export async function postGroupMessage(groupId: string, message: {
   userId: string;
@@ -213,16 +201,6 @@ export async function updateGroupMessage(groupId: string, messageId: string, upd
     body: JSON.stringify(updates)
   });
   if (!response.ok) throw new Error(await errorMessage(response, 'Failed to update message'));
-  const data = await response.json();
-  return data.group;
-}
-
-// Delete a message
-export async function deleteGroupMessage(groupId: string, messageId: string): Promise<Circle> {
-  const response = await fetch(`${API_BASE_URL}/circles/${groupId}/messages/${messageId}`, {
-    method: 'DELETE'
-  });
-  if (!response.ok) throw new Error('Failed to delete message');
   const data = await response.json();
   return data.group;
 }
@@ -269,16 +247,6 @@ export async function updateMessageReply(groupId: string, messageId: string, rep
   return data.group;
 }
 
-// Delete a reply
-export async function deleteMessageReply(groupId: string, messageId: string, replyId: string): Promise<Circle> {
-  const response = await fetch(`${API_BASE_URL}/circles/${groupId}/messages/${messageId}/replies/${replyId}`, {
-    method: 'DELETE'
-  });
-  if (!response.ok) throw new Error('Failed to delete reply');
-  const data = await response.json();
-  return data.group;
-}
-
 // Toggle like on a reply
 export async function toggleReplyLike(groupId: string, messageId: string, replyId: string, userId: string): Promise<{ group: Circle; liked: boolean }> {
   const response = await fetch(`${API_BASE_URL}/circles/${groupId}/messages/${messageId}/replies/${replyId}/like`, {
@@ -304,51 +272,4 @@ export function groupAgentPostsByDigest(messages: GroupMessage[]): Map<string, G
   }
 
   return grouped;
-}
-
-// Create a session
-export async function createGroupSession(groupId: string, session: {
-  title: string;
-  description: string;
-  date: string;
-  time: string;
-  hostId: string;
-  hostName: string;
-  meetingLink?: string;
-}): Promise<{ group: Circle; session: GroupSession }> {
-  const response = await fetch(`${API_BASE_URL}/circles/${groupId}/sessions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(session)
-  });
-  if (!response.ok) throw new Error('Failed to create session');
-  return await response.json();
-}
-
-// Update a session
-export async function updateGroupSession(groupId: string, sessionId: string, updates: {
-  title?: string;
-  description?: string;
-  date?: string;
-  time?: string;
-  meetingLink?: string;
-}): Promise<Circle> {
-  const response = await fetch(`${API_BASE_URL}/circles/${groupId}/sessions/${sessionId}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(updates)
-  });
-  if (!response.ok) throw new Error('Failed to update session');
-  const data = await response.json();
-  return data.group;
-}
-
-// Delete a session
-export async function deleteGroupSession(groupId: string, sessionId: string): Promise<Circle> {
-  const response = await fetch(`${API_BASE_URL}/circles/${groupId}/sessions/${sessionId}`, {
-    method: 'DELETE'
-  });
-  if (!response.ok) throw new Error('Failed to delete session');
-  const data = await response.json();
-  return data.group;
 }

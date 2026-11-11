@@ -54,21 +54,6 @@ export function generateBadgeShare(
   };
 }
 
-// Generate a direct badge verification share URL
-export function generateBadgeVerificationShare(
-  userName: string,
-  badge: Badge,
-  userId: string
-): AchievementShareData {
-  const shareUrl = `${BASE_URL}/og/badge/${badge.id}/${generateProfileSlug(userName, userId)}`;
-  return {
-    title: `Verify ${userName}'s ${badge.name} badge`,
-    text: `Check out the "${badge.name}" badge ${badge.icon} earned by ${userName} on AWS User Group Madurai!`,
-    url: shareUrl,
-    hashtags: ['AWSUG', 'OpenBadges', 'AWS'],
-  };
-}
-
 // Generate share data for a sprint (shareable link to view the sprint)
 export function generateSprintShare(
   sprintTitle: string,
@@ -123,19 +108,6 @@ export function generateCollegeTaskShare(
     text: `${collegeName} just completed "${taskTitle}" and earned ${points} points! 🎯`,
     url: `${BASE_URL}/college-champs`,
     hashtags: ['AWSUG', 'CollegeChamps', 'AWS'],
-  };
-}
-
-// Generate share data for certification earned
-export function generateCertificationShare(
-  userName: string,
-  certificationName: string
-): AchievementShareData {
-  return {
-    title: `${userName} earned ${certificationName}`,
-    text: `I just earned my ${certificationName} certification! 📜`,
-    url: `${BASE_URL}/certifications`,
-    hashtags: ['AWS', 'Certification', 'CloudComputing', 'AWSUG'],
   };
 }
 

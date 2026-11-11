@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion, Variants } from 'framer-motion';
-import { marked } from 'marked';
+import { renderRichContent } from '@/lib/markdown';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,11 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
-import {
-  Calendar, MapPin, Users, Video, Clock,
-  ArrowLeft, ExternalLink, PlayCircle,
-  Linkedin, Github, CheckCircle, Search, Rocket, Award, GraduationCap, Cloud, Loader2
-} from 'lucide-react';
+import { Calendar, MapPin, Users, Video, Clock, ArrowLeft, ExternalLink, PlayCircle, CheckCircle, Search, Rocket, Award, GraduationCap, Cloud, Loader2 } from 'lucide-react';
 import { PersonCard } from '@/components/common/PersonCard';
 import { ShareButton } from '@/components/common/ShareButton';
 import { generateMeetupShare } from '@/lib/sharing';
@@ -29,22 +25,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 
-// Configure marked for safe HTML rendering
-marked.setOptions({
-  breaks: true,
-  gfm: true,
-});
-
-// Helper to parse markdown or HTML content
-function parseContent(content: string): string {
-  // Check if content looks like HTML (has HTML tags)
-  const hasHtmlTags = /<[a-z][\s\S]*>/i.test(content);
-  if (hasHtmlTags) {
-    return content;
-  }
-  // Otherwise parse as markdown
-  return marked.parse(content) as string;
-}
+// Markdown or HTML description -> sanitized HTML
+const parseContent = renderRichContent;
 
 const containerVariants: Variants = {
   hidden: { opacity: 0 },

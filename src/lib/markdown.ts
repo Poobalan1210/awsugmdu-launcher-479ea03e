@@ -94,6 +94,31 @@ export function renderMarkdown(content: string): string {
 }
 
 /**
+ * Organiser-written descriptions (meetups, sprint sessions): HTML from the
+ * editor, or markdown. Kept broader than renderMarkdown so their formatting
+ * survives, but scripts, event handlers, iframes and forms are still stripped:
+ * this HTML is stored by the API and rendered for every visitor.
+ */
+export function renderRichContent(content: string): string {
+  if (!content) return '';
+
+  const hasHtmlTags = /<[a-z][\s\S]*>/i.test(content);
+  const raw = hasHtmlTags ? content : (markdown.parse(content, { async: false }) as string);
+
+  if (typeof window === 'undefined' || typeof DOMPurify.sanitize !== 'function') {
+    return escapeHtml(content);
+  }
+
+  const clean = DOMPurify.sanitize(raw, {
+    USE_PROFILES: { html: true },
+    FORBID_TAGS: ['style', 'form', 'input', 'button', 'textarea', 'select'],
+    ADD_ATTR: ['target', 'rel'],
+  });
+
+  return hardenLinks(clean);
+}
+
+/**
  * Strips markdown down to readable text. Used for previews, truncated
  * headlines and anywhere formatting would be noise.
  */
@@ -110,12 +135,4 @@ export function markdownToPlainText(content: string): string {
     .replace(/(\*\*|__|\*|_|~~|`)/g, '')      // emphasis / inline code
     .replace(/\s+/g, ' ')
     .trim();
-}
-
-/**
- * True when the string contains markdown syntax worth previewing. Lets the
- * composer stay quiet for one-line messages.
- */
-export function hasMarkdownFormatting(content: string): boolean {
-  return /(\*\*|__|~~|`|^\s{0,3}#{1,6}\s|^\s*([-*+]|\d+\.)\s|^\s{0,3}>\s|\[[^\]]*\]\([^)]*\))/m.test(content);
 }

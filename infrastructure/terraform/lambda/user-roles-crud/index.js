@@ -1,6 +1,7 @@
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
-const { DynamoDBDocumentClient, PutCommand, GetCommand, ScanCommand, QueryCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
+const { DynamoDBDocumentClient, PutCommand, GetCommand, ScanCommand } = require('@aws-sdk/lib-dynamodb');
 const { authorize, createUnauthorizedResponse } = require('./shared/auth');
+const { withVerifiedAuth, callerIsAdmin } = require('./verify-auth');
 
 const client = new DynamoDBClient({ region: process.env.AWS_REGION });
 const docClient = DynamoDBDocumentClient.from(client);
@@ -28,8 +29,8 @@ function createResponse(statusCode, body, headers = {}) {
   };
 }
 
-exports.handler = async (event) => {
-  console.log('Event:', JSON.stringify(event, null, 2));
+const handleRequest = async (event) => {
+  console.log('Request:', event.httpMethod, event.path || event.resource);
   
   // Handle CORS preflight
   if (event.httpMethod === 'OPTIONS') {
@@ -48,6 +49,12 @@ exports.handler = async (event) => {
       return createUnauthorizedResponse(authResult.error, getCorsHeaders());
     }
     
+    // Awarding points and assigning roles are organiser-only, whatever the
+    // role table maps (an unmapped route used to fall through as allowed).
+    if (!(await callerIsAdmin(event))) {
+      return createUnauthorizedResponse('Only organisers can do that.', getCorsHeaders());
+    }
+
     // Add user context to event
     event.userContext = {
       userId: authResult.userId,
@@ -226,3 +233,5 @@ async function removeRole(roleId) {
   
   return createResponse(404, { error: 'Role not found' });
 }
+
+exports.handler = withVerifiedAuth(handleRequest);

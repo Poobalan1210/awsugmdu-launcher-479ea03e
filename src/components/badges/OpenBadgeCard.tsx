@@ -32,6 +32,7 @@ import {
 import { BadgeShareDialog } from '@/components/badges/BadgeShareDialog';
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
+import { BadgeImage } from './BadgeImage';
 
 interface OpenBadgeCardProps {
   badge: Badge;
@@ -53,21 +54,29 @@ export function OpenBadgeCard({
   const ogProxyUrl = getOgProxyUrl(badge, user.name, user.id);
 
   const handleDownloadJson = async () => {
-    await downloadBadgeAssertion(badge, user);
-    toast.success('OB v2 assertion downloaded!', {
-      description: 'Upload the JSON file to Badgr, Credly, or any Open Badges v2 platform.',
-    });
+    try {
+      await downloadBadgeAssertion(badge, user);
+      toast.success('OB v2 assertion downloaded!', {
+        description: 'Upload the JSON file to Badgr, Credly, or any Open Badges v2 platform.',
+      });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Download failed');
+    }
   };
 
   const handleDownloadSvg = async () => {
-    await downloadBakedBadge(badge, user);
-    toast.success('Baked badge SVG downloaded!', {
-      description: 'This self-contained badge can be verified by any Open Badges v2 verifier.',
-    });
+    try {
+      await downloadBakedBadge(badge, user);
+      toast.success('Baked badge SVG downloaded!', {
+        description: 'This self-contained badge can be verified by any Open Badges v2 verifier.',
+      });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Download failed');
+    }
   };
 
   const handleLinkedIn = () => {
-    const url = getLinkedInBadgeUrl(badge, badge.earnedDate);
+    const url = getLinkedInBadgeUrl(badge, badge.earnedDate, user);
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
@@ -91,12 +100,10 @@ export function OpenBadgeCard({
             <div className="flex items-start gap-4">
               {/* Icon with verified ring — clicking goes to public badge page */}
               <Link to={publicBadgeUrl} className="relative flex-shrink-0 group/icon">
-                <div className="w-14 h-14 rounded-full bg-gradient-to-br from-amber-400/20 to-orange-500/20 border-2 border-amber-400/40 flex items-center justify-center overflow-hidden group-hover/icon:border-amber-400/80 transition-colors">
-                  {badge.imageUrl ? (
-                    <img src={badge.imageUrl} alt={badge.name} className="w-full h-full object-cover" />
-                  ) : (
-                    <span className="text-3xl">{badge.icon}</span>
-                  )}
+                <div className={badge.imageUrl
+                  ? 'w-14 h-14 rounded-full bg-gradient-to-br from-amber-400/20 to-orange-500/20 border-2 border-amber-400/40 flex items-center justify-center overflow-hidden group-hover/icon:border-amber-400/80 transition-colors'
+                  : 'w-14 h-16 flex items-center justify-center transition-transform group-hover/icon:scale-105'}>
+                  <BadgeImage badge={badge} />
                 </div>
                 <div className="absolute -bottom-1 -right-1 bg-green-500 rounded-full p-0.5">
                   <CheckCircle2 className="h-3 w-3 text-white" />

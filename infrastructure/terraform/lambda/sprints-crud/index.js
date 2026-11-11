@@ -1,5 +1,6 @@
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, PutCommand, GetCommand, UpdateCommand, DeleteCommand, ScanCommand, QueryCommand } = require('@aws-sdk/lib-dynamodb');
+const { withVerifiedAuth, callerId, callerIsAdmin } = require('./verify-auth');
 
 const client = new DynamoDBClient({ region: process.env.AWS_REGION });
 const docClient = DynamoDBDocumentClient.from(client);
@@ -27,8 +28,8 @@ function createResponse(statusCode, body, headers = {}) {
   };
 }
 
-exports.handler = async (event) => {
-  console.log('Event:', JSON.stringify(event, null, 2));
+const handleRequest = async (event) => {
+  console.log('Request:', event.httpMethod, event.path || event.resource);
   
   // Handle CORS preflight - must be first
   if (event.httpMethod === 'OPTIONS') {
@@ -53,6 +54,24 @@ exports.handler = async (event) => {
     const id = routeParts[1];
     const action = routeParts[2];
     const subAction = routeParts[3];
+
+    // Members may register, submit work and post in the forum, always as
+    // themselves. Everything else that writes is organiser-only.
+    if (method !== 'GET' && resource === 'sprints') {
+      const uid = callerId(event);
+      if (!uid) return createResponse(401, { error: 'Please sign in again.' });
+      const memberAction = method === 'POST' && id && (
+        action === 'register' || action === 'submit' || action === 'forum' ||
+        (action === 'sessions' && subAction && routeParts[4] === 'register'));
+      if (!memberAction && !(await callerIsAdmin(event))) {
+        return createResponse(403, { error: 'Only organisers can do that.' });
+      }
+      if (memberAction) {
+        let body = {};
+        try { body = (typeof event.body === 'string' ? JSON.parse(event.body) : event.body) || {}; } catch { body = {}; }
+        event.body = JSON.stringify({ ...body, userId: uid });
+      }
+    }
     
     // Route handling
     if (resource === 'sprints') {
@@ -1060,3 +1079,5 @@ async function replyToForumPost(sprintId, postId, event) {
   
   return createResponse(201, { sprint: updated.Item, reply: newReply });
 }
+
+exports.handler = withVerifiedAuth(handleRequest);

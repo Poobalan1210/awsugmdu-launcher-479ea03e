@@ -152,45 +152,6 @@ export async function completeTask(collegeId: string, taskId: string, bonusPoint
   });
 }
 
-// Update a completed task
-export async function updateTask(collegeId: string, taskId: string, data: Partial<CollegeTaskCompletion>): Promise<{ success: boolean; college: College }> {
-  return callApi(`/colleges/${collegeId}/tasks/${taskId}`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-  });
-}
-
-// Remove a completed task
-export async function removeTask(collegeId: string, taskId: string): Promise<{ success: boolean; college: College }> {
-  return callApi(`/colleges/${collegeId}/tasks/${taskId}`, {
-    method: 'DELETE',
-  });
-}
-
-// Add an event
-export async function addEvent(collegeId: string, event: CollegeEvent): Promise<{ success: boolean; college: College }> {
-  return callApi(`/colleges/${collegeId}/events`, {
-    method: 'POST',
-    body: JSON.stringify(event),
-  });
-}
-
-// Add a member to college
-export async function addMember(collegeId: string, userId: string): Promise<{ success: boolean; college: College }> {
-  return callApi(`/colleges/${collegeId}/members`, {
-    method: 'POST',
-    body: JSON.stringify({ userId }),
-  });
-}
-
-// Remove a member from college
-export async function removeMember(collegeId: string, userId: string): Promise<{ success: boolean; college: College }> {
-  return callApi(`/colleges/${collegeId}/members`, {
-    method: 'DELETE',
-    body: JSON.stringify({ userId }),
-  });
-}
-
 // Assign tasks to college
 export async function assignTasksToCollege(collegeId: string, taskIds: string[]): Promise<{ success: boolean; college: College }> {
   return callApi(`/colleges/${collegeId}/assign-tasks`, {

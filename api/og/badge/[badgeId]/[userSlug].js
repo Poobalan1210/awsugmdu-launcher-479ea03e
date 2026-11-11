@@ -1,234 +1,231 @@
 /**
- * Vercel Serverless Function — OG Proxy for badge sharing
+ * Vercel Serverless Function — share preview for a badge
  *
- * Route: GET /og/badge/:badgeId/:userSlug[?img=<encodedS3Url>]
- * e.g.:  https://www.awsugmdu.in/og/badge/b-123/poobalan-p-6544?img=https%3A%2F%2F...
+ * GET /og/badge/:badgeId/:userSlug[?u=<userId>]
+ *   HTML with Open Graph tags for LinkedIn, WhatsApp, Slack, X and Facebook.
+ *   People are redirected straight on to the React badge page.
  *
- * Returns server-rendered HTML with correct OG meta tags so LinkedIn,
- * Twitter, WhatsApp, Slack, and Telegram show a rich preview card.
- * Human visitors are immediately redirected to the React badge page.
+ * GET /og/badge/:badgeId/image.png
+ *   The 1200×627 preview card (LinkedIn's link-preview size): the badge
+ *   hexagon from the API beside its name and description. Also used as the
+ *   badge picture in award emails.
  *
- * og:image priority:
- *   1. ?img= query param  → the S3 URL of the uploaded badge image (set by frontend)
- *   2. fallback PNG       → generated with canvas (amber ring + gold star)
+ * Everything shown comes from the API, never from the query string, so a
+ * crafted link cannot put arbitrary text or images on an awsugmdu.in preview.
+ * The member's name is only shown when ?u=<userId> holds a live award of this
+ * badge whose evidence link matches the slug in the URL.
  */
 
-import { createCanvas } from '@napi-rs/canvas';
+import fs from 'fs';
 import https from 'https';
+import os from 'os';
+import path from 'path';
+import { Resvg } from '@resvg/resvg-js';
+import { FONT_TTF_BASE64 } from '../../_lib/badge-fonts.js';
 
 const BASE_URL = 'https://www.awsugmdu.in';
-const API_BASE = process.env.VITE_API_ENDPOINT
-  || 'https://2q4zt5zl9e.execute-api.us-east-1.amazonaws.com/dev';
+const API_BASE = (process.env.VITE_API_ENDPOINT
+  || 'https://2q4zt5zl9e.execute-api.us-east-1.amazonaws.com/dev').replace(/\/$/, '');
 
-// Fallback badge definitions — used when the badge ID is not in the API
-const BADGE_DEFINITIONS = {
-  b1: { name: 'Sprint Champion',  description: 'Completed 5 skill sprints'        },
-  b2: { name: 'First Submission', description: 'Made your first sprint submission' },
-  b3: { name: 'AWS Certified',    description: 'Earned an AWS certification'       },
-  b4: { name: 'Community Helper', description: 'Helped 10 community members'       },
-  b5: { name: 'Blog Writer',      description: 'Published 3 technical blogs'       },
-  b6: { name: 'Early Adopter',    description: 'Joined in the first month'         },
-  b7: { name: 'Speaker Star',     description: 'Delivered 3 sessions'              },
-  b8: { name: 'Security Expert',  description: 'Completed Security Sprint'         },
+const CARD_W = 1200;
+const CARD_H = 627;
+// Inside the subset TTFs each weight is its own family ("Inter Light" 300,
+// "Inter Medium" 500, "Inter" 700), and resvg matches on those names, so
+// each <text> names the family for its weight. Tamil falls back to Noto.
+const FONT = {
+  300: `'Inter Light','Noto Sans Tamil',sans-serif`,
+  500: `'Inter Medium','Noto Sans Tamil',sans-serif`,
+  700: `'Inter','Noto Sans Tamil SemiBold',sans-serif`,
 };
+/**
+ * resvg 2.6 ignores in-memory font buffers and needs files, so the bundled
+ * TTFs are written to the temp directory once per warm instance. Without them
+ * Vercel's Linux has no fonts at all and the card would render without text.
+ */
+let fontFiles = null;
+function badgeFontFiles() {
+  if (fontFiles) return fontFiles;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'badge-fonts-'));
+  fontFiles = Object.entries(FONT_TTF_BASE64).map(([name, b64]) => {
+    const file = path.join(dir, `${name}.ttf`);
+    fs.writeFileSync(file, Buffer.from(b64, 'base64'));
+    return file;
+  });
+  return fontFiles;
+}
 
 function esc(s) {
-  return String(s || '')
+  return String(s ?? '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;')
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-/** Fetch JSON from a URL with a 3 s timeout. Returns null on any error. */
-function fetchJson(url) {
+/** GET a URL from our API with a 4 s timeout. Resolves { status, body } or null. */
+function get(url) {
   return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(null), 3000);
-    https.get(url, { headers: { Accept: 'application/json' } }, (res) => {
-      let data = '';
-      res.on('data', c => { data += c; });
-      res.on('end', () => {
-        clearTimeout(timer);
-        try { resolve(JSON.parse(data)); } catch { resolve(null); }
-      });
-    }).on('error', () => { clearTimeout(timer); resolve(null); });
+    const req = https.get(url, { timeout: 4000 }, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks).toString('utf8') }));
+    });
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+    req.on('error', () => resolve(null));
   });
 }
 
-/**
- * Generate a 400×400 fallback PNG badge image.
- * Used only when no uploaded image URL is available.
- * Draws a geometric gold star inside the amber ring — no emoji, no external fonts.
- */
-function generateFallbackPng(badgeName) {
-  const size = 400;
-  const cx = size / 2;
-  const cy = size / 2;
-  const canvas = createCanvas(size, size);
-  const ctx = canvas.getContext('2d');
+async function getJson(url) {
+  const r = await get(url);
+  if (!r || r.status !== 200) return null;
+  try { return JSON.parse(r.body); } catch { return null; }
+}
 
-  // Background
-  const bg = ctx.createRadialGradient(cx, cy, 60, cx, cy, 220);
-  bg.addColorStop(0, '#1e293b');
-  bg.addColorStop(1, '#0f172a');
-  ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, size, size);
+const safeId = (s) => /^[\w-]{1,80}$/.test(String(s || ''));
 
-  // Outer amber glow ring
-  ctx.beginPath();
-  ctx.arc(cx, cy, 178, 0, Math.PI * 2);
-  ctx.strokeStyle = '#FF9900';
-  ctx.lineWidth = 14;
-  ctx.shadowColor = '#FF9900';
-  ctx.shadowBlur = 18;
-  ctx.stroke();
-  ctx.shadowBlur = 0;
-
-  // Inner dashed ring
-  ctx.beginPath();
-  ctx.arc(cx, cy, 158, 0, Math.PI * 2);
-  ctx.strokeStyle = 'rgba(255,153,0,0.35)';
-  ctx.lineWidth = 2;
-  ctx.setLineDash([8, 6]);
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  // 6-pointed gold star
-  const starR1 = 52, starR2 = 26, pts = 6;
-  ctx.beginPath();
-  for (let i = 0; i < pts * 2; i++) {
-    const angle = (i * Math.PI) / pts - Math.PI / 2;
-    const r = i % 2 === 0 ? starR1 : starR2;
-    const x = cx + r * Math.cos(angle);
-    const y = (cy - 28) + r * Math.sin(angle);
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-  }
-  ctx.closePath();
-  const sg = ctx.createLinearGradient(cx - starR1, cy - 28 - starR1, cx + starR1, cy - 28 + starR1);
-  sg.addColorStop(0, '#FFD700');
-  sg.addColorStop(1, '#FF9900');
-  ctx.fillStyle = sg;
-  ctx.shadowColor = '#FF9900';
-  ctx.shadowBlur = 12;
-  ctx.fill();
-  ctx.shadowBlur = 0;
-
-  // Badge name (word-wrapped)
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = '#FFFFFF';
-  ctx.font = 'bold 30px sans-serif';
-
-  const words = badgeName.split(' ');
+/** Greedy word wrap using an average glyph width (Inter is ~0.53em per char). */
+function wrap(text, fontSize, maxWidth, maxLines) {
+  const perLine = Math.max(8, Math.floor(maxWidth / (fontSize * 0.53)));
   const lines = [];
   let line = '';
-  for (const word of words) {
-    const test = line ? `${line} ${word}` : word;
-    if (ctx.measureText(test).width > 270) {
-      if (line) lines.push(line);
-      line = word;
-    } else { line = test; }
+  for (const word of String(text || '').split(/\s+/).filter(Boolean)) {
+    const next = line ? `${line} ${word}` : word;
+    if (next.length > perLine && line) { lines.push(line); line = word; } else { line = next; }
   }
   if (line) lines.push(line);
+  if (lines.length > maxLines) {
+    lines.length = maxLines;
+    lines[maxLines - 1] = `${lines[maxLines - 1].replace(/\s*\S*$/, '')}…`;
+  }
+  return lines;
+}
 
-  const lineH = 36;
-  const nameStartY = cy + 46;
-  lines.forEach((l, i) => ctx.fillText(l, cx, nameStartY + i * lineH));
+/** The badge hexagon SVG, placed as a nested <svg> so it scales cleanly. */
+function placeHexagon(badgeSvg, x, y, height) {
+  const inner = badgeSvg
+    .replace(/<\?xml[^>]*\?>/, '')
+    // Browsers pick the weight from the embedded @font-face rules; resvg needs
+    // the per-weight family named on each <text> (see FONT).
+    .replace(/<text\b[^>]*>/g, (tag) => {
+      const w = Number(tag.match(/font-weight="(\d+)"/)?.[1] || 500);
+      return tag.replace(/font-family="[^"]*"/, `font-family="${FONT[w >= 700 ? 700 : w >= 500 ? 500 : 300]}"`);
+    })
+    .replace(/<svg\b([^>]*)>/, (m, attrs) => {
+      const vb = attrs.match(/viewBox="([^"]+)"/)?.[1] || '0 0 533 615';
+      const [, , w, h] = vb.split(/\s+/).map(Number);
+      const width = Math.round((height * w) / h);
+      return `<svg x="${x}" y="${y}" width="${width}" height="${height}" viewBox="${vb}">`;
+    });
+  return inner;
+}
 
-  // Issuer label
-  ctx.font = 'bold 12px sans-serif';
-  ctx.fillStyle = 'rgba(255,153,0,0.75)';
-  ctx.fillText('AWS USER GROUP MADURAI', cx, size - 20);
+function cardSvg(badgeSvg, name, description) {
+  const textX = 600;
+  const nameSize = name.length > 22 ? 52 : 64;
+  const nameLines = wrap(name, nameSize, 540, 2);
+  const descLines = wrap(description, 28, 540, 3);
+  let y = 200;
+  const nameEls = nameLines.map((l) => {
+    const el = `<text font-family="${FONT[700]}" x="${textX}" y="${y}" font-size="${nameSize}" font-weight="700" fill="#FFFFFF">${esc(l)}</text>`;
+    y += nameSize * 1.15;
+    return el;
+  }).join('');
+  y += 20;
+  const descEls = descLines.map((l) => {
+    const el = `<text font-family="${FONT[300]}" x="${textX}" y="${y}" font-size="28" font-weight="300" fill="rgba(255,255,255,0.72)">${esc(l)}</text>`;
+    y += 40;
+    return el;
+  }).join('');
 
-  return canvas.toBuffer('image/png');
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${CARD_W}" height="${CARD_H}" viewBox="0 0 ${CARD_W} ${CARD_H}">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0B0F18"/><stop offset="1" stop-color="#05070C"/>
+    </linearGradient>
+  </defs>
+  <rect width="${CARD_W}" height="${CARD_H}" fill="url(#bg)"/>
+  <rect x="0" y="${CARD_H - 8}" width="${CARD_W}" height="8" fill="#A375F0"/>
+  ${placeHexagon(badgeSvg, 70, 52, 515)}
+  <text font-family="${FONT[500]}" x="${textX}" y="130" font-size="26" font-weight="500" letter-spacing="3" fill="#C6A6FF">AWS USER GROUP MADURAI</text>
+  ${nameEls}
+  ${descEls}
+  <text font-family="${FONT[500]}" x="${textX}" y="560" font-size="24" font-weight="500" fill="rgba(255,255,255,0.55)">Verified Open Badge · awsugmdu.in</text>
+</svg>`;
+}
+
+function renderPng(svg) {
+  return new Resvg(svg, {
+    font: { fontFiles: badgeFontFiles(), defaultFontFamily: 'Inter', loadSystemFonts: false },
+    fitTo: { mode: 'width', value: CARD_W },
+  }).render().asPng();
+}
+
+async function sendImage(res, badgeId) {
+  const [badge, hexagon] = await Promise.all([
+    getJson(`${API_BASE}/ob2/badges/${badgeId}.json`),
+    get(`${API_BASE}/ob2/badge-images/${badgeId}.svg`),
+  ]);
+  if (!badge || !hexagon || hexagon.status !== 200) {
+    res.redirect(302, `${BASE_URL}/og-image.png`);
+    return;
+  }
+  const png = renderPng(cardSvg(hexagon.body, badge.name || 'Badge', badge.description || ''));
+  res.setHeader('Content-Type', 'image/png');
+  res.setHeader('Cache-Control', 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800');
+  res.status(200).send(png);
+}
+
+/** The recipient's display name, only when ?u= holds a live award matching the slug. */
+async function verifiedRecipient(badgeId, userId, userSlug) {
+  if (!safeId(userId)) return null;
+  const assertion = await getJson(`${API_BASE}/ob2/assertions/${badgeId}-${userId}.json`);
+  const evidence = assertion?.evidence?.[0];
+  if (!evidence || evidence.id !== `${BASE_URL}/u/${userSlug}`) return null;
+  const name = String(evidence.name || '').replace(/'s AWS UG Madurai Profile$/, '');
+  return name || null;
 }
 
 export default async function handler(req, res) {
-  // The route can be:
-  //   /og/badge/:badgeId/:userSlug           (legacy)
-  //   /og/badge/:badgeId/:userSlug/:version  (new — version in path for LinkedIn cache-busting)
-  // Vercel passes path params via req.query for [badgeId] and [userSlug].
-  // The :version segment is captured by the rewrite but not as a named param,
-  // so we read it from the raw URL path if needed.
-  const { badgeId, userSlug, img, name, desc } = req.query;
+  const { badgeId, userSlug, u } = req.query;
 
-  // ── Resolve badge name & description ──────────────────────────────────────
-  // Prefer params passed from the frontend (always accurate, no API call needed).
-  // Fall back to hardcoded list, then API for anything else.
-  let badgeName        = name || BADGE_DEFINITIONS[badgeId]?.name        || 'Badge';
-  let badgeDescription = desc || BADGE_DEFINITIONS[badgeId]?.description || '';
-
-  // Only call the API if we still don't have a name (dynamic badge, no params)
-  if (!name && !BADGE_DEFINITIONS[badgeId]) {
-    try {
-      const badgeClass = await fetchJson(`${API_BASE}/ob2/badges/${badgeId}.json`);
-      if (badgeClass?.name)        badgeName        = badgeClass.name;
-      if (badgeClass?.description) badgeDescription = badgeClass.description;
-    } catch { /* API unreachable — use fallback */ }
+  if (!safeId(badgeId)) {
+    res.redirect(302, BASE_URL);
+    return;
   }
 
-  // ── Resolve recipient name from slug ──────────────────────────────────────
-  // Slug format: "firstname-lastname-xxxx" — strip the 4-char hash suffix
-  let recipientName = null;
-  if (userSlug) {
-    const parts = userSlug.split('-');
-    if (parts.length >= 2) {
-      recipientName = parts.slice(0, -1)
-        .map(p => p.charAt(0).toUpperCase() + p.slice(1))
-        .join(' ');
-    }
-  }
-
-  // ── Resolve og:image ──────────────────────────────────────────────────────
-  // ?img= is the S3 URL of the uploaded badge image, encoded by the frontend.
-  // When present, use it directly — LinkedIn fetches it from S3.
-  // When absent, serve a generated fallback PNG from this function.
-  const uploadedImageUrl = img || null;
-
-  // The fallback PNG URL — served by this same function without ?img=
-  const fallbackPngUrl = `${BASE_URL}/og/badge/${badgeId}/image.png`;
-
-  // og:image is the uploaded S3 URL when available, otherwise the fallback PNG
-  const ogImage = uploadedImageUrl || fallbackPngUrl;
-
-  // ── Handle /og/badge/:badgeId/image.png ───────────────────────────────────
-  // This sub-path serves the fallback PNG for badges without an uploaded image.
-  // It is only reached when og:image points to fallbackPngUrl (no ?img= param).
   if (userSlug === 'image.png') {
     try {
-      const png = generateFallbackPng(badgeName);
-      res.setHeader('Content-Type', 'image/png');
-      res.setHeader('Cache-Control', 'public, max-age=3600, s-maxage=3600');
-      res.status(200).send(png);
+      await sendImage(res, badgeId);
     } catch (e) {
-      console.error('Fallback PNG generation failed:', e);
+      console.error('Badge preview render failed:', e);
       res.redirect(302, `${BASE_URL}/og-image.png`);
     }
     return;
   }
 
-  // ── Build OG HTML page ────────────────────────────────────────────────────
+  const slug = safeId(userSlug) ? userSlug : '';
+  const [badge, recipientName] = await Promise.all([
+    getJson(`${API_BASE}/ob2/badges/${badgeId}.json`),
+    slug ? verifiedRecipient(badgeId, u, slug) : null,
+  ]);
+  const badgeName = badge?.name || 'Badge';
+  const badgeDescription = badge?.description || '';
+
   const title = recipientName
-    ? `${recipientName} earned ${badgeName} | AWS UG Madurai`
-    : `${badgeName} | AWS UG Madurai`;
-
+    ? `${recipientName} earned the ${badgeName} badge | AWS User Group Madurai`
+    : `${badgeName} badge | AWS User Group Madurai`;
   const description = recipientName
-    ? `${recipientName} was awarded the "${badgeName}" badge by AWS User Group Madurai. ${badgeDescription}`
-    : `"${badgeName}" — ${badgeDescription} | Issued by AWS User Group Madurai`;
+    ? `${recipientName} was awarded the "${badgeName}" Open Badge by AWS User Group Madurai. ${badgeDescription}`
+    : `"${badgeName}": ${badgeDescription} Issued by AWS User Group Madurai.`;
 
-  const canonicalUrl = `${BASE_URL}/og/badge/${badgeId}/${userSlug}`;
-  const redirectUrl  = `${BASE_URL}/badges/${badgeId}/${userSlug}`;
+  const query = recipientName ? `?u=${encodeURIComponent(u)}` : '';
+  const canonicalUrl = `${BASE_URL}/og/badge/${badgeId}/${slug}${query}`;
+  const redirectUrl = slug ? `${BASE_URL}/badges/${badgeId}/${slug}` : BASE_URL;
+  const imageUrl = `${BASE_URL}/og/badge/${badgeId}/image.png`;
 
-  // Detect image type from URL extension
-  const imageExt = (uploadedImageUrl || '').split('?')[0].split('.').pop()?.toLowerCase();
-  const imageType = imageExt === 'jpg' || imageExt === 'jpeg' ? 'image/jpeg'
-    : imageExt === 'svg' ? 'image/svg+xml'
-    : imageExt === 'webp' ? 'image/webp'
-    : 'image/png';
-
-  const t   = esc(title);
-  const d   = esc(description);
-  const img_ = esc(ogImage);
-  const cu  = esc(canonicalUrl);
-  const ru  = esc(redirectUrl);
+  const t = esc(title);
+  const d = esc(description);
+  const img = esc(imageUrl);
+  const cu = esc(canonicalUrl);
+  const ru = esc(redirectUrl);
 
   const html = `<!DOCTYPE html>
 <html lang="en" prefix="og: https://ogp.me/ns#">
@@ -238,27 +235,23 @@ export default async function handler(req, res) {
   <title>${t}</title>
   <link rel="canonical" href="${cu}" />
 
-  <!-- Open Graph — LinkedIn, Facebook, Slack, Telegram, iMessage -->
-  <meta property="og:type"         content="profile" />
+  <meta property="og:type"         content="website" />
   <meta property="og:site_name"    content="AWS User Group Madurai" />
   <meta property="og:title"        content="${t}" />
   <meta property="og:description"  content="${d}" />
   <meta property="og:url"          content="${cu}" />
-  <meta property="og:image"        content="${img_}" />
-  <meta property="og:image:width"  content="400" />
-  <meta property="og:image:height" content="400" />
-  <meta property="og:image:type"   content="${imageType}" />
+  <meta property="og:image"        content="${img}" />
+  <meta property="og:image:width"  content="${CARD_W}" />
+  <meta property="og:image:height" content="${CARD_H}" />
+  <meta property="og:image:type"   content="image/png" />
   <meta property="og:image:alt"    content="${t}" />
 
-  <!-- Twitter Card -->
-  <meta name="twitter:card"        content="summary" />
+  <meta name="twitter:card"        content="summary_large_image" />
   <meta name="twitter:title"       content="${t}" />
   <meta name="twitter:description" content="${d}" />
-  <meta name="twitter:image"       content="${img_}" />
+  <meta name="twitter:image"       content="${img}" />
 
-  <!-- Redirect humans to the React badge page immediately -->
   <meta http-equiv="refresh" content="0; url=${ru}" />
-  <script>window.location.replace("${ru}");</script>
 </head>
 <body>
   <p>Redirecting to <a href="${ru}">${t}</a>…</p>
@@ -266,6 +259,6 @@ export default async function handler(req, res) {
 </html>`;
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.setHeader('Cache-Control', 'public, max-age=3600, s-maxage=3600');
+  res.setHeader('Cache-Control', 'public, max-age=600, s-maxage=3600');
   res.status(200).send(html);
 }

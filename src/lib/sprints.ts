@@ -135,14 +135,6 @@ export async function addSession(sprintId: string, data: CreateSessionData): Pro
   return response;
 }
 
-export async function updateSession(sprintId: string, sessionId: string, data: Partial<CreateSessionData>): Promise<AddSessionResponse> {
-  const response = await callApi<AddSessionResponse>(`/sprints/${sprintId}/sessions/${sessionId}`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-  });
-  return response;
-}
-
 export async function deleteSprint(id: string): Promise<{ message: string; id: string }> {
   const response = await callApi<{ message: string; id: string }>(`/sprints/${id}`, {
     method: 'DELETE',

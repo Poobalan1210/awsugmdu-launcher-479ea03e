@@ -41,6 +41,11 @@ resource "aws_lambda_function" "achievements_crud" {
 
   environment {
     variables = {
+      # Read by verify-auth.js to check sign-in tokens and organiser access.
+      COGNITO_USER_POOL_ID    = aws_cognito_user_pool.user_pool.id
+      COGNITO_CLIENT_ID       = aws_cognito_user_pool_client.web_client.id
+      USERS_TABLE_NAME        = aws_dynamodb_table.users.name
+      ADMIN_EMAILS            = var.admin_emails
       ACHIEVEMENTS_TABLE_NAME = aws_dynamodb_table.achievements.name
     }
   }

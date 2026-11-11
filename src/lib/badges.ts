@@ -49,16 +49,31 @@ export async function createBadge(data: CreateBadgeData): Promise<Badge> {
   return res.badge;
 }
 
-/** Update an existing badge. */
-export async function updateBadge(id: string, data: Partial<CreateBadgeData>): Promise<Badge> {
-  const res = await callApi<BadgeResponse>(`/badges/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-  });
-  return res.badge;
-}
-
 /** Delete a badge by ID. */
 export async function deleteBadge(id: string): Promise<void> {
   await callApi(`/badges/${id}`, { method: 'DELETE' });
+}
+
+export interface AwardBadgeResult {
+  assertionUrl: string;
+  badge: Badge;
+  /** False when the award was saved but the congratulations email failed. */
+  emailed: boolean;
+}
+
+/**
+ * Award a badge to a member (organisers only). Issues the Open Badges
+ * credential, adds the badge to their profile and emails them.
+ */
+export async function awardBadge(badgeId: string, userId: string, reason?: string): Promise<AwardBadgeResult> {
+  return callApi<AwardBadgeResult>(`/badges/${encodeURIComponent(badgeId)}/award`, {
+    method: 'POST',
+    body: JSON.stringify({ userId, ...(reason ? { reason } : {}) }),
+  });
+}
+
+/** Revoke a member's badge (organisers only). Its credential stops verifying. */
+export async function revokeBadge(badgeId: string, userId: string, reason?: string): Promise<void> {
+  const params = new URLSearchParams({ userId, ...(reason ? { reason } : {}) });
+  await callApi(`/badges/${encodeURIComponent(badgeId)}/award?${params.toString()}`, { method: 'DELETE' });
 }

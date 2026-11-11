@@ -2,21 +2,15 @@ import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { 
-  Cloud, Users, Calendar, Award, ArrowRight, Trophy, Medal, 
-  CheckCircle2, Circle, MapPin, Star, Zap, Target, PartyPopper,
-  ChevronRight, Clock, ExternalLink, Loader2, Search, X, Upload, Share2,
-  Activity
-} from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { Cloud, Users, Calendar, Award, ArrowRight, Trophy, Medal, CheckCircle2, Circle, MapPin, Star, Zap, Target, PartyPopper, ChevronRight, Clock, ExternalLink, Loader2, Search, X, Upload, Activity } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { CloudClubTask, CloudClub, getAllCloudClubTasks } from '@/lib/cloudClubs';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
@@ -867,12 +861,6 @@ export default function CloudClubs() {
       setSelectedClub({ club, rank });
       setIsDialogOpen(true);
     }
-  };
-
-  const handleCloseDialog = () => {
-    setIsDialogOpen(false);
-    setTimeout(() => setSelectedClub(null), 200);
-    fetchClubs();
   };
 
   const sortedClubs = [...clubs].sort((a, b) => b.totalPoints - a.totalPoints);

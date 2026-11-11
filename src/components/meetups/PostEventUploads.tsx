@@ -63,42 +63,6 @@ export function PostEventUploads({ meetup }: PostEventUploadsProps) {
     }
   };
 
-  const handleRemovePhoto = async (photoUrl: string) => {
-    try {
-      await removeMeetupPhoto(meetup.id, photoUrl);
-      toast.success('Photo removed');
-      queryClient.invalidateQueries({ queryKey: ['meetup', meetup.id] });
-    } catch (error) {
-      toast.error('Failed to remove photo');
-    }
-  };
-
-  const handleReportSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error('File size must be less than 10MB');
-      return;
-    }
-    setReportFile(file);
-  };
-
-  const handleUploadReport = async () => {
-    if (!reportFile) return;
-    setIsUploadingReport(true);
-    try {
-      const url = await uploadFileToS3(reportFile, 'meetup-reports');
-      await addMeetupReport(meetup.id, url, reportFile.name);
-      toast.success('Report uploaded');
-      setReportFile(null);
-      queryClient.invalidateQueries({ queryKey: ['meetup', meetup.id] });
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to upload report');
-    } finally {
-      setIsUploadingReport(false);
-    }
-  };
-
   return (
     <Card className="glass-card">
       <CardHeader>

@@ -17,6 +17,7 @@ const {
   ScanCommand,
 } = require('@aws-sdk/lib-dynamodb');
 const crypto = require('crypto');
+const { withVerifiedAuth } = require('./verify-auth');
 
 const client = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(client);
@@ -636,7 +637,7 @@ async function handleAdminUnflag(userIdParam) {
 }
 
 // ── Router ────────────────────────────────────────────────────────
-exports.handler = async (event) => {
+const handleRequest = async (event) => {
   const method = event.httpMethod;
   if (method === 'OPTIONS') return { statusCode: 200, headers: getCorsHeaders(), body: '' };
 
@@ -688,3 +689,5 @@ exports.handler = async (event) => {
     return createResponse(500, { error: 'Internal server error', message: error.message });
   }
 };
+
+exports.handler = withVerifiedAuth(handleRequest);

@@ -24,30 +24,23 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
-import {
-  Plus, Calendar, Users, CheckCircle, XCircle, Clock,
-  Rocket, ExternalLink, MessageSquare, Award, Link2,
-  Copy, Mail, Edit, Trash2, Eye, FileText, User, Video,
-  Upload, X, UserPlus, Check, ChevronDown, ChevronUp, GraduationCap,
-  Trophy, ListTodo, ClipboardCheck, Target, Shield, UserCog, Medal, Github, ShoppingBag, Loader2, Cloud,
-  Star, Quote, Heart, Zap, CheckSquare, Square, List, Hash, Type, Code2, Sparkles, Image as ImageIcon,
-  MoreHorizontal, Swords
-} from 'lucide-react';
-import { mockSprints, mockMeetups, Submission, Sprint, Session, User as UserType, predefinedTasks, mockColleges, getTaskById, communityRoles, mockUserRoles, CommunityRole, UserRoleAssignment, PointActivity, mockPointActivities, Meetup, MeetupType, Hackathon, mockBadges, Badge as BadgeType, BadgeAward, mockBadgeAwards, BadgeCriteriaType, criteriaTypeLabels, BadgeCriteria, mockUsers, SubmissionField } from '@/data/mockData';
-import { createMeetup, updateMeetup, publishMeetup, getMeetups, CreateMeetupData, UpdateMeetupData, deleteMeetup, endMeetup, inviteSpeaker, getActiveSpeakers } from '@/lib/meetups';
+import { Plus, Calendar, Users, CheckCircle, XCircle, Clock, Rocket, ExternalLink, MessageSquare, Award, Link2, Copy, Mail, Edit, Trash2, Eye, FileText, User, Video, Upload, X, Check, ChevronDown, GraduationCap, Trophy, ListTodo, ClipboardCheck, Target, Shield, UserCog, Medal, ShoppingBag, Loader2, Cloud, Star, Code2, Sparkles, Image as ImageIcon, MoreHorizontal, Swords, RefreshCw } from 'lucide-react';
+import { mockMeetups, Sprint, User as UserType, predefinedTasks, getTaskById, communityRoles, mockUserRoles, CommunityRole, UserRoleAssignment, PointActivity, mockPointActivities, Meetup, MeetupType, Hackathon, mockBadges, Badge as BadgeType, BadgeCriteriaType, criteriaTypeLabels, BadgeCriteria, mockUsers } from '@/data/mockData';
+import { createMeetup, updateMeetup, publishMeetup, getMeetups, CreateMeetupData, UpdateMeetupData, deleteMeetup, endMeetup, inviteSpeaker, getActiveSpeakers, syncFromMeetup } from '@/lib/meetups';
 import { getSpotlightSubmissions, reviewSpotlight, deleteSpotlight } from '@/lib/spotlight';
-import { SpotlightSubmission, SpotlightType } from '@/data/mockData';
-import { getSprints, deleteSprint, deleteSession } from '@/lib/sprints';
+import { SpotlightSubmission } from '@/data/mockData';
+import { getSprints } from '@/lib/sprints';
 import { uploadFileToS3 } from '@/lib/s3Upload';
 import { getAllUsers } from '@/lib/userProfile';
 import { callApi } from '@/lib/api';
 import { listCircles, Circle } from '@/lib/circles';
-import { College, CollegeEvent, CollegeTask } from '@/lib/colleges';
+import { College, CollegeTask } from '@/lib/colleges';
 import { Progress } from '@/components/ui/progress';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { format, parseISO } from 'date-fns';
 import { toast } from 'sonner';
+import { BadgeImage } from '@/components/badges/BadgeImage';
 import { useAuth } from '@/contexts/AuthContext';
 import StoreManagement from '@/components/admin/StoreManagement';
 import AchievementsManagement from '@/components/admin/AchievementsManagement';
@@ -60,7 +53,7 @@ import { getHackathons } from '@/lib/hackathons';
 
 /** Sentinel for the "no hackathon" option; Radix Select forbids empty values. */
 const NO_HACKATHON = '__no_hackathon__';
-import { SessionPerson, SessionPeopleManager, userToSessionPerson, userToMeetupPerson, UserSelect, UserMultiSelect, MeetupPeopleManager } from '@/components/admin/shared/AdminShared';
+import { MeetupPeopleManager } from '@/components/admin/shared/AdminShared';
 import { TaskSubmissionsPanel } from '@/components/college-champs/TaskSubmissionsPanel';
 import { CloudClubTaskSubmissionsPanel } from '@/components/cloud-clubs/TaskSubmissionsPanel';
 import { listMeetupFeedback, updateMeetupFeedbackSettings } from '@/lib/meetupFeedback';
@@ -2586,6 +2579,34 @@ function MeetupsManagementTab({ allUsers = [] }: { allUsers?: UserType[] }) {
   const [meetups, setMeetups] = useState<Meetup[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<'all' | 'draft' | 'upcoming' | 'completed'>('all');
+  const [syncing, setSyncing] = useState(false);
+
+  // New Meetup.com events arrive as drafts to review; nothing is published
+  // and no attendance is marked, so members get no email or points.
+  const handleSyncFromMeetup = async () => {
+    setSyncing(true);
+    try {
+      const result = await syncFromMeetup();
+      const created = result.created.length;
+      if (created > 0) {
+        toast.success(`Added ${created} Meetup event${created === 1 ? '' : 's'} as draft${created === 1 ? '' : 's'}. Review the type and links, then publish.`);
+        setFilterStatus('draft');
+      } else if (result.failed.length === 0) {
+        toast.success(`Already up to date (checked Meetup events since ${result.since}).`);
+      }
+      if (result.remaining > 0) {
+        toast.info(`${result.remaining} more event${result.remaining === 1 ? '' : 's'} to add. Click Sync from Meetup again.`);
+      }
+      if (result.failed.length > 0) {
+        toast.error(`${result.failed.length} event${result.failed.length === 1 ? '' : 's'} could not be added: ${result.failed[0].error}`);
+      }
+      if (created > 0) loadMeetups();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Sync from Meetup failed');
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const loadMeetups = async () => {
     try {
@@ -2644,7 +2665,13 @@ function MeetupsManagementTab({ allUsers = [] }: { allUsers?: UserType[] }) {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <h2 className="text-xl font-semibold">Manage Meetups</h2>
-        <CreateMeetupDialog onSuccess={loadMeetups} allUsers={allUsers} />
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" className="gap-2" onClick={handleSyncFromMeetup} disabled={syncing}>
+            {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            {syncing ? 'Syncing…' : 'Sync from Meetup'}
+          </Button>
+          <CreateMeetupDialog onSuccess={loadMeetups} allUsers={allUsers} />
+        </div>
       </div>
 
       {/* Stats */}
@@ -3130,7 +3157,6 @@ function VerifyTaskDialog({ college, taskId, onSuccess }: { college: College; ta
   const [bonusPoints, setBonusPoints] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const task = getTaskById(taskId);
-  const completion = college.completedTasks.find(t => t.taskId === taskId);
 
   if (!task) return null;
 
@@ -4065,7 +4091,6 @@ function CollegeManagementCard({ college, onDelete, onUpdate, allUsers }: {
   const completedTaskIds = college.completedTasks.map(t => t.taskId);
   const pendingTasks = predefinedTasks.filter(t => !completedTaskIds.includes(t.id));
   const completedTasks = predefinedTasks.filter(t => completedTaskIds.includes(t.id));
-  const progressPercent = (completedTasks.length / predefinedTasks.length) * 100;
 
   const lead = college.champsLeadId ? allUsers.find(u => u.id === college.champsLeadId) || null : null;
 
@@ -5690,12 +5715,6 @@ function MembersTab({ allUsers, onRefresh }: { allUsers: UserType[]; onRefresh?:
     return userRoles.filter(ur => ur.userId === userId).map(ur => ur.role);
   };
 
-  const getUserActivities = (userId: string): PointActivity[] => {
-    return pointActivities.filter(pa => pa.userId === userId).sort((a, b) =>
-      new Date(b.awardedAt).getTime() - new Date(a.awardedAt).getTime()
-    );
-  };
-
   const handleToggleRole = async (userId: string, role: CommunityRole) => {
     // Don't allow removing the member role
     if (role === 'member') {
@@ -6119,7 +6138,10 @@ function BadgesTab({ allUsers }: { allUsers: UserType[] }) {
 
   const [badges, setBadges] = useState<BadgeType[]>(mockBadges);
   const [badgesLoading, setBadgesLoading] = useState(true);
-  const [badgeAwards, setBadgeAwards] = useState<BadgeAward[]>(mockBadgeAwards);
+  const [awarding, setAwarding] = useState(false);
+  // Holders are read from each member's `badges`, which award/revoke update
+  // in place; this re-renders the tab after such a change.
+  const [, setHoldersVersion] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBadge, setSelectedBadge] = useState<BadgeType | null>(null);
   const [isAwardDialogOpen, setIsAwardDialogOpen] = useState(false);
@@ -6186,67 +6208,51 @@ function BadgesTab({ allUsers }: { allUsers: UserType[] }) {
       toast.error('Please select a user');
       return;
     }
-
     const user = allUsers.find(u => u.id === selectedUserId);
     if (!user) {
       toast.error('User not found');
       return;
     }
 
-    // Check if user already has this badge
-    if (user.badges.some(b => b.id === selectedBadge.id)) {
-      toast.error(`${user.name} already has this badge`);
-      return;
-    }
-
-    const newBadgeForUser = {
-      ...selectedBadge,
-      earnedDate: new Date().toISOString().split('T')[0]
-    };
-
-    const updatedBadges = [...user.badges, newBadgeForUser];
-
+    setAwarding(true);
     try {
-      // Import updateUserProfile dynamically to avoid circular dependencies if any
-      const { updateUserProfile } = await import('@/lib/userProfile');
+      const { awardBadge } = await import('@/lib/badges');
+      const result = await awardBadge(selectedBadge.id, selectedUserId, awardReason.trim() || undefined);
+      if (!user.badges.some(b => b.id === selectedBadge.id)) user.badges.push(result.badge);
+      setHoldersVersion(v => v + 1);
 
-      // Update user in the backend
-      await updateUserProfile(selectedUserId, { badges: updatedBadges } as any);
-
-      // Add badge to local tracking
-      const newAward: BadgeAward = {
-        id: `ba-${Date.now()}`,
-        badgeId: selectedBadge.id,
-        userId: selectedUserId,
-        awardedAt: new Date().toISOString().split('T')[0],
-        awardedBy: authUser?.id || '',
-        reason: awardReason || 'Adhoc badge award',
-        isAdhoc: true
-      };
-
-      setBadgeAwards(prev => [...prev, newAward]);
-
-      // Update user badges in mock data to reflect immediately
-      const userIndex = mockUsers.findIndex(u => u.id === selectedUserId);
-      if (userIndex !== -1) {
-        mockUsers[userIndex].badges.push(newBadgeForUser);
+      if (result.emailed) {
+        toast.success(`Awarded "${selectedBadge.name}" to ${user.name}`, { description: 'They have been emailed.' });
+      } else {
+        toast.warning(`Awarded "${selectedBadge.name}" to ${user.name}`, { description: 'The award is saved, but the email could not be sent.' });
       }
-
-      // Update user in the allUsers prop to reflect immediately in the UI
-      user.badges.push(newBadgeForUser);
-
-      toast.success(`Awarded "${selectedBadge.name}" badge to ${user.name}`);
       setSelectedUserId('');
       setAwardReason('');
       setIsAwardDialogOpen(false);
 
-      // Refresh auth user if awarding to self
       if (authUser?.id === selectedUserId) {
         await refreshUser();
       }
     } catch (error) {
       console.error('Error awarding badge:', error);
-      toast.error('Failed to award badge. Please try again.');
+      toast.error(error instanceof Error ? error.message : 'Failed to award badge. Please try again.');
+    } finally {
+      setAwarding(false);
+    }
+  };
+
+  const handleRevokeBadge = async (badge: BadgeType, user: UserType) => {
+    if (!confirm(`Revoke "${badge.name}" from ${user.name}? Their badge stops verifying and leaves their profile.`)) return;
+    try {
+      const { revokeBadge } = await import('@/lib/badges');
+      await revokeBadge(badge.id, user.id);
+      const i = user.badges.findIndex(b => b.id === badge.id);
+      if (i !== -1) user.badges.splice(i, 1);
+      setHoldersVersion(v => v + 1);
+      toast.success(`Revoked "${badge.name}" from ${user.name}`);
+      if (authUser?.id === user.id) await refreshUser();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to revoke badge');
     }
   };
 
@@ -6537,7 +6543,7 @@ function BadgesTab({ allUsers }: { allUsers: UserType[] }) {
         <Card className="glass-card">
           <CardContent className="p-4 text-center">
             <div className="text-3xl font-bold text-green-500">
-              {badgeAwards.length}
+              {badges.reduce((total, b) => total + getUsersWithBadge(b.id).length, 0)}
             </div>
             <p className="text-sm text-muted-foreground">Total Awarded</p>
           </CardContent>
@@ -6552,12 +6558,10 @@ function BadgesTab({ allUsers }: { allUsers: UserType[] }) {
             <Card key={badge.id} className="glass-card hover-lift">
               <CardContent className="p-4">
                 <div className="flex items-start gap-4">
-                  <div className="flex-shrink-0 w-12 h-12 rounded-full bg-gradient-to-br from-amber-400/20 to-orange-500/20 border-2 border-amber-400/40 flex items-center justify-center overflow-hidden">
-                    {badge.imageUrl ? (
-                      <img src={badge.imageUrl} alt={badge.name} className="w-full h-full object-cover" />
-                    ) : (
-                      <span className="text-3xl">{badge.icon}</span>
-                    )}
+                  <div className={badge.imageUrl
+                    ? 'flex-shrink-0 w-12 h-12 rounded-full bg-gradient-to-br from-amber-400/20 to-orange-500/20 border-2 border-amber-400/40 flex items-center justify-center overflow-hidden'
+                    : 'flex-shrink-0 w-12 h-14 flex items-center justify-center'}>
+                    <BadgeImage badge={badge} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
@@ -6613,17 +6617,13 @@ function BadgesTab({ allUsers }: { allUsers: UserType[] }) {
                       <DialogContent>
                         <DialogHeader>
                           <DialogTitle className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400/20 to-orange-500/20 border border-amber-400/40 flex items-center justify-center overflow-hidden flex-shrink-0">
-                              {badge.imageUrl ? (
-                                <img src={badge.imageUrl} alt={badge.name} className="w-full h-full object-cover" />
-                              ) : (
-                                <span className="text-lg">{badge.icon}</span>
-                              )}
+                            <div className="w-8 h-9 flex items-center justify-center overflow-hidden flex-shrink-0">
+                              <BadgeImage badge={badge} className={badge.imageUrl ? 'rounded-full' : undefined} emojiClassName="text-lg" />
                             </div>
                             Award "{badge.name}"
                           </DialogTitle>
                           <DialogDescription>
-                            Select a member to award this badge to
+                            The member gets a verifiable Open Badge on their profile and an email.
                           </DialogDescription>
                         </DialogHeader>
                         <div className="space-y-4 py-4">
@@ -6662,11 +6662,35 @@ function BadgesTab({ allUsers }: { allUsers: UserType[] }) {
                             >
                               Cancel
                             </Button>
-                            <Button onClick={handleAwardBadge} className="flex-1 gap-1">
-                              <Award className="h-4 w-4" />
-                              Award Badge
+                            <Button onClick={handleAwardBadge} className="flex-1 gap-1" disabled={awarding || !selectedUserId}>
+                              {awarding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Award className="h-4 w-4" />}
+                              {awarding ? 'Awarding…' : 'Award Badge'}
                             </Button>
                           </div>
+                          {usersWithBadge.length > 0 && (
+                            <div className="space-y-2 border-t pt-4">
+                              <Label>Current holders ({usersWithBadge.length})</Label>
+                              <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
+                                {usersWithBadge.map(holder => (
+                                  <div key={holder.id} className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-muted/50">
+                                    <Avatar className="h-6 w-6">
+                                      <AvatarImage src={holder.avatar} />
+                                      <AvatarFallback className="text-xs">{holder.name.charAt(0)}</AvatarFallback>
+                                    </Avatar>
+                                    <span className="text-sm flex-1 truncate">{holder.name}</span>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                      onClick={() => handleRevokeBadge(badge, holder)}
+                                    >
+                                      Revoke
+                                    </Button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </DialogContent>
                     </Dialog>
@@ -7086,23 +7110,6 @@ export default function Admin() {
       setSpotlightSubmissions([]);
     } finally {
       setLoadingSpotlight(false);
-    }
-  };
-
-
-  // Delete session
-  const handleDeleteSession = async (sprintId: string, sessionId: string, sessionTitle: string) => {
-    if (!confirm(`Are you sure you want to delete "${sessionTitle}"? This action cannot be undone.`)) {
-      return;
-    }
-
-    try {
-      await deleteSession(sprintId, sessionId);
-      toast.success('Session deleted successfully');
-      fetchSprints();
-    } catch (error) {
-      console.error('Error deleting session:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to delete session');
     }
   };
 

@@ -1,3 +1,4 @@
+import { lazy, Suspense, type ComponentType } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -6,32 +7,59 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import Index from "./pages/Index";
-import Login from "./pages/Login";
-import Signup from "./pages/Signup";
-import ForgotPassword from "./pages/ForgotPassword";
-import Profile from "./pages/Profile";
-import BadgePublic from "./pages/BadgePublic";
-import BadgeVerify from "./pages/BadgeVerify";
-import SkillSprint from "./pages/SkillSprint";
-import Hackathons from "./pages/Hackathons";
-import CollegeChamps from "./pages/CollegeChamps";
-import CloudClubs from "./pages/CloudClubs";
-import CommunitySpotlight from "./pages/CommunitySpotlight";
-import Circles from "./pages/Circles";
-import Store from "./pages/Store";
-import Meetups from "./pages/Meetups";
-import Leaderboard from "./pages/Leaderboard";
-import Admin from "./pages/Admin";
-import Dashboard from "./pages/Dashboard";
-import AWSEvents from "./pages/AWSEvents";
-import SpeakerCodeOfConduct from "./pages/SpeakerCodeOfConduct";
-import SpeakerInvite from "./pages/SpeakerInvite";
-import Kironomics from "./pages/Kironomics";
-import KiroUniversity from "./pages/KiroUniversity";
-import KiroUnsubscribe from "./pages/KiroUnsubscribe";
-import Nominate from "./pages/Nominate";
-import Achievements from "./pages/Achievements";
-import NotFound from "./pages/NotFound";
+
+// Pages load on demand so the first visit only downloads the home page; the
+// admin console alone is several hundred kB. A chunk that fails to load after a
+// deploy (old tab, new file names) reloads the page once to pick up the new build.
+const CHUNK_RELOAD_KEY = "chunk-reload";
+
+function lazyPage<T extends ComponentType>(load: () => Promise<{ default: T }>) {
+  return lazy(() =>
+    load().then(
+      (mod) => {
+        try { sessionStorage.removeItem(CHUNK_RELOAD_KEY); } catch { /* storage unavailable */ }
+        return mod;
+      },
+      (error) => {
+        let reloaded = true;
+        try {
+          reloaded = Boolean(sessionStorage.getItem(CHUNK_RELOAD_KEY));
+          if (!reloaded) sessionStorage.setItem(CHUNK_RELOAD_KEY, "1");
+        } catch { /* storage unavailable: don't risk a reload loop */ }
+        if (reloaded) throw error;
+        window.location.reload();
+        return new Promise<{ default: T }>(() => {});
+      }
+    )
+  );
+}
+
+const Login = lazyPage(() => import("./pages/Login"));
+const Signup = lazyPage(() => import("./pages/Signup"));
+const ForgotPassword = lazyPage(() => import("./pages/ForgotPassword"));
+const Profile = lazyPage(() => import("./pages/Profile"));
+const BadgePublic = lazyPage(() => import("./pages/BadgePublic"));
+const BadgeVerify = lazyPage(() => import("./pages/BadgeVerify"));
+const SkillSprint = lazyPage(() => import("./pages/SkillSprint"));
+const Hackathons = lazyPage(() => import("./pages/Hackathons"));
+const CollegeChamps = lazyPage(() => import("./pages/CollegeChamps"));
+const CloudClubs = lazyPage(() => import("./pages/CloudClubs"));
+const CommunitySpotlight = lazyPage(() => import("./pages/CommunitySpotlight"));
+const Circles = lazyPage(() => import("./pages/Circles"));
+const Store = lazyPage(() => import("./pages/Store"));
+const Meetups = lazyPage(() => import("./pages/Meetups"));
+const Leaderboard = lazyPage(() => import("./pages/Leaderboard"));
+const Admin = lazyPage(() => import("./pages/Admin"));
+const Dashboard = lazyPage(() => import("./pages/Dashboard"));
+const AWSEvents = lazyPage(() => import("./pages/AWSEvents"));
+const SpeakerCodeOfConduct = lazyPage(() => import("./pages/SpeakerCodeOfConduct"));
+const SpeakerInvite = lazyPage(() => import("./pages/SpeakerInvite"));
+const Kironomics = lazyPage(() => import("./pages/Kironomics"));
+const KiroUniversity = lazyPage(() => import("./pages/KiroUniversity"));
+const KiroUnsubscribe = lazyPage(() => import("./pages/KiroUnsubscribe"));
+const Nominate = lazyPage(() => import("./pages/Nominate"));
+const Achievements = lazyPage(() => import("./pages/Achievements"));
+const NotFound = lazyPage(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -47,6 +75,12 @@ const queryClient = new QueryClient({
   },
 });
 
+const PageFallback = () => (
+  <div className="flex min-h-screen items-center justify-center" role="status" aria-label="Loading">
+    <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+  </div>
+);
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
@@ -54,6 +88,7 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
+          <Suspense fallback={<PageFallback />}>
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/login" element={<Login />} />
@@ -174,6 +209,7 @@ const App = () => (
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
+          </Suspense>
         </BrowserRouter>
       </TooltipProvider>
     </AuthProvider>

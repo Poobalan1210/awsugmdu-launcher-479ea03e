@@ -1,5 +1,6 @@
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, PutCommand, GetCommand, UpdateCommand, ScanCommand, QueryCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
+const { withVerifiedAuth, callerId, callerIsAdmin } = require('./verify-auth');
 
 const client = new DynamoDBClient({ region: process.env.AWS_REGION });
 const docClient = DynamoDBDocumentClient.from(client);
@@ -20,25 +21,9 @@ const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '')
 // Identify the caller from the Authorization header instead of a body field, so
 // a client can't just claim someone else's userId to unlock moderator actions.
 //
-// NOTE: the JWT signature is NOT verified here — the /circles routes have no
-// API Gateway authorizer attached. This matches lambda/shared/auth.js and is a
-// deliberate (documented) limitation, not a stronger guarantee than it looks.
+// The token is verified by withVerifiedAuth before the handler runs.
 function getCallerId(event) {
-  const header = (event.headers && (event.headers.Authorization || event.headers.authorization)) || '';
-  const token = header.replace(/^Bearer\s+/i, '').trim();
-  if (!token) return null;
-  if (!token.includes('.')) return token; // plain userId
-
-  try {
-    const parts = token.split('.');
-    if (parts.length !== 3) return null;
-    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-    const payload = JSON.parse(Buffer.from(base64, 'base64').toString('utf8'));
-    return payload.sub || payload['cognito:username'] || payload.userId || null;
-  } catch (e) {
-    console.error('Failed to decode auth token:', e);
-    return null;
-  }
+  return callerId(event);
 }
 
 // A circle's moderators are its own owners plus platform admins/organisers.
@@ -133,8 +118,8 @@ function createResponse(statusCode, body, headers = {}) {
   };
 }
 
-exports.handler = async (event) => {
-  console.log('Event:', JSON.stringify(event, null, 2));
+const handleRequest = async (event) => {
+  console.log('Request:', event.httpMethod, event.path || event.resource);
   
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers: getCorsHeaders(), body: '' };
@@ -155,6 +140,28 @@ exports.handler = async (event) => {
     const subAction = routeParts[4]; // like, replies
     const replyId = routeParts[5]; // reply id
 
+    // Every write is by the signed-in member, whatever userId the body names.
+    // Creating, editing and deleting circles is organiser-only; scheduling
+    // sessions is for the circle's moderators.
+    if (method !== 'GET' && resource === 'circles') {
+      const uid = callerId(event);
+      if (!uid) return createResponse(401, { error: 'Please sign in again.' });
+      if (!action && !(await callerIsAdmin(event))) {
+        return createResponse(403, { error: 'Only organisers can do that.' });
+      }
+      if (action === 'sessions') {
+        const g = await docClient.send(new GetCommand({ TableName: GROUPS_TABLE, Key: { id } }));
+        if (g.Item && !(await isModerator(g.Item, uid))) {
+          return createResponse(403, { error: 'Only circle owners and organisers can manage sessions' });
+        }
+      }
+      if (method === 'POST' && action !== 'sessions') {
+        let body = {};
+        try { body = (typeof event.body === 'string' ? JSON.parse(event.body) : event.body) || {}; } catch { body = {}; }
+        event.body = JSON.stringify({ ...body, userId: uid });
+      }
+    }
+
     if (resource === 'circles') {
       if (method === 'GET' && !id) return await listGroups(event);
       if (method === 'GET' && id && !action) return await getGroup(id);
@@ -165,11 +172,11 @@ exports.handler = async (event) => {
       if (method === 'POST' && id && action === 'leave') return await leaveGroup(id, event);
       if (method === 'POST' && id && action === 'messages' && !subId) return await postMessage(id, event);
       if (method === 'PUT' && id && action === 'messages' && subId && !subAction) return await updateMessage(id, subId, event);
-      if (method === 'DELETE' && id && action === 'messages' && subId && !subAction) return await deleteMessage(id, subId);
+      if (method === 'DELETE' && id && action === 'messages' && subId && !subAction) return await deleteMessage(id, subId, event);
       if (method === 'POST' && id && action === 'messages' && subId && subAction === 'like') return await toggleMessageLike(id, subId, event);
       if (method === 'POST' && id && action === 'messages' && subId && subAction === 'replies' && !replyId) return await addReply(id, subId, event);
       if (method === 'PUT' && id && action === 'messages' && subId && subAction === 'replies' && replyId && !routeParts[6]) return await updateReply(id, subId, replyId, event);
-      if (method === 'DELETE' && id && action === 'messages' && subId && subAction === 'replies' && replyId && !routeParts[6]) return await deleteReply(id, subId, replyId);
+      if (method === 'DELETE' && id && action === 'messages' && subId && subAction === 'replies' && replyId && !routeParts[6]) return await deleteReply(id, subId, replyId, event);
       if (method === 'POST' && id && action === 'messages' && subId && subAction === 'replies' && replyId && routeParts[6] === 'like') return await toggleReplyLike(id, subId, replyId, event);
       if (method === 'POST' && id && action === 'sessions' && !subId) return await createSession(id, event);
       if (method === 'PUT' && id && action === 'sessions' && subId) return await updateSession(id, subId, event);
@@ -433,7 +440,7 @@ async function updateMessage(id, messageId, event) {
   return createResponse(200, { group: updated.Item });
 }
 
-async function deleteMessage(id, messageId) {
+async function deleteMessage(id, messageId, event) {
   const existing = await docClient.send(new GetCommand({ TableName: GROUPS_TABLE, Key: { id } }));
   if (!existing.Item) return createResponse(404, { error: 'Group not found' });
   
@@ -443,6 +450,11 @@ async function deleteMessage(id, messageId) {
   
   if (messages.length === updatedMessages.length) {
     return createResponse(404, { error: 'Message not found' });
+  }
+  const target = messages.find(m => m.id === messageId);
+  const uid = getCallerId(event);
+  if (target.userId !== uid && !(await isModerator(group, uid))) {
+    return createResponse(403, { error: 'You can only delete your own posts' });
   }
   
   await docClient.send(new UpdateCommand({
@@ -573,7 +585,7 @@ async function updateReply(id, messageId, replyId, event) {
   return createResponse(200, { group: updated.Item });
 }
 
-async function deleteReply(id, messageId, replyId) {
+async function deleteReply(id, messageId, replyId, event) {
   const existing = await docClient.send(new GetCommand({ TableName: GROUPS_TABLE, Key: { id } }));
   if (!existing.Item) return createResponse(404, { error: 'Group not found' });
   
@@ -587,6 +599,11 @@ async function deleteReply(id, messageId, replyId) {
   
   if (replies.length === updatedReplies.length) {
     return createResponse(404, { error: 'Reply not found' });
+  }
+  const target = replies.find(r => r.id === replyId);
+  const uid = getCallerId(event);
+  if (target.userId !== uid && !(await isModerator(group, uid))) {
+    return createResponse(403, { error: 'You can only delete your own comments' });
   }
   
   messages[msgIndex].replies = updatedReplies;
@@ -722,3 +739,5 @@ async function deleteSession(id, sessionId) {
   const updated = await docClient.send(new GetCommand({ TableName: GROUPS_TABLE, Key: { id } }));
   return createResponse(200, { group: updated.Item });
 }
+
+exports.handler = withVerifiedAuth(handleRequest);

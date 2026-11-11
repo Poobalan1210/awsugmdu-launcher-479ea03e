@@ -3,12 +3,7 @@ import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion';
 import { format, parseISO } from 'date-fns';
 import { toast } from 'sonner';
-import {
-  Trophy, Users, Calendar, Clock, ChevronLeft, ChevronDown, Rocket, Send,
-  BookOpen, ExternalLink, Copy, Crown, Mail, UserPlus, LogOut, Loader2,
-  CheckCircle, XCircle, Lightbulb, Gift, ScrollText, Link2, Info, Search, User, X,
-  MessageCircle, Download, KeyRound,
-} from 'lucide-react';
+import { Trophy, Users, Calendar, Clock, ChevronLeft, Rocket, Send, BookOpen, ExternalLink, Copy, Crown, Mail, UserPlus, LogOut, Loader2, CheckCircle, XCircle, Lightbulb, Gift, ScrollText, Link2, Info, Search, User, X, MessageCircle, Download, KeyRound } from 'lucide-react';
 
 import { Header } from '@/components/layout/Header';
 import { Footer } from '@/components/layout/Footer';
@@ -23,27 +18,13 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 
-import {
-  Hackathon, HackathonStatus, HackathonSubmission, HackathonTeam, Meetup,
-  MemberExperienceLevel, MemberProfile, TeamJoinPolicy, TeamMember,
-} from '@/data/mockData';
+import { Hackathon, HackathonStatus, HackathonSubmission, HackathonTeam, Meetup, MemberExperienceLevel, MemberProfile, TeamJoinPolicy } from '@/data/mockData';
 import { getMeetupsByHackathon } from '@/lib/meetups';
-import {
-  getHackathons, getHackathon, getHackathonTeams, getHackathonSubmissions,
-  registerForHackathon, requestHackathonKitDownload, saveKitDownload, requestTeamApiKey, type TeamApiKey,
-  createTeam, updateTeam, deleteTeam, joinTeamByCode,
-  leaveTeam, removeTeamMember, inviteToTeam, revokeInvite, respondToInvite,
-  requestToJoinTeam, respondToJoinRequest, submitHackathonWork,
-  findUserTeam, isTeamLead, isSubmissionOpen, isRegistrationOpen, isSoloHackathon,
-  TEAM_JOIN_POLICY_SUMMARY,
-  EXPERIENCE_LEVELS, EXPERIENCE_LEVEL_LABELS, EXPERIENCE_LEVEL_SHORT, EXPERIENCE_LEVEL_STYLES,
-  teamSkills, teamExperienceSpread, availableSkillFilters, teamMatchesSkill, hasMemberProfile,
-} from '@/lib/hackathons';
+import { getHackathons, getHackathon, getHackathonTeams, getHackathonSubmissions, registerForHackathon, requestHackathonKitDownload, saveKitDownload, requestTeamApiKey, type TeamApiKey, createTeam, updateTeam, deleteTeam, joinTeamByCode, leaveTeam, removeTeamMember, inviteToTeam, revokeInvite, respondToInvite, requestToJoinTeam, respondToJoinRequest, submitHackathonWork, findUserTeam, isTeamLead, isSubmissionOpen, isRegistrationOpen, isSoloHackathon, TEAM_JOIN_POLICY_SUMMARY, EXPERIENCE_LEVELS, EXPERIENCE_LEVEL_LABELS, EXPERIENCE_LEVEL_SHORT, EXPERIENCE_LEVEL_STYLES, teamSkills, teamExperienceSpread, availableSkillFilters, teamMatchesSkill } from '@/lib/hackathons';
 import { uploadFileToS3 } from '@/lib/s3Upload';
 import { normalizeUrl } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';

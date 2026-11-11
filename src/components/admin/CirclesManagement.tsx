@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -19,7 +19,7 @@ import {
   Circle,
   AgentConfig 
 } from '@/lib/circles';
-import { AGENT_CATALOG, getAgentCatalogEntry, DEFAULT_AGENT_ID } from '@/lib/agentCatalog';
+import { AGENT_CATALOG, getAgentCatalogEntry, DEFAULT_AGENT_ID, type AgentFrequency, type AgentMode } from '@/lib/agentCatalog';
 import { User as UserType } from '@/data/mockData';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -440,7 +440,7 @@ function AgentConfigDialog({ group, onSuccess }: { group: Circle; onSuccess: () 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Frequency</Label>
-              <Select value={form.frequency} onValueChange={(v) => setForm({ ...form, frequency: v })}>
+              <Select value={form.frequency} onValueChange={(v) => setForm({ ...form, frequency: v as AgentFrequency })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="hourly">Hourly</SelectItem>
@@ -451,7 +451,7 @@ function AgentConfigDialog({ group, onSuccess }: { group: Circle; onSuccess: () 
             </div>
             <div className="space-y-2">
               <Label>Posting mode</Label>
-              <Select value={form.mode} onValueChange={(v) => setForm({ ...form, mode: v })}>
+              <Select value={form.mode} onValueChange={(v) => setForm({ ...form, mode: v as AgentMode })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="append">New post each run (archive older)</SelectItem>

@@ -37,15 +37,15 @@ resource "aws_dynamodb_table" "aws_event_submissions" {
   }
 
   global_secondary_index {
-    name               = "EventIdIndex"
-    hash_key           = "eventId"
-    projection_type    = "ALL"
+    name            = "EventIdIndex"
+    hash_key        = "eventId"
+    projection_type = "ALL"
   }
 
   global_secondary_index {
-    name               = "StatusIndex"
-    hash_key           = "status"
-    projection_type    = "ALL"
+    name            = "StatusIndex"
+    hash_key        = "status"
+    projection_type = "ALL"
   }
 
   tags = {
@@ -74,9 +74,13 @@ resource "aws_lambda_function" "aws_events_crud" {
 
   environment {
     variables = {
-      AWS_EVENTS_TABLE_NAME           = aws_dynamodb_table.aws_events.name
+      # Read by verify-auth.js to check sign-in tokens and organiser access.
+      COGNITO_USER_POOL_ID             = aws_cognito_user_pool.user_pool.id
+      COGNITO_CLIENT_ID                = aws_cognito_user_pool_client.web_client.id
+      ADMIN_EMAILS                     = var.admin_emails
+      AWS_EVENTS_TABLE_NAME            = aws_dynamodb_table.aws_events.name
       AWS_EVENT_SUBMISSIONS_TABLE_NAME = aws_dynamodb_table.aws_event_submissions.name
-      USERS_TABLE_NAME                = aws_dynamodb_table.users.name
+      USERS_TABLE_NAME                 = aws_dynamodb_table.users.name
     }
   }
 }
@@ -385,7 +389,7 @@ resource "aws_api_gateway_integration_response" "aws_events_options" {
     "method.response.header.Access-Control-Allow-Methods" = "'GET,OPTIONS,POST,PUT,DELETE'"
     "method.response.header.Access-Control-Allow-Origin"  = "'*'"
   }
-  
+
   depends_on = [aws_api_gateway_integration.aws_events_options]
 }
 

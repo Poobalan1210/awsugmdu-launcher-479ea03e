@@ -9,18 +9,22 @@ data "archive_file" "user_roles_crud" {
 resource "aws_lambda_function" "user_roles_crud" {
   filename         = data.archive_file.user_roles_crud.output_path
   function_name    = "awsug-user-roles-crud"
-  role            = aws_iam_role.lambda_execution.arn
-  handler         = "index.handler"
+  role             = aws_iam_role.lambda_execution.arn
+  handler          = "index.handler"
   source_code_hash = data.archive_file.user_roles_crud.output_base64sha256
-  runtime         = "nodejs18.x"
-  timeout         = 30
+  runtime          = "nodejs18.x"
+  timeout          = 30
   # Listing or removing roles reads the whole users table (all scan pages).
   # At the default 128 MB it already peaked at 102 MB reading only the first page.
   memory_size = 256
 
   environment {
     variables = {
-      USERS_TABLE_NAME = aws_dynamodb_table.users.name
+      # Read by verify-auth.js to check sign-in tokens and organiser access.
+      COGNITO_USER_POOL_ID = aws_cognito_user_pool.user_pool.id
+      COGNITO_CLIENT_ID    = aws_cognito_user_pool_client.web_client.id
+      ADMIN_EMAILS         = var.admin_emails
+      USERS_TABLE_NAME     = aws_dynamodb_table.users.name
     }
   }
 

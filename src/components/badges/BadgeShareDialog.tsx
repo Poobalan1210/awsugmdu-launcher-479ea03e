@@ -18,7 +18,7 @@ import { Separator } from '@/components/ui/separator';
 import { Badge, User } from '@/data/mockData';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { toast } from 'sonner';
-import { getLinkedInBadgeUrl, getLinkedInPostUrl, linkedInPostText } from '@/lib/openBadges';
+import { getLinkedInBadgeUrl, getLinkedInShareUrl, linkedInPostText } from '@/lib/openBadges';
 import { BadgeImage } from './BadgeImage';
 
 interface BadgeShareDialogProps {
@@ -50,12 +50,22 @@ export function BadgeShareDialog({
   const encodedUrl = encodeURIComponent(badgePageUrl);
   const encodedText = encodeURIComponent(`${shareText}\n\n${hashtagStr}`);
 
-  // LinkedIn opens its post composer with this text; the link at the end
-  // makes LinkedIn show the badge card (image, name) under the post.
-  const linkedInText = linkedInPostText(badge, badgePageUrl);
+  const linkedInText = linkedInPostText(badge);
 
+  // LinkedIn's share link attaches the badge card but cannot carry text, so
+  // the suggested text goes to the clipboard for the member to paste. The copy
+  // starts before the new tab opens, while this page still has focus.
   const handlePostOnLinkedIn = () => {
-    window.open(getLinkedInPostUrl(linkedInText), '_blank', 'noopener,noreferrer');
+    const copied = navigator.clipboard?.writeText(linkedInText);
+    window.open(getLinkedInShareUrl(badgePageUrl), '_blank', 'noopener,noreferrer');
+    Promise.resolve(copied).then(
+      () => toast.success('Post text copied', {
+        description: 'In LinkedIn, click into the post box and paste (Ctrl+V / ⌘V).',
+      }),
+      () => toast.info('LinkedIn is open with your badge card attached', {
+        description: 'Use "Copy the text" here to add the suggested post text.',
+      }),
+    );
   };
 
   const handleCopyLinkedInText = async () => {
@@ -220,7 +230,7 @@ export function BadgeShareDialog({
             Post on LinkedIn
           </Button>
           <p className="text-xs text-muted-foreground">
-            Opens LinkedIn with your post written and the badge card attached. Edit it if you like, then post.{' '}
+            Opens LinkedIn with your badge card attached and copies a suggested post. Paste it into the post box, edit if you like, then post.{' '}
             <button type="button" className="underline underline-offset-2 hover:text-foreground" onClick={handleCopyLinkedInText}>
               Copy the text
             </button>

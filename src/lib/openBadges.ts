@@ -220,23 +220,27 @@ export function getLinkedInBadgeUrl(
   return `https://www.linkedin.com/profile/add?${params.toString()}`;
 }
 
-/** The text a member posts on LinkedIn about a badge, ending with its link. */
-export function linkedInPostText(badge: Badge, shareUrl: string): string {
+/**
+ * Suggested text for a LinkedIn post about a badge. The badge card LinkedIn
+ * attaches already links to the badge, so the text carries no URL.
+ */
+export function linkedInPostText(badge: Badge): string {
   return [
     `I'm happy to share that I've earned the "${badge.name}" badge from AWS User Group Madurai! 🎉`,
     badge.description,
     'Grateful to the community for the learning and support.',
-    `Verify it here: ${shareUrl}`,
     '#AWS #AWSUserGroup #AWSCommunity #CloudComputing #OpenBadges',
   ].filter(Boolean).join('\n\n');
 }
 
 /**
- * LinkedIn's post composer with the text already in it. LinkedIn builds the
- * preview card (badge image and title) from the link in the text.
+ * LinkedIn's official share link. It opens the post composer with the badge
+ * card (image, title, link) attached, built from the page's Open Graph tags.
+ * It takes no post text: LinkedIn only builds a card for a link that is shared
+ * this way or pasted, never for one inside pre-filled text.
  */
-export function getLinkedInPostUrl(text: string): string {
-  return `https://www.linkedin.com/feed/?shareActive=true&text=${encodeURIComponent(text)}`;
+export function getLinkedInShareUrl(shareUrl: string): string {
+  return `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}`;
 }
 
 // ─── Client-side verification ─────────────────────────────────────────────────

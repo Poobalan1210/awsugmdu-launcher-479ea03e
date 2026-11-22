@@ -36,7 +36,7 @@ const MAX_CREDITS_PER_SESSION = 100000; // one session's credit delta
 // both together when shipping a reporter fix: members on an older version are
 // then told to update on their stats page and in Kiro's chat. Reporters from
 // before versioning send nothing and count as version 1.
-const LATEST_REPORTER_VERSION = 2;
+const LATEST_REPORTER_VERSION = 3;
 
 function reporterOutdated(user) {
   return (user.total_sessions || 0) > 0 && (user.reporter_version || 1) < LATEST_REPORTER_VERSION;

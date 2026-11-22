@@ -31,9 +31,9 @@ Run by the member (or by Kiro on their behalf):
     report.py status         show what is installed and what is counted
 
 One copy per machine means a fix ships by bumping REPORTER_VERSION, publishing
-this file, and bumping LATEST_REPORTER_VERSION in the backend. The website then
-tells out-of-date members to run `update`. Nothing updates without the member
-running it.
+this file, and bumping LATEST_REPORTER_VERSION in the backend. Out-of-date
+members then see a notice on their stats page, and Kiro offers the update in
+chat (once a day). Nothing updates unless the member says yes.
 
 Counting happens here rather than in shell so the hooks work identically on
 macOS, Linux and Windows. The previous shell implementation used `sh -c` and
@@ -68,11 +68,12 @@ START_FILE = TMP / "kironomics_start"
 
 HOME_DIR = Path.home() / ".kironomics"
 TOKEN_FILE = HOME_DIR / "token"
-UPDATE_NOTICE_FILE = HOME_DIR / "update_notice"
+UPDATE_NOTICE_FILE = HOME_DIR / "update_notice"   # latest version the backend reported
+UPDATE_ASKED_FILE = HOME_DIR / "update_asked"     # when Kiro last offered the update
 
 # Bump on every published change, together with LATEST_REPORTER_VERSION in
 # infrastructure/terraform/lambda/kironomics-crud/index.js.
-REPORTER_VERSION = 2
+REPORTER_VERSION = 3
 SITE = os.environ.get("KIRONOMICS_SITE", "https://www.awsugmdu.in")
 LEGACY_REPORTER = Path(".kiro") / "kironomics_report.py"
 
@@ -278,28 +279,48 @@ def post_session(payload):
 
 
 def note_update(body):
-    """The backend answers with the latest reporter version. When this copy is
-    older, say so in Kiro's chat at most once a day. A notice only: nothing is
-    downloaded or changed until the member runs `update`."""
+    """The backend answers with the latest reporter version. Remember it when
+    it is newer than this copy, so the next prompt can offer the update."""
     try:
         latest = int(json.loads(body or b"{}").get("latestReporterVersion") or 0)
     except Exception:
         return
+    try:
+        if latest > REPORTER_VERSION:
+            HOME_DIR.mkdir(parents=True, exist_ok=True)
+            UPDATE_NOTICE_FILE.write_text(str(latest))
+        elif UPDATE_NOTICE_FILE.exists():
+            UPDATE_NOTICE_FILE.unlink()
+    except OSError:
+        pass
+
+
+def offer_update():
+    """Called from the prompt hook. Kiro adds a command hook's stdout to the
+    agent's context, so this asks the agent to offer the update to the member,
+    at most once a day. It only asks: nothing changes unless the member agrees
+    and the agent runs `update`."""
+    try:
+        latest = int(UPDATE_NOTICE_FILE.read_text().strip())
+    except (OSError, ValueError):
+        return
     if latest <= REPORTER_VERSION:
         return
     try:
-        if time.time() - UPDATE_NOTICE_FILE.stat().st_mtime < 86400:
+        if time.time() - UPDATE_ASKED_FILE.stat().st_mtime < 86400:
             return
     except OSError:
         pass
     try:
-        HOME_DIR.mkdir(parents=True, exist_ok=True)
-        UPDATE_NOTICE_FILE.write_text(str(latest))
+        UPDATE_ASKED_FILE.write_text(str(latest))
     except OSError:
-        pass
+        return
+    command = f'"{sys.executable}" "{Path(__file__).resolve()}" update'
     print(
-        "Kironomics: an update is available. Ask Kiro to \"update Kironomics\", "
-        f"or run: {python_cmd()} \"{Path(__file__).resolve()}\" update"
+        f"[Kironomics] The member's Kironomics tracker is out of date (v{REPORTER_VERSION}, "
+        f"latest v{latest}). Before starting on their request, tell them in one short line "
+        "and ask whether to update it now. Only if they agree, run this command and report "
+        f"its one-line result:\n{command}\nIf they decline, do not mention it again."
     )
 
 
@@ -450,10 +471,11 @@ def update():
     tmp = reporter.with_name(reporter.name + ".new")
     tmp.write_text(text)
     os.replace(tmp, reporter)
-    try:
-        UPDATE_NOTICE_FILE.unlink()
-    except OSError:
-        pass
+    for path in (UPDATE_NOTICE_FILE, UPDATE_ASKED_FILE):
+        try:
+            path.unlink()
+        except OSError:
+            pass
     print(f"Kironomics reporter updated v{REPORTER_VERSION} -> v{latest}.")
     return 0
 
@@ -468,6 +490,7 @@ def main(argv):
         elif what == "prompt":
             stamp_start()
             bump(PROMPTS_FILE)
+            offer_update()
         return 0
 
     if mode == "send":

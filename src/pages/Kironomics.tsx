@@ -339,7 +339,7 @@ function ReporterUpdateNotice({ version }: { version: number }) {
       <p className="font-retro text-lg text-amber-100/90 leading-snug mb-3">
         {firstMove
           ? 'Your Kironomics tracker is out of date and may be missing credits (Kiro bonus credits weren’t counted). Open a terminal in your Kiro project folder and run this once. It keeps your key and points your hooks at the new tracker:'
-          : 'A newer Kironomics tracker is available. Ask Kiro to “update Kironomics”, or run:'}
+          : 'A newer Kironomics tracker is available. Say yes when Kiro offers the update in chat, ask Kiro to “update Kironomics”, or run:'}
       </p>
       <CopyBlock code={reporterUpdateCommand(version)} />
       <p className="font-retro text-base text-amber-100/70 mt-3">
@@ -512,6 +512,12 @@ const REPORTER_SNIPPET = `# In Kiro chat, after installing the Kironomics Power:
 const VERIFY_SNIPPET = `# After a few prompts, confirm the counters are ticking:
 python3 ~/.kironomics/report.py status`;
 
+const UPDATE_SNIPPET = `# macOS / Linux
+python3 ~/.kironomics/report.py update
+
+# Windows (PowerShell)
+python "$env:USERPROFILE\\.kironomics\\report.py" update`;
+
 function ApiKeyCard() {
   const { user, isAuthenticated, isLoading } = useAuth();
   const [apiKey, setApiKey] = useState<string | null>(null);
@@ -617,6 +623,12 @@ function InstallSection() {
       title: 'Verify it’s tracking',
       body: 'Send a few prompts, let Kiro use some tools, then check the temp counters. When the agent stops, your session is reported and you appear on the leaderboard.',
       code: VERIFY_SNIPPET,
+    },
+    {
+      icon: Zap,
+      title: 'Keep it updated',
+      body: 'When a new tracker is out, Kiro asks you in chat (at most once a day) and updates it if you say yes, and your stats above show a notice. You can also update any time: ask Kiro to "update Kironomics", or run the command below. Set up before this version? Use the command in the notice on your stats instead.',
+      code: UPDATE_SNIPPET,
     },
   ];
 

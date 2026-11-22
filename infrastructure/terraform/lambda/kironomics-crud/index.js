@@ -32,6 +32,16 @@ const MAX_EVENTS_PER_SESSION = 100000;  // tool_calls / prompts per session
 const MAX_USAGE = 10000000;             // currentUsage / usageLimit ceiling
 const MAX_CREDITS_PER_SESSION = 100000; // one session's credit delta
 
+// The newest published reporter (public/kiro/report.py REPORTER_VERSION). Bump
+// both together when shipping a reporter fix: members on an older version are
+// then told to update on their stats page and in Kiro's chat. Reporters from
+// before versioning send nothing and count as version 1.
+const LATEST_REPORTER_VERSION = 2;
+
+function reporterOutdated(user) {
+  return (user.total_sessions || 0) > 0 && (user.reporter_version || 1) < LATEST_REPORTER_VERSION;
+}
+
 // Coerce to a finite number in [0, max]; anything else (NaN, negative, absurd) -> 0.
 function safeNum(v, max) {
   const n = Number(v);
@@ -331,7 +341,7 @@ async function handleSession(event) {
   const {
     token, elapsed_seconds, tool_calls, prompts, timestamp, machine_id,
     currentUsage, usageLimit, percentageUsed, resetDate,
-    extraUsage, extraLimit, extraCreditKeys,
+    extraUsage, extraLimit, extraCreditKeys, reporter_version,
   } = parseBody(event);
   if (!token) return createResponse(400, { error: 'token required' });
   const user = await getUserByToken(token);
@@ -428,6 +438,7 @@ async function handleSession(event) {
     user.flag_reasons = [];
     user.consecutive_no_credit_sessions = 0;
   }
+  user.reporter_version = Math.floor(safeNum(reporter_version, 1000)) || 1;
   user.sessions = [...(user.sessions || []), session];
   user.total_sessions = (user.total_sessions || 0) + 1;
   user.total_elapsed_seconds = (user.total_elapsed_seconds || 0) + safeElapsed;
@@ -438,6 +449,7 @@ async function handleSession(event) {
   await putUser(user);
   return createResponse(200, {
     success: true, flagged: user.flagged, score: user.score, creditsConsumed, plan: user.plan,
+    latestReporterVersion: LATEST_REPORTER_VERSION,
   });
 }
 
@@ -547,6 +559,9 @@ async function handleMetrics(userId, event) {
     daysUntilReset: isOwner ? daysUntilReset : null,
     dailyBurnRate: isOwner ? Math.round(dailyBurnRate * 100) / 100 : null,
     daysRemaining: isOwner ? daysRemaining : null,
+    reporterVersion: isOwner ? (user.reporter_version || 1) : null,
+    latestReporterVersion: LATEST_REPORTER_VERSION,
+    reporterOutdated: isOwner ? reporterOutdated(user) : null,
     isOwner,
   });
 }
@@ -607,6 +622,20 @@ async function handleHeatmap(userId) {
 async function handleAdminFlagged() {
   const users = await scanUsers();
   return createResponse(200, users.filter((u) => u.flagged));
+}
+
+// Members still reporting from an old reporter, most recently active first, so
+// the ones worth a nudge are at the top.
+async function handleAdminOutdatedReporters() {
+  const users = await scanUsers();
+  const outdated = users
+    .filter(reporterOutdated)
+    .map((u) => ({
+      userId: u.user_id, displayName: u.display_name,
+      reporterVersion: u.reporter_version || 1, lastActivity: u.last_activity || null,
+    }))
+    .sort((a, b) => String(b.lastActivity).localeCompare(String(a.lastActivity)));
+  return createResponse(200, { latestReporterVersion: LATEST_REPORTER_VERSION, outdated });
 }
 
 async function handleAdminResetScores() {
@@ -702,6 +731,7 @@ const handleRequest = async (event) => {
     if (r[0] === 'admin') {
       if (!isAdmin(event)) return createResponse(403, { error: 'forbidden' });
       if (method === 'GET' && r[1] === 'flagged') return await handleAdminFlagged();
+      if (method === 'GET' && r[1] === 'outdated-reporters') return await handleAdminOutdatedReporters();
       if (method === 'POST' && r[1] === 'reset-scores') return await handleAdminResetScores();
       if (method === 'POST' && r[1] === 'recalc-all-scores') return await handleAdminRecalc();
       if (method === 'POST' && r[1] === 'unflag') return await handleAdminUnflag(r[2] ? decodeURIComponent(r[2]) : '');

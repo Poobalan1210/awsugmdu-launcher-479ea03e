@@ -163,6 +163,10 @@ export interface KironomicsMetrics {
   daysUntilReset: number | null;
   dailyBurnRate: number | null;
   daysRemaining: number | null;
+  // Owner-only: which reporter this member runs, and whether a newer one exists.
+  reporterVersion?: number | null;
+  latestReporterVersion?: number;
+  reporterOutdated?: boolean | null;
   isOwner?: boolean;
 }
 

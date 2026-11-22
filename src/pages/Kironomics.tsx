@@ -308,6 +308,50 @@ function UserProfileModal({
   );
 }
 
+const IS_WINDOWS = typeof navigator !== 'undefined' && /windows/i.test(navigator.userAgent);
+const REPORTER_URL = 'https://www.awsugmdu.in/kiro/report.py';
+
+// Version 1 is every install from before versioning: the old Power wrote its own
+// script into .kiro/, and only `setup` moves a project onto the shared reporter.
+// From version 2 on, the shared reporter updates itself when asked.
+function reporterUpdateCommand(version: number): string {
+  if (version >= 2) {
+    return IS_WINDOWS
+      ? 'python "$env:USERPROFILE\\.kironomics\\report.py" update'
+      : 'python3 ~/.kironomics/report.py update';
+  }
+  return IS_WINDOWS
+    ? [
+        'New-Item -ItemType Directory -Force "$env:USERPROFILE\\.kironomics" | Out-Null',
+        `Invoke-WebRequest -UseBasicParsing ${REPORTER_URL} -OutFile "$env:USERPROFILE\\.kironomics\\report.py"`,
+        'python "$env:USERPROFILE\\.kironomics\\report.py" setup',
+      ].join('\n')
+    : `curl -fsSL ${REPORTER_URL} --create-dirs -o ~/.kironomics/report.py && python3 ~/.kironomics/report.py setup`;
+}
+
+function ReporterUpdateNotice({ version }: { version: number }) {
+  const firstMove = version < 2;
+  return (
+    <div className="mb-4 rounded-lg border border-amber-400/40 bg-amber-500/10 p-5">
+      <h3 className="font-pixel text-[11px] text-amber-200 flex items-center gap-2 mb-2">
+        <Download className="h-4 w-4" /> UPDATE YOUR TRACKER
+      </h3>
+      <p className="font-retro text-lg text-amber-100/90 leading-snug mb-3">
+        {firstMove
+          ? 'Your Kironomics tracker is out of date and may be missing credits (Kiro bonus credits weren’t counted). Open a terminal in your Kiro project folder and run this once. It keeps your key and points your hooks at the new tracker:'
+          : 'A newer Kironomics tracker is available. Ask Kiro to “update Kironomics”, or run:'}
+      </p>
+      <CopyBlock code={reporterUpdateCommand(version)} />
+      <p className="font-retro text-base text-amber-100/70 mt-3">
+        {firstMove
+          ? 'Then reload the Kiro window. Using Kiro in several projects? Run it in each project folder. '
+          : ''}
+        This notice clears after your next Kiro session.
+      </p>
+    </div>
+  );
+}
+
 function MyStatsSection() {
   const { user, isAuthenticated } = useAuth();
   const userId = user?.id;
@@ -333,6 +377,7 @@ function MyStatsSection() {
             Private to you — including credit usage no one else can see.
           </p>
         </div>
+        {m?.reporterOutdated && <ReporterUpdateNotice version={m.reporterVersion ?? 1} />}
         <div className="rounded-lg bg-black/40 kiro-pixel-border p-6">
           {!m ? (
             <p className="py-8 text-center font-retro text-xl text-violet-300/70">
@@ -465,8 +510,7 @@ const REPORTER_SNIPPET = `# In Kiro chat, after installing the Kironomics Power:
 # The leaderboard endpoint is already baked into the Power.`;
 
 const VERIFY_SNIPPET = `# After a few prompts, confirm the counters are ticking:
-cat /tmp/kironomics_prompts
-cat /tmp/kironomics_tools`;
+python3 ~/.kironomics/report.py status`;
 
 function ApiKeyCard() {
   const { user, isAuthenticated, isLoading } = useAuth();
@@ -565,7 +609,7 @@ function InstallSection() {
     {
       icon: Terminal,
       title: 'Run setup in chat',
-      body: 'Ask Kiro to set it up and paste your API key. It writes a reporter script and a hooks file (tool + prompt counters, session reporter) into .kiro/. Reload Kiro afterward so the hooks activate.',
+      body: 'Ask Kiro to set it up and paste your API key. It installs one shared tracker in ~/.kironomics/ (your key stays there, outside your project) and writes a hooks file into .kiro/hooks/. Reload Kiro afterward so the hooks activate.',
       code: REPORTER_SNIPPET,
     },
     {

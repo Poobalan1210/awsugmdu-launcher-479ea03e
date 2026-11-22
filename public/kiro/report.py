@@ -14,11 +14,26 @@ Two reasons it does not live in .kiro/:
 The key is read at runtime from $KIRONOMICS_TOKEN or ~/.kironomics/token, so
 nothing secret is stored in this file. It is safe to read, share, or commit.
 
-Three modes, all called by Kiro hooks:
+Called by Kiro hooks:
 
     report.py count tool     increment the tool-call counter
     report.py count prompt   increment the prompt counter, stamp session start
     report.py send           post the session and clear the counters
+
+Run by the member (or by Kiro on their behalf):
+
+    report.py setup [--key KEY] [--workspace DIR]
+                             store the key and write DIR/.kiro/hooks/kironomics.json
+                             pointing at this file. Migrates a workspace from the
+                             old per-project .kiro/kironomics_report.py, reusing
+                             its key, so no re-paste is needed.
+    report.py update         replace this file with the latest published version
+    report.py status         show what is installed and what is counted
+
+One copy per machine means a fix ships by bumping REPORTER_VERSION, publishing
+this file, and bumping LATEST_REPORTER_VERSION in the backend. The website then
+tells out-of-date members to run `update`. Nothing updates without the member
+running it.
 
 Counting happens here rather than in shell so the hooks work identically on
 macOS, Linux and Windows. The previous shell implementation used `sh -c` and
@@ -53,6 +68,13 @@ START_FILE = TMP / "kironomics_start"
 
 HOME_DIR = Path.home() / ".kironomics"
 TOKEN_FILE = HOME_DIR / "token"
+UPDATE_NOTICE_FILE = HOME_DIR / "update_notice"
+
+# Bump on every published change, together with LATEST_REPORTER_VERSION in
+# infrastructure/terraform/lambda/kironomics-crud/index.js.
+REPORTER_VERSION = 2
+SITE = os.environ.get("KIRONOMICS_SITE", "https://www.awsugmdu.in")
+LEGACY_REPORTER = Path(".kiro") / "kironomics_report.py"
 
 MAX_SESSION_SECONDS = 86400
 
@@ -231,6 +253,20 @@ def ssl_context():
             return None
 
 
+def http_open(req, timeout):
+    """urlopen with the certifi-first context, retrying once unverified when this
+    machine has no working CA bundle. Only usage counts and a public file travel
+    over it, always over HTTPS."""
+    try:
+        return urllib.request.urlopen(req, timeout=timeout, context=ssl_context()).read()
+    except (ssl.SSLError, urllib.error.URLError) as exc:
+        if "certificate verify failed" in str(exc).lower():
+            return urllib.request.urlopen(
+                req, timeout=timeout, context=ssl._create_unverified_context()
+            ).read()
+        raise
+
+
 def post_session(payload):
     req = urllib.request.Request(
         f"{API_BASE}/kironomics/session",
@@ -238,17 +274,33 @@ def post_session(payload):
         headers={"Content-Type": "application/json"},
         method="POST",
     )
+    return http_open(req, 5)
+
+
+def note_update(body):
+    """The backend answers with the latest reporter version. When this copy is
+    older, say so in Kiro's chat at most once a day. A notice only: nothing is
+    downloaded or changed until the member runs `update`."""
     try:
-        urllib.request.urlopen(req, timeout=5, context=ssl_context()).read()
-    except (ssl.SSLError, urllib.error.URLError) as exc:
-        # If this machine has no working CA bundle, retry once unverified so the
-        # report still lands. The payload is only usage counts, over HTTPS.
-        if "certificate verify failed" in str(exc).lower():
-            urllib.request.urlopen(
-                req, timeout=5, context=ssl._create_unverified_context()
-            ).read()
-        else:
-            raise
+        latest = int(json.loads(body or b"{}").get("latestReporterVersion") or 0)
+    except Exception:
+        return
+    if latest <= REPORTER_VERSION:
+        return
+    try:
+        if time.time() - UPDATE_NOTICE_FILE.stat().st_mtime < 86400:
+            return
+    except OSError:
+        pass
+    try:
+        HOME_DIR.mkdir(parents=True, exist_ok=True)
+        UPDATE_NOTICE_FILE.write_text(str(latest))
+    except OSError:
+        pass
+    print(
+        "Kironomics: an update is available. Ask Kiro to \"update Kironomics\", "
+        f"or run: {python_cmd()} \"{Path(__file__).resolve()}\" update"
+    )
 
 
 def cleanup():
@@ -268,6 +320,7 @@ def send():
 
     payload = {
         "token": token,
+        "reporter_version": REPORTER_VERSION,
         "tool_calls": read_int(TOOLS_FILE),
         "prompts": read_int(PROMPTS_FILE),
         "elapsed_seconds": elapsed_seconds(),
@@ -275,10 +328,133 @@ def send():
         **read_campaign_block(),
     }
     try:
-        post_session(payload)
+        note_update(post_session(payload))
     except Exception:
         pass
     cleanup()
+    return 0
+
+
+# ── Member-run commands ───────────────────────────────────────────
+
+def python_cmd():
+    return "python" if sys.platform.startswith("win") else "python3"
+
+
+def arg_value(argv, flag):
+    if flag in argv:
+        i = argv.index(flag)
+        if i + 1 < len(argv):
+            return argv[i + 1]
+    return ""
+
+
+def legacy_key(workspace):
+    """The old Power wrote the key as a literal into .kiro/kironomics_report.py.
+    Reading it back means migrating never asks the member to paste it again."""
+    try:
+        text = (workspace / LEGACY_REPORTER).read_text()
+    except OSError:
+        return ""
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("API_KEY") and "=" in line:
+            value = line.split("=", 1)[1].strip().strip("\"'")
+            if value and value != "__API_KEY__":
+                return value
+    return ""
+
+
+def hooks_json(reporter):
+    # Absolute interpreter and reporter paths: hooks run from whatever directory
+    # the agent is in, and `python3` is not on PATH on most Windows machines.
+    run = f"\"{sys.executable}\" \"{reporter}\""
+    return {
+        "version": "v1",
+        "hooks": [
+            {
+                "name": "Kironomics Tool Counter",
+                "trigger": "PostToolUse",
+                "matcher": ".*",
+                "description": "Counts tool calls. No file names, paths or content.",
+                "action": {"type": "command", "command": f"{run} count tool", "timeout": 5},
+            },
+            {
+                "name": "Kironomics Prompt Counter",
+                "trigger": "UserPromptSubmit",
+                "description": "Counts prompts and stamps session start. No prompt text.",
+                "action": {"type": "command", "command": f"{run} count prompt", "timeout": 5},
+            },
+            {
+                "name": "Kironomics Session Reporter",
+                "trigger": "Stop",
+                "description": "Reports session counts and Kiro credit usage.",
+                "action": {"type": "command", "command": f"{run} send", "timeout": 15},
+            },
+        ],
+    }
+
+
+def setup(argv):
+    workspace = Path(arg_value(argv, "--workspace") or Path.cwd()).resolve()
+    reporter = Path(__file__).resolve()
+
+    key = arg_value(argv, "--key").strip() or load_token() or legacy_key(workspace)
+    if not key:
+        print("No API key found. Get yours at "
+              f"{SITE}/kironomics and run: {python_cmd()} \"{reporter}\" setup --key YOUR_KEY")
+        return 1
+    HOME_DIR.mkdir(parents=True, exist_ok=True)
+    TOKEN_FILE.write_text(key)
+    try:
+        os.chmod(TOKEN_FILE, 0o600)
+    except OSError:
+        pass
+    print(f"ok  key stored at {TOKEN_FILE} (outside your project)")
+
+    hooks_dir = workspace / ".kiro" / "hooks"
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    hooks_file = hooks_dir / "kironomics.json"
+    hooks_file.write_text(json.dumps(hooks_json(reporter), indent=2) + "\n")
+    print(f"ok  hooks written to {hooks_file}")
+
+    legacy = workspace / LEGACY_REPORTER
+    if legacy.exists():
+        # It holds the API key in plain text inside the project.
+        legacy.unlink()
+        print(f"ok  removed the old {LEGACY_REPORTER} (it held your key inside the project)")
+
+    print(f"ok  Kironomics reporter v{REPORTER_VERSION} is set up for {workspace}")
+    print("    Reload the Kiro window so the hooks register.")
+    return 0
+
+
+def update():
+    reporter = Path(__file__).resolve()
+    url = f"{SITE}/kiro/report.py"
+    try:
+        body = http_open(urllib.request.Request(url), 30)
+        text = body.decode("utf-8")
+        compile(text, str(reporter), "exec")
+    except Exception as exc:
+        print(f"Update failed, keeping the installed version: {exc}")
+        return 1
+    match = [ln for ln in text.splitlines() if ln.startswith("REPORTER_VERSION = ")]
+    if not match:
+        print(f"Update failed: {url} is not a Kironomics reporter. Keeping the installed version.")
+        return 1
+    latest = int(match[0].split("=", 1)[1].strip())
+    if latest <= REPORTER_VERSION:
+        print(f"Kironomics reporter v{REPORTER_VERSION} is already the latest.")
+        return 0
+    tmp = reporter.with_name(reporter.name + ".new")
+    tmp.write_text(text)
+    os.replace(tmp, reporter)
+    try:
+        UPDATE_NOTICE_FILE.unlink()
+    except OSError:
+        pass
+    print(f"Kironomics reporter updated v{REPORTER_VERSION} -> v{latest}.")
     return 0
 
 
@@ -297,12 +473,22 @@ def main(argv):
     if mode == "send":
         return send()
 
+    if mode == "setup":
+        return setup(argv)
+
+    if mode == "update":
+        return update()
+
     if mode == "status":
         # Handy for "is this actually working?" without opening the site.
+        plan = read_plan_data()
+        print(f"version: {REPORTER_VERSION}")
         print(f"token:   {'set' if load_token() else 'MISSING'}")
         print(f"tmp dir: {TMP}")
         print(f"tools:   {read_int(TOOLS_FILE)}")
         print(f"prompts: {read_int(PROMPTS_FILE)}")
+        print(f"credits: {plan.get('currentUsage')} used of {plan.get('usageLimit')}"
+              f" (+ bonus {plan.get('extraUsage', 0)} of {plan.get('extraLimit', 0)})")
         return 0
 
     print(f"unknown mode: {mode}", file=sys.stderr)

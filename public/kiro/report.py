@@ -140,14 +140,60 @@ def read_plan_data():
         if not breakdowns:
             return {}
         bd = breakdowns[0]
-        return {
+        data = {
             "currentUsage": bd.get("currentUsage"),
             "usageLimit": bd.get("usageLimit"),
             "percentageUsed": bd.get("percentageUsed"),
             "resetDate": bd.get("resetDate"),
         }
+        # Free-tier members spend bonus / trial credits first, and those never
+        # move breakdowns[0].currentUsage. Reading only the main meter made
+        # active members report 0 credits for weeks and get hidden from the
+        # leaderboard. Sent separately so the plan is still detected from the
+        # main limit.
+        extra_usage, extra_limit, extra_keys = read_extra_credits(breakdowns)
+        if extra_keys:
+            data["extraUsage"] = extra_usage
+            data["extraLimit"] = extra_limit
+            data["extraCreditKeys"] = extra_keys
+        return data
     except Exception:
         return {}
+
+
+USAGE_KEYS = ("currentUsage", "usage", "usedCredits", "creditsUsed", "used")
+LIMIT_KEYS = ("usageLimit", "limit", "totalCredits", "credits", "amount")
+
+
+def first_number(entry, keys):
+    for key in keys:
+        value = entry.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return float(value)
+    return 0.0
+
+
+def read_extra_credits(breakdowns):
+    """Sum usage across every credit pool other than the main meter: the active
+    bonuses and extraCredits on each breakdown, plus any further breakdowns.
+    Kiro's shape for these isn't documented, so the field names seen are
+    returned too (names only, never values) to confirm the reading server-side."""
+    pools = []
+    for i, bd in enumerate(breakdowns):
+        if not isinstance(bd, dict):
+            continue
+        if i > 0:
+            pools.append(bd)
+        # Field names and the ACTIVE filter match Logesh's v3 collector
+        # (Kiro-Backend collectors-v3/kironomics_sessions.py read_meter).
+        pools.extend(
+            e for key in ("bonuses", "extraCredits") for e in (bd.get(key) or [])
+            if isinstance(e, dict) and e.get("status", "ACTIVE") == "ACTIVE"
+        )
+    usage = sum(first_number(p, USAGE_KEYS) for p in pools)
+    limit = sum(first_number(p, LIMIT_KEYS) for p in pools)
+    keys = sorted({k for p in pools for k in p.keys()})[:40]
+    return round(usage, 2), round(limit, 2), keys
 
 
 def read_campaign_block():

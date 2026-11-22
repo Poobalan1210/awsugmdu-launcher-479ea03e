@@ -210,7 +210,10 @@ function detectFraud(user, session) {
   const reasons = [];
   const hookTotal = (session.tool_calls || 0) + (session.prompts || 0);
   const creditsConsumed = session.creditsConsumed || 0;
-  const hasUsageReading = session.currentUsage !== null && session.currentUsage !== undefined;
+  // A meter stuck at exactly 0 is not evidence of anything: it is what members see
+  // while spending bonus credits, or when Kiro hasn't synced usage since the monthly
+  // reset. Counting those sessions hid genuinely active members for weeks.
+  const hasUsageReading = (session.currentUsage || 0) + (user.extra_usage || 0) > 0;
 
   // Track consecutive "reported activity but no credit growth" sessions. This only
   // signals fraud for users who NEVER burn credits (i.e. rely purely on the
@@ -231,7 +234,7 @@ function detectFraud(user, session) {
   // consume more than a full month's plan limit. Checked even when the session
   // reports zero hooks — the old credits-vs-hooks ratio rule both missed those AND
   // mis-flagged legit heavy users whose hook counters simply weren't firing.
-  const limit = user.monthly_limit || 0;
+  const limit = user.monthly_limit ? user.monthly_limit + (user.extra_limit || 0) : 0;
   if (limit > 0 && (session.rawCreditsConsumed || 0) > limit) {
     reasons.push(`credit_reading_exceeds_plan_limit:${Math.round(session.rawCreditsConsumed)}>${limit}`);
   }
@@ -328,6 +331,7 @@ async function handleSession(event) {
   const {
     token, elapsed_seconds, tool_calls, prompts, timestamp, machine_id,
     currentUsage, usageLimit, percentageUsed, resetDate,
+    extraUsage, extraLimit, extraCreditKeys,
   } = parseBody(event);
   if (!token) return createResponse(400, { error: 'token required' });
   const user = await getUserByToken(token);
@@ -366,10 +370,30 @@ async function handleSession(event) {
       const resetThreshold = lim ? lim * 0.1 : 50;
       creditsConsumed = cu <= resetThreshold ? cu : 0;
     }
+
+    // Bonus / trial credit pools (reporter v2+). Free-tier members spend these
+    // first and they never move the main meter, so without them an active member
+    // reads 0 credits and gets hidden. Tracked against their own baseline; first
+    // sighting only records it. A drop means a pool expired, so credit nothing.
+    const eu = Number(extraUsage);
+    const extraValid = extraUsage !== null && extraUsage !== undefined
+      && Number.isFinite(eu) && eu >= 0 && eu <= MAX_USAGE;
+    if (extraValid) {
+      const previousExtra = user.extra_usage;
+      if (previousExtra !== undefined && previousExtra !== null && eu > previousExtra) {
+        creditsConsumed += eu - previousExtra;
+      }
+      user.extra_usage = eu;
+      user.extra_limit = safeNum(extraLimit, MAX_USAGE);
+      if (Array.isArray(extraCreditKeys)) {
+        user.extra_credit_keys = extraCreditKeys.slice(0, 40).map((k) => String(k).slice(0, 64));
+      }
+    }
     rawCreditsConsumed = creditsConsumed;
-    // Clamp a single session's delta to the plan's monthly limit (you can never burn
-    // more than a whole month in one session), with an absolute hard ceiling backstop.
-    const perSessionCap = Math.min(lim || MAX_CREDITS_PER_SESSION, MAX_CREDITS_PER_SESSION);
+    // Clamp a single session's delta to the plan's monthly limit plus any bonus pool
+    // (you can never burn more than that in one session), with a hard ceiling backstop.
+    const totalLimit = lim ? lim + (user.extra_limit || 0) : 0;
+    const perSessionCap = Math.min(totalLimit || MAX_CREDITS_PER_SESSION, MAX_CREDITS_PER_SESSION);
     creditsConsumed = Math.min(safeNum(creditsConsumed, MAX_CREDITS_PER_SESSION), perSessionCap);
 
     user.current_usage = cu;

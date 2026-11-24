@@ -92,6 +92,8 @@ export interface User {
   linkedIn?: string;
   github?: string;
   twitter?: string;
+  /** AWS Builder Center alias, set by the Builder Center flow, not the profile form. */
+  builderCenterAlias?: string;
   activities?: UserActivity[];
   meetupVerified?: boolean;
   meetupVerificationStatus?: 'pending' | 'approved' | 'rejected';

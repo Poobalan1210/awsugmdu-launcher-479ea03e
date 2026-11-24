@@ -1,8 +1,8 @@
 /**
  * Builder Center backfill: AWS Builder Center blogs and projects our members
- * wrote, added to their profile. Members claim suggested articles, or link
- * their Builder Center account with a bio code so their articles are added
- * automatically. A weekly sync reads the public feed and keeps both current.
+ * wrote, added to their profile. Members add their Builder Center alias (we
+ * look the profile up and they confirm it), and claim suggested articles.
+ * A weekly sync reads the public feed and keeps them current.
  *
  * Routes, behind /builder-center/{proxy+}:
  *   GET  /builder-center/me                         own articles, links and claim settings
@@ -11,9 +11,9 @@
  *   POST /builder-center/me/restore     {contentIds}  undo "not mine"
  *   POST /builder-center/me/aliases/reject  {alias}   "this isn't my Builder Center profile"
  *   POST /builder-center/me/aliases/restore {alias}   undo that
- *   POST /builder-center/me/link/start  {alias}       get a bio code for an alias
- *   POST /builder-center/me/link/verify               check the bio, link, add articles
- *   POST /builder-center/me/link/remove {alias}       unlink
+ *   POST /builder-center/me/alias/check {alias}       look up a Builder Center profile to confirm
+ *   POST /builder-center/me/alias/save  {alias}       save it as the member's alias (no bio code)
+ *   POST /builder-center/me/link/remove {alias}       remove an alias or link
  *   POST /builder-center/me/articles/add {url, type}  add one of a linked account's articles now
  *   GET  /builder-center/users/{userId}/articles      a member's claimed articles (public)
  *   GET  /builder-center/admin/settings               points and the claims switch
@@ -26,11 +26,13 @@
  *
  * builder-content table, PK userId + SK itemKey:
  *   <userId>     / article#<contentId>  one blog or project per member
- *   <userId>     / link#<alias>         matched, verified or rejected Builder Center account
- *   <userId>     / verify#pending       an unexpired bio code
+ *   <userId>     / link#<alias>         matched, added, verified (older bio-code links) or rejected account
+ *   <userId>     / bonus#link           points given for linking an account, once per member
  *   __settings__ / config               points configuration
  *   __claimed__  / article#<contentId>  claim lock: one owner per article
  *   __aliases__  / <alias>              link lock: one verified owner per alias
+ *   __aliasentry__/ <alias>             one member per alias they typed in themselves
+ *   __linkbonus__/ <alias>              linking points were given for this alias, once ever
  *   __sync__     / state                progress of the current or last sync
  * builder-feed table, PK alias + SK contentId: every live article in the
  * public feed, as of the last sync.
@@ -53,9 +55,10 @@
  * 4. An article already on the platform (a sprint submission or a Community
  *    Spotlight entry, any status) is never added, so it cannot earn twice.
  *
- * 5. Linking proves ownership: the member puts a one-time code in their
- *    Builder Center bio, which only the account's owner can edit. Matching
- *    GitHub links is not accepted as proof, since members type those in.
+ * 5. Members add an alias by typing it and confirming the profile we found
+ *    is theirs. That is not proof, so an added alias is only recorded: no
+ *    articles are added from it. Links verified with the old bio code still
+ *    get articles added by the sync while claims are open.
  *
  * 6. The feed is sorted by a trending score, not by date, so the sync reads
  *    all of it every week (about 430 pages) instead of only the newest. It
@@ -97,9 +100,13 @@ const SETTINGS_KEY = { userId: '__settings__', itemKey: 'config' };
 const SYNC_KEY = { userId: '__sync__', itemKey: 'state' };
 const LOCK_PARTITION = '__claimed__';
 const ALIAS_LOCK_PARTITION = '__aliases__';
+const ALIAS_ENTRY_PARTITION = '__aliasentry__';
+// Kept when a member unlinks or deletes their account, so linking the same
+// Builder Center account again, from any account, earns nothing more.
+const LINK_BONUS_PARTITION = '__linkbonus__';
+const LINK_BONUS_KEY = 'bonus#link';
 const ARTICLE_PREFIX = 'article#';
 const LINK_PREFIX = 'link#';
-const VERIFY_KEY = 'verify#pending';
 
 const STATUS = {
   SUGGESTED: 'suggested',
@@ -118,13 +125,19 @@ const LINK = {
   VERIFIED: 'verified',
   // The member said this Builder Center profile is not theirs.
   REJECTED: 'rejected',
+  // The member typed it in and confirmed the profile is theirs, without a
+  // bio code. Recorded only: nothing is added from it automatically.
+  ADDED: 'added',
 };
 
 const TYPES = ['blog', 'project'];
 
 // Off until an admin opens claims, so an import can be checked first.
+// linkingOpen lets members link (and earn pointsForLinking) while claims stay shut.
 const DEFAULT_SETTINGS = {
   claimsOpen: false,
+  linkingOpen: false,
+  pointsForLinking: 100,
   pointsPerArticle: 0,
   pointsPerUGMaduraiArticle: 0,
   pointsPerProject: 0,
@@ -137,16 +150,12 @@ const POINT_FIELDS = [
   'pointsPerProject',
   'pointsPerUGMaduraiProject',
   'maxPointsPerMember',
+  'pointsForLinking',
 ];
 const MAX_POINTS_SETTING = 100000;
 const MAX_IDS_PER_REQUEST = 100;
 const MAX_IMPORT_ROWS = 3000;
 const WRITE_CONCURRENCY = 10;
-
-const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-const CODE_TTL_MS = 30 * 60 * 1000;
-const CODE_MIN_INTERVAL_MS = 15 * 1000;
-const MAX_VERIFY_ATTEMPTS = 10;
 
 // Sync pacing: a quarter second between feed pages, and a minute kept back
 // at the end of each run to save progress and hand over.
@@ -404,7 +413,7 @@ function setExpression(fields, prefix = 'f') {
 async function getSettings() {
   const r = await docClient.send(new GetCommand({ TableName: TABLE, Key: SETTINGS_KEY }));
   const s = r.Item || {};
-  const out = { claimsOpen: s.claimsOpen === true };
+  const out = { claimsOpen: s.claimsOpen === true, linkingOpen: s.linkingOpen === true };
   for (const f of POINT_FIELDS) out[f] = clampInt(s[f], 0, MAX_POINTS_SETTING) ?? DEFAULT_SETTINGS[f];
   out.updatedAt = s.updatedAt || null;
   out.updatedBy = s.updatedBy || null;
@@ -412,9 +421,14 @@ async function getSettings() {
 }
 
 function publicSettings(s) {
-  const out = { claimsOpen: s.claimsOpen };
+  const out = { claimsOpen: s.claimsOpen, linkingOpen: s.linkingOpen };
   for (const f of POINT_FIELDS) out[f] = s[f];
   return out;
+}
+
+/** Members can link an account while either switch is on. */
+function linkingAllowed(s) {
+  return s.claimsOpen || s.linkingOpen;
 }
 
 async function getSyncState() {
@@ -450,14 +464,14 @@ async function queryUserItems(userId) {
 function splitUserItems(items) {
   const articles = [];
   const links = [];
-  let pending = null;
+  let linkBonus = null;
   for (const i of items) {
     const key = String(i.itemKey || '');
     if (key.startsWith(ARTICLE_PREFIX)) articles.push(i);
     else if (key.startsWith(LINK_PREFIX)) links.push(i);
-    else if (key === VERIFY_KEY) pending = i;
+    else if (key === LINK_BONUS_KEY) linkBonus = i;
   }
-  return { articles, links, pending };
+  return { articles, links, linkBonus };
 }
 
 /** Every live article of one Builder Center author in the feed index. */
@@ -534,6 +548,7 @@ function publicLink(link) {
     status: link.status,
     source: link.source || null,
     verifiedAt: link.verifiedAt || null,
+    addedAt: link.addedAt || null,
     rejectedAt: link.rejectedAt || null,
     lastSyncedAt: link.lastSyncedAt || null,
     profileUrl: builder.PROFILE_URL(link.alias),
@@ -734,46 +749,6 @@ async function pointTotals(userId) {
   return { points: r.Item?.points ?? null, redeemablePoints: r.Item?.redeemablePoints ?? null };
 }
 
-/**
- * Add every article of a verified alias the member does not have yet: their
- * suggestions from it, and articles from the feed index. Articles already on
- * the platform, owned by another account, or marked "not mine" are left.
- */
-async function addVerifiedArticles(userId, alias, { settings, user, articles, onPlatform }) {
-  const c = claimer(userId, user, settings, articles);
-  const byId = new Map(articles.map((a) => [a.contentId, a]));
-  const results = [];
-
-  // Hidden only because they said this profile wasn't theirs, which the bio
-  // code has now disproved. Articles they marked one by one stay hidden.
-  for (const a of articles) {
-    if (a.status === STATUS.DISMISSED && a.builderAlias === alias && a.dismissedReason === 'alias_rejected'
-      && await moveStatus(userId, a.contentId, STATUS.DISMISSED, STATUS.SUGGESTED)) {
-      a.status = STATUS.SUGGESTED;
-    }
-  }
-
-  for (const a of articles) {
-    if (a.status !== STATUS.SUGGESTED || a.builderAlias !== alias) continue;
-    if (onPlatform.has(a.contentId)) {
-      await moveStatus(userId, a.contentId, STATUS.SUGGESTED, STATUS.ON_PLATFORM);
-      continue;
-    }
-    results.push(await c.claim({ contentId: a.contentId, existing: a, auto: true }));
-  }
-
-  const feed = await queryFeed(alias);
-  for (const f of feed) {
-    if (byId.has(f.contentId) || onPlatform.has(f.contentId)) continue;
-    results.push(await c.claim({
-      contentId: f.contentId,
-      create: feedToItem(f, { userId, alias, source: 'builder-center-link' }),
-      auto: true,
-    }));
-  }
-  return { ...c.totals, results, feedArticles: feed.length };
-}
-
 /** A feed index item as the fields of a member's article item. */
 function feedToItem(f, { alias, source, matchMethod }) {
   return {
@@ -800,16 +775,13 @@ async function handleMe(event) {
   const claims = await verifyIdToken(authHeader(event));
   if (!claims) return res(401, { error: 'Sign in again to see your Builder Center articles.' });
   const [settings, items, sync] = await Promise.all([getSettings(), queryUserItems(claims.sub), getSyncState()]);
-  const { articles, links, pending } = splitUserItems(items);
-  const live = pending && Date.parse(pending.expiresAt) > Date.now() ? pending : null;
+  const { articles, links, linkBonus } = splitUserItems(items);
   return res(200, {
     settings: publicSettings(settings),
+    linkBonus: linkBonus ? { points: Number(linkBonus.points) || 0, alias: linkBonus.alias, awardedAt: linkBonus.awardedAt } : null,
     awardedPoints: awardedSoFar(articles),
     articles: articles.map(ownArticle).sort(byPublishedDesc),
     links: links.map(publicLink),
-    pendingVerification: live
-      ? { alias: live.alias, code: live.code, expiresAt: live.expiresAt, profileName: live.profileName || null }
-      : null,
     lastSyncAt: sync?.lastCompletedAt || null,
   });
 }
@@ -948,12 +920,6 @@ async function handleRestoreAlias(event) {
   return res(200, { alias, restored });
 }
 
-function newCode() {
-  let s = '';
-  for (let i = 0; i < 6; i++) s += CODE_ALPHABET[crypto.randomInt(CODE_ALPHABET.length)];
-  return `awsugmdu-${s}`;
-}
-
 async function aliasOwner(alias) {
   const r = await docClient.send(new GetCommand({
     TableName: TABLE,
@@ -962,154 +928,78 @@ async function aliasOwner(alias) {
   return r.Item?.ownerUserId || null;
 }
 
-/** Step 1 of linking: a one-time code for the member to put in their Builder Center bio. */
-async function handleLinkStart(event) {
-  const claims = await verifyIdToken(authHeader(event));
-  if (!claims) return res(401, { error: 'Sign in again to link your Builder Center account.' });
-  const userId = claims.sub;
-  const body = parseBody(event);
-  if (!body) return res(400, { error: 'Invalid JSON body.' });
-  const alias = builder.normalizeAlias(body.alias);
-  if (!alias) return res(400, { error: 'Enter your Builder Center alias or profile link, like builder.aws.com/community/@yourname.' });
-
-  const settings = await getSettings();
-  if (!settings.claimsOpen) return res(403, { error: 'Linking Builder Center accounts is not open right now.' });
-
-  const { links, pending } = splitUserItems(await queryUserItems(userId));
-  if (links.some((l) => l.alias === alias && l.status === LINK.VERIFIED)) {
-    return res(409, { error: `@${alias} is already linked to your profile.` });
-  }
-  const owner = await aliasOwner(alias);
-  if (owner && owner !== userId) {
-    return res(409, { error: `@${alias} is already linked to another awsugmdu.in account. Ask an organiser if that is wrong.` });
-  }
-  if (pending && Date.now() - Date.parse(pending.createdAt) < CODE_MIN_INTERVAL_MS) {
-    return res(429, { error: 'Wait a few seconds before asking for another code.' });
-  }
-
-  let profile;
-  try {
-    profile = await builder.fetchProfile(alias);
-  } catch (err) {
-    console.warn('profile fetch failed', { alias, error: err.message });
-    return res(502, { error: 'Builder Center could not be reached. Try again in a minute.' });
-  }
-  if (!profile.found) return res(404, { error: `There is no Builder Center profile at @${alias}.` });
-
-  const now = Date.now();
-  const item = {
-    userId,
-    itemKey: VERIFY_KEY,
-    alias,
-    code: newCode(),
-    profileName: profile.name || undefined,
-    attempts: 0,
-    createdAt: new Date(now).toISOString(),
-    expiresAt: new Date(now + CODE_TTL_MS).toISOString(),
-  };
-  await docClient.send(new PutCommand({ TableName: TABLE, Item: item }));
-  return res(200, {
-    alias,
-    code: item.code,
-    expiresAt: item.expiresAt,
-    profileName: profile.name || null,
-    profileUrl: builder.PROFILE_URL(alias),
-  });
-}
-
-/** Step 2 of linking: find the code in the bio, link the account, add its articles. */
-async function handleLinkVerify(event) {
-  const claims = await verifyIdToken(authHeader(event));
-  if (!claims) return res(401, { error: 'Sign in again to link your Builder Center account.' });
-  const userId = claims.sub;
-
-  const settings = await getSettings();
-  if (!settings.claimsOpen) return res(403, { error: 'Linking Builder Center accounts is not open right now.' });
-
-  const items = await queryUserItems(userId);
-  const { pending } = splitUserItems(items);
-  if (!pending || Date.parse(pending.expiresAt) <= Date.now()) {
-    return res(410, { error: 'Your code has expired. Get a new one.' });
-  }
-  if ((pending.attempts || 0) >= MAX_VERIFY_ATTEMPTS) {
-    return res(429, { error: 'Too many tries with this code. Get a new one.' });
-  }
-  await docClient.send(new UpdateCommand({
-    TableName: TABLE,
-    Key: { userId, itemKey: VERIFY_KEY },
-    UpdateExpression: 'SET #a = if_not_exists(#a, :zero) + :one',
-    ExpressionAttributeNames: { '#a': 'attempts' },
-    ExpressionAttributeValues: { ':zero': 0, ':one': 1 },
-  }));
-
-  const alias = pending.alias;
-  let profile;
-  try {
-    profile = await builder.fetchProfile(alias);
-  } catch (err) {
-    console.warn('profile fetch failed', { alias, error: err.message });
-    return res(502, { error: 'Builder Center could not be reached. Try again in a minute.' });
-  }
-  if (!profile.found) return res(404, { error: `There is no Builder Center profile at @${alias}.` });
-  const text = `${profile.bio} ${profile.headline}`.toUpperCase();
-  if (!text.includes(String(pending.code).toUpperCase())) {
-    return res(422, {
-      error: `We couldn't find ${pending.code} in the bio of @${alias} yet. Save your Builder Center profile, then try again.`,
-    });
-  }
-
+/**
+ * Points for linking a Builder Center account: once per member, and once per
+ * Builder Center account, so unlinking and linking again (here or from a
+ * second account) earns nothing more. Returns the points given, or 0.
+ */
+async function awardLinkBonus(userId, alias, user, settings) {
+  const points = settings.pointsForLinking;
+  if (!(points > 0)) return 0;
   const now = nowIso();
+  const reason = `Linked AWS Builder Center account @${alias}`.slice(0, 200);
   try {
     await docClient.send(new TransactWriteCommand({
       TransactItems: [
         {
           Put: {
             TableName: TABLE,
-            Item: { userId: ALIAS_LOCK_PARTITION, itemKey: alias, ownerUserId: userId, verifiedAt: now },
-            ConditionExpression: 'attribute_not_exists(userId) OR ownerUserId = :me',
-            ExpressionAttributeValues: { ':me': userId },
+            Item: { userId, itemKey: LINK_BONUS_KEY, kind: 'link_bonus', alias, points, awardedAt: now },
+            ConditionExpression: 'attribute_not_exists(itemKey)',
           },
         },
         {
-          Delete: {
+          Put: {
             TableName: TABLE,
-            Key: { userId, itemKey: VERIFY_KEY },
-            ConditionExpression: '#c = :code',
-            ExpressionAttributeNames: { '#c': 'code' },
-            ExpressionAttributeValues: { ':code': pending.code },
+            Item: { userId: LINK_BONUS_PARTITION, itemKey: alias, ownerUserId: userId, points, awardedAt: now },
+            ConditionExpression: 'attribute_not_exists(itemKey)',
+          },
+        },
+        {
+          Update: {
+            TableName: USERS_TABLE,
+            Key: { userId },
+            // As in claimer: a profile with no redeemablePoints yet starts from its points.
+            UpdateExpression:
+              'SET #pt = if_not_exists(#pt, :zero) + :pts, #rp = if_not_exists(#rp, :base) + :pts, ' +
+              '#pl = list_append(if_not_exists(#pl, :empty), :pl), ' +
+              '#ac = list_append(if_not_exists(#ac, :empty), :ac), #ua = :now',
+            ConditionExpression: 'attribute_exists(userId)',
+            ExpressionAttributeNames: {
+              '#pt': 'points', '#rp': 'redeemablePoints', '#pl': 'pointActivities',
+              '#ac': 'activities', '#ua': 'updatedAt',
+            },
+            ExpressionAttributeValues: {
+              ':zero': 0,
+              ':pts': points,
+              ':base': Number(user.points) || 0,
+              ':empty': [],
+              ':pl': [{
+                id: `pa-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
+                userId,
+                points,
+                reason,
+                type: 'builder_center',
+                awardedBy: 'system',
+                awardedAt: now,
+              }],
+              ':ac': [{
+                type: 'points_awarded', points, reason, pointType: 'builder_center', awardedBy: 'system', timestamp: now,
+              }],
+              ':now': now,
+            },
           },
         },
       ],
     }));
   } catch (err) {
-    if (err.name === 'TransactionCanceledException') {
-      const codes = (err.CancellationReasons || []).map((r) => r && r.Code);
-      if (codes[0] === 'ConditionalCheckFailed') {
-        return res(409, { error: `@${alias} is already linked to another awsugmdu.in account. Ask an organiser if that is wrong.` });
-      }
-      return res(409, { error: 'Your code was replaced. Use the newest one.' });
-    }
-    throw err;
+    if (err.name !== 'TransactionCanceledException') throw err;
+    const codes = (err.CancellationReasons || []).map((r) => r && r.Code);
+    console.log('builder center link bonus skipped', { userId, alias, codes });
+    return 0;
   }
-  await putLink(userId, alias, { status: LINK.VERIFIED, verifiedAt: now, source: 'bio-code', rejectedAt: undefined });
-  console.log('builder center linked', { userId, alias });
-
-  // Add what they have so far. The weekly sync adds anything new.
-  const user = await getUser(userId);
-  let added = { claimed: 0, pointsAdded: 0, feedArticles: 0 };
-  if (user) {
-    const { articles } = splitUserItems(await queryUserItems(userId));
-    added = await addVerifiedArticles(userId, alias, {
-      settings, user, articles, onPlatform: await platformContentIds(),
-    });
-  }
-  return res(200, {
-    alias,
-    added: added.claimed,
-    pointsAdded: added.pointsAdded,
-    feedIndexed: added.feedArticles > 0,
-    ...(await pointTotals(userId)),
-  });
+  console.log('builder center link bonus', { userId, alias, points });
+  return points;
 }
 
 /** Unlink: the member stops automatic adding. Articles already added stay. */
@@ -1124,7 +1014,139 @@ async function removeLink(userId, alias) {
   } catch (err) {
     if (err.name !== 'ConditionalCheckFailedException') throw err;
   }
+  await releaseAliasEntry(userId, alias);
   await docClient.send(new DeleteCommand({ TableName: TABLE, Key: { userId, itemKey: linkKey(alias) } }));
+  await setProfileAlias(userId, null, alias);
+}
+
+/**
+ * The alias shown on the member's public profile, next to LinkedIn and
+ * GitHub. Only this Lambda writes it: members can't set it in the profile form.
+ * alias null clears it, but only if it is still `onlyIf`.
+ */
+async function setProfileAlias(userId, alias, onlyIf) {
+  try {
+    if (alias) {
+      await docClient.send(new UpdateCommand({
+        TableName: USERS_TABLE,
+        Key: { userId },
+        UpdateExpression: 'SET #b = :a',
+        ConditionExpression: 'attribute_exists(userId)',
+        ExpressionAttributeNames: { '#b': 'builderCenterAlias' },
+        ExpressionAttributeValues: { ':a': alias },
+      }));
+    } else {
+      await docClient.send(new UpdateCommand({
+        TableName: USERS_TABLE,
+        Key: { userId },
+        UpdateExpression: 'REMOVE #b',
+        ConditionExpression: '#b = :a',
+        ExpressionAttributeNames: { '#b': 'builderCenterAlias' },
+        ExpressionAttributeValues: { ':a': onlyIf },
+      }));
+    }
+  } catch (err) {
+    if (err.name !== 'ConditionalCheckFailedException') throw err;
+  }
+}
+
+async function releaseAliasEntry(userId, alias) {
+  try {
+    await docClient.send(new DeleteCommand({
+      TableName: TABLE,
+      Key: { userId: ALIAS_ENTRY_PARTITION, itemKey: alias },
+      ConditionExpression: 'ownerUserId = :me',
+      ExpressionAttributeValues: { ':me': userId },
+    }));
+  } catch (err) {
+    if (err.name !== 'ConditionalCheckFailedException') throw err;
+  }
+}
+
+/** Who else has this alias: verified by bio code, or typed in. Null if no one. */
+async function aliasTakenBy(alias, userId) {
+  const [verified, entry] = await Promise.all([
+    aliasOwner(alias),
+    docClient.send(new GetCommand({ TableName: TABLE, Key: { userId: ALIAS_ENTRY_PARTITION, itemKey: alias } })),
+  ]);
+  const other = [verified, entry.Item?.ownerUserId].find((o) => o && o !== userId);
+  return other || null;
+}
+
+/** Look the alias up on Builder Center, for the member to confirm it is their profile. */
+async function lookUpAlias(event) {
+  const claims = await verifyIdToken(authHeader(event));
+  if (!claims) return { response: res(401, { error: 'Sign in again to add your Builder Center alias.' }) };
+  const body = parseBody(event);
+  if (!body) return { response: res(400, { error: 'Invalid JSON body.' }) };
+  const alias = builder.normalizeAlias(body.alias);
+  if (!alias) return { response: res(400, { error: 'Enter your Builder Center alias or profile link, like builder.aws.com/community/@yourname.' }) };
+  const settings = await getSettings();
+  if (!linkingAllowed(settings)) return { response: res(403, { error: 'Adding Builder Center aliases is not open right now.' }) };
+  if (await aliasTakenBy(alias, claims.sub)) {
+    return { response: res(409, { error: `@${alias} is already on another awsugmdu.in profile. Ask an organiser if that is wrong.` }) };
+  }
+  let profile;
+  try {
+    profile = await builder.fetchProfile(alias);
+  } catch (err) {
+    console.warn('profile fetch failed', { alias, error: err.message });
+    return { response: res(502, { error: 'Builder Center could not be reached. Try again in a minute.' }) };
+  }
+  if (!profile.found) return { response: res(404, { error: `There is no Builder Center profile at @${alias}. Check the spelling.` }) };
+  return { userId: claims.sub, alias, profile, settings };
+}
+
+async function handleAliasCheck(event) {
+  const r = await lookUpAlias(event);
+  if (r.response) return r.response;
+  return res(200, {
+    alias: r.alias,
+    profileName: r.profile.name || null,
+    headline: r.profile.headline || null,
+    profileUrl: builder.PROFILE_URL(r.alias),
+  });
+}
+
+/**
+ * Save the alias the member confirmed, replacing one they typed in before,
+ * and give the linking points the first time. One member per alias.
+ */
+async function handleAliasSave(event) {
+  const r = await lookUpAlias(event);
+  if (r.response) return r.response;
+  const { userId, alias, profile, settings } = r;
+  const now = nowIso();
+
+  try {
+    await docClient.send(new PutCommand({
+      TableName: TABLE,
+      Item: { userId: ALIAS_ENTRY_PARTITION, itemKey: alias, ownerUserId: userId, addedAt: now },
+      ConditionExpression: 'attribute_not_exists(itemKey) OR ownerUserId = :me',
+      ExpressionAttributeValues: { ':me': userId },
+    }));
+  } catch (err) {
+    if (err.name !== 'ConditionalCheckFailedException') throw err;
+    return res(409, { error: `@${alias} is already on another awsugmdu.in profile. Ask an organiser if that is wrong.` });
+  }
+
+  // One typed-in alias per member: drop the old one.
+  const { links } = splitUserItems(await queryUserItems(userId));
+  for (const l of links) {
+    if (l.status === LINK.ADDED && l.alias !== alias) await removeLink(userId, l.alias);
+  }
+  const current = links.find((l) => l.alias === alias);
+  if (current?.status !== LINK.VERIFIED) {
+    await putLink(userId, alias, {
+      status: LINK.ADDED, source: 'member', addedAt: now, profileName: profile.name || undefined, rejectedAt: undefined,
+    });
+  }
+  await setProfileAlias(userId, alias);
+  console.log('builder center alias added', { userId, alias });
+
+  const user = await getUser(userId);
+  const linkPoints = user ? await awardLinkBonus(userId, alias, user, settings) : 0;
+  return res(200, { alias, linkPoints, pointsAdded: linkPoints, ...(await pointTotals(userId)) });
 }
 
 /**
@@ -1261,6 +1283,10 @@ async function handlePutSettings(event) {
     if (typeof body.claimsOpen !== 'boolean') return res(400, { error: 'claimsOpen must be true or false.' });
     next.claimsOpen = body.claimsOpen;
   }
+  if (body.linkingOpen !== undefined) {
+    if (typeof body.linkingOpen !== 'boolean') return res(400, { error: 'linkingOpen must be true or false.' });
+    next.linkingOpen = body.linkingOpen;
+  }
   for (const field of POINT_FIELDS) {
     if (body[field] === undefined) continue;
     const n = Number(body[field]);
@@ -1286,9 +1312,9 @@ async function handleSummary(event) {
 
   const [all, sync, settings] = await Promise.all([scanAll({ TableName: TABLE }), getSyncState(), getSettings()]);
   const totals = {
-    articles: 0, pointsAwarded: 0, ...emptyCounts(),
+    articles: 0, pointsAwarded: 0, linkPointsAwarded: 0, ...emptyCounts(),
     byType: { blog: 0, project: 0 },
-    links: { matched: 0, verified: 0, rejected: 0 },
+    links: { matched: 0, verified: 0, rejected: 0, added: 0 },
   };
   const perMember = new Map();
   const member = (userId) => {
@@ -1301,6 +1327,7 @@ async function handleSummary(event) {
         byType: { blog: 0, project: 0 },
         relabelled: 0,
         pointsAwarded: 0,
+        linkPoints: 0,
         lastClaimedAt: null,
       });
     }
@@ -1313,6 +1340,12 @@ async function handleSummary(event) {
     if (key.startsWith(LINK_PREFIX)) {
       member(item.userId).links.push({ alias: item.alias, status: item.status, verifiedAt: item.verifiedAt || null });
       if (totals.links[item.status] !== undefined) totals.links[item.status] += 1;
+      continue;
+    }
+    if (key === LINK_BONUS_KEY) {
+      const pts = Number(item.points) || 0;
+      member(item.userId).linkPoints += pts;
+      totals.linkPointsAwarded += pts;
       continue;
     }
     if (!key.startsWith(ARTICLE_PREFIX)) continue;
@@ -1907,8 +1940,8 @@ exports.handler = async (event, context) => {
       if (method === 'POST' && r[1] === 'restore') return await handleMove(event, STATUS.DISMISSED, STATUS.SUGGESTED);
       if (method === 'POST' && r[1] === 'aliases' && r[2] === 'reject') return await handleRejectAlias(event);
       if (method === 'POST' && r[1] === 'aliases' && r[2] === 'restore') return await handleRestoreAlias(event);
-      if (method === 'POST' && r[1] === 'link' && r[2] === 'start') return await handleLinkStart(event);
-      if (method === 'POST' && r[1] === 'link' && r[2] === 'verify') return await handleLinkVerify(event);
+      if (method === 'POST' && r[1] === 'alias' && r[2] === 'check') return await handleAliasCheck(event);
+      if (method === 'POST' && r[1] === 'alias' && r[2] === 'save') return await handleAliasSave(event);
       if (method === 'POST' && r[1] === 'link' && r[2] === 'remove') return await handleLinkRemove(event);
       if (method === 'POST' && r[1] === 'articles' && r[2] === 'add') return await handleAddArticle(event);
     }

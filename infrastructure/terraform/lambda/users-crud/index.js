@@ -709,7 +709,7 @@ async function releaseBuilderLock(partition, itemKey, userId) {
 /**
  * Remove the member's Builder Center items, and the locks they hold: claim
  * locks, so another account matched to the same author can claim those
- * articles, and the lock on a Builder Center account they linked.
+ * articles, and the lock on a Builder Center account they linked or typed in.
  */
 async function cleanupBuilderContent(userId) {
   // Partitions starting with "__" hold the table's settings, locks and sync state.
@@ -735,6 +735,9 @@ async function cleanupBuilderContent(userId) {
       }
       if (key.startsWith('link#') && item.status === 'verified' && item.alias) {
         await releaseBuilderLock('__aliases__', item.alias, userId);
+      }
+      if (key.startsWith('link#') && item.status === 'added' && item.alias) {
+        await releaseBuilderLock('__aliasentry__', item.alias, userId);
       }
       await docClient.send(new DeleteCommand({
         TableName: BUILDER_CONTENT_TABLE,

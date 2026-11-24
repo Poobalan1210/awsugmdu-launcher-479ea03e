@@ -54,9 +54,10 @@ const LINK_BADGE: Record<BuilderLinkStatus, { label: string; variant: 'default' 
   verified: { label: 'Linked', variant: 'default' },
   matched: { label: 'Matched', variant: 'secondary' },
   rejected: { label: 'Not theirs', variant: 'destructive' },
+  added: { label: 'Added by member', variant: 'secondary' },
 };
 
-type PointsForm = Record<Exclude<keyof BuilderCenterSettings, 'claimsOpen'>, string>;
+type PointsForm = Record<Exclude<keyof BuilderCenterSettings, 'claimsOpen' | 'linkingOpen'>, string>;
 
 const POINT_INPUTS: { key: keyof PointsForm; label: string; hint?: string }[] = [
   { key: 'pointsPerArticle', label: 'Points per blog' },
@@ -64,6 +65,7 @@ const POINT_INPUTS: { key: keyof PointsForm; label: string; hint?: string }[] = 
   { key: 'pointsPerProject', label: 'Points per project' },
   { key: 'pointsPerUGMaduraiProject', label: 'Per project that mentions AWS UG Madurai', hint: 'Used instead of the points per project. 0 means the same as the points per project.' },
   { key: 'maxPointsPerMember', label: 'Most points per member', hint: 'Blogs and projects together. 0 means no limit.' },
+  { key: 'pointsForLinking', label: 'Points for adding an alias', hint: 'Once per member and once per Builder Center account. Not counted in the most points per member.' },
 ];
 
 function today(): string {
@@ -96,8 +98,10 @@ export default function BuilderCenterTab() {
 
   // ── Settings ──
   const [claimsOpen, setClaimsOpen] = useState(false);
+  const [linkingOpen, setLinkingOpen] = useState(false);
   const [points, setPoints] = useState<PointsForm>({
     pointsPerArticle: '0', pointsPerUGMaduraiArticle: '0', pointsPerProject: '0', pointsPerUGMaduraiProject: '0', maxPointsPerMember: '0',
+    pointsForLinking: '100',
   });
   const [saving, setSaving] = useState(false);
   const loadedAt = useRef<string | null | undefined>(undefined);
@@ -108,12 +112,14 @@ export default function BuilderCenterTab() {
     if (!s || loadedAt.current === s.updatedAt) return;
     loadedAt.current = s.updatedAt;
     setClaimsOpen(s.claimsOpen);
+    setLinkingOpen(s.linkingOpen);
     setPoints({
       pointsPerArticle: String(s.pointsPerArticle ?? 0),
       pointsPerUGMaduraiArticle: String(s.pointsPerUGMaduraiArticle ?? 0),
       pointsPerProject: String(s.pointsPerProject ?? 0),
       pointsPerUGMaduraiProject: String(s.pointsPerUGMaduraiProject ?? 0),
       maxPointsPerMember: String(s.maxPointsPerMember ?? 0),
+      pointsForLinking: String(s.pointsForLinking ?? 100),
     });
   }, [summary?.settings]);
 
@@ -127,7 +133,7 @@ export default function BuilderCenterTab() {
       }
       out[key] = n;
     }
-    return { claimsOpen, ...(out as Record<keyof PointsForm, number>) };
+    return { claimsOpen, linkingOpen, ...(out as Record<keyof PointsForm, number>) };
   };
 
   const handleSave = async () => {
@@ -135,6 +141,10 @@ export default function BuilderCenterTab() {
     if (!next) return;
     if (next.claimsOpen && !summary?.settings.claimsOpen
       && !confirm('Open claims? Members will see their suggestions, can claim them and link their Builder Center accounts straight away.')) {
+      return;
+    }
+    if (next.linkingOpen && !summary?.settings.linkingOpen && !next.claimsOpen
+      && !confirm(`Open aliases? Members can add their Builder Center alias on their profile, and earn ${next.pointsForLinking.toLocaleString()} points for it.`)) {
       return;
     }
     setSaving(true);
@@ -296,7 +306,23 @@ export default function BuilderCenterTab() {
             <Switch id="bc-claims-open" checked={claimsOpen} onCheckedChange={setClaimsOpen} disabled={isLoading} />
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
+            <div>
+              <Label htmlFor="bc-linking-open" className="text-base">Members can link their alias</Label>
+              <p className="text-sm text-muted-foreground">
+                Members add their Builder Center alias on their profile: we look the profile up, they confirm it's theirs,
+                and get the points for linking. No articles are added from it. On when claims are on.
+              </p>
+            </div>
+            <Switch
+              id="bc-linking-open"
+              checked={linkingOpen || claimsOpen}
+              onCheckedChange={setLinkingOpen}
+              disabled={isLoading || claimsOpen}
+            />
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {POINT_INPUTS.map(f => (
               <div key={f.key} className="grid content-start gap-2">
                 <Label htmlFor={`bc-${f.key}`}>{f.label}</Label>
@@ -460,7 +486,7 @@ export default function BuilderCenterTab() {
           <CardDescription>
             {summary
               ? `${summary.totals.articles.toLocaleString()} articles (${summary.totals.byType.blog.toLocaleString()} blogs, ${summary.totals.byType.project.toLocaleString()} projects) for ${summary.members.length.toLocaleString()} members. `
-                + `${summary.totals.links.verified.toLocaleString()} linked accounts. ${summary.totals.pointsAwarded.toLocaleString()} points given so far.`
+                + `${summary.totals.links.verified.toLocaleString()} linked accounts. ${summary.totals.pointsAwarded.toLocaleString()} points given for articles and ${(summary.totals.linkPointsAwarded ?? 0).toLocaleString()} for linking so far.`
               : 'Suggestions and claims per member.'}
           </CardDescription>
         </CardHeader>
@@ -542,7 +568,7 @@ export default function BuilderCenterTab() {
                           <TableCell className="text-right">{(m.counts.already_on_platform || 0) + (m.counts.claimed_elsewhere || 0)}</TableCell>
                           <TableCell className="text-right">{m.byType.blog} / {m.byType.project}</TableCell>
                           <TableCell className="text-right">{m.relabelled || ''}</TableCell>
-                          <TableCell className="text-right">{m.pointsAwarded.toLocaleString()}</TableCell>
+                          <TableCell className="text-right">{(m.pointsAwarded + (m.linkPoints ?? 0)).toLocaleString()}</TableCell>
                         </TableRow>
                       );
                     })}

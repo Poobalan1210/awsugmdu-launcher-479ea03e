@@ -3,9 +3,8 @@ import type { SpotlightSubmission, Submission } from '@/data/mockData';
 
 /**
  * Builder Center backfill: AWS Builder Center blogs and projects members
- * wrote, added to their profile. Members claim suggestions, or link their
- * Builder Center account with a bio code so their articles are added
- * automatically, and a weekly sync keeps both current. Served by the
+ * wrote, added to their profile. Members add their Builder Center alias and
+ * claim suggestions, and a weekly sync keeps them current. Served by the
  * builder-center-crud Lambda. Challenge wins will be added here later.
  */
 
@@ -48,18 +47,20 @@ export interface OwnBuilderArticle extends BuilderArticle {
   autoAdded: boolean;
 }
 
-export type BuilderLinkStatus = 'matched' | 'verified' | 'rejected';
+export type BuilderLinkStatus = 'matched' | 'verified' | 'rejected' | 'added';
 
 export interface BuilderLink {
   alias: string;
   /**
    * matched: we think this Builder Center account is theirs.
-   * verified: they proved it with a bio code; new articles are added automatically.
+   * verified: proved with the old bio code; new articles are added automatically.
    * rejected: they said it isn't theirs.
+   * added: they typed it in and confirmed it, without a bio code. Recorded only.
    */
   status: BuilderLinkStatus;
   source: string | null;
   verifiedAt: string | null;
+  addedAt?: string | null;
   rejectedAt: string | null;
   lastSyncedAt: string | null;
   profileUrl: string;
@@ -68,6 +69,10 @@ export interface BuilderLink {
 export interface BuilderCenterSettings {
   /** Members see suggestions, claim them and link accounts only while this is on. */
   claimsOpen: boolean;
+  /** Members can add their alias (and earn pointsForLinking) while claims stay off. */
+  linkingOpen: boolean;
+  /** Points for adding a Builder Center alias, once per member and once per alias. 0 means none. */
+  pointsForLinking: number;
   /** Points per blog. */
   pointsPerArticle: number;
   /** Used instead of pointsPerArticle when the blog names AWS UG Madurai. 0 means use pointsPerArticle. */
@@ -84,20 +89,14 @@ export interface AdminBuilderCenterSettings extends BuilderCenterSettings {
   updatedBy: string | null;
 }
 
-export interface PendingVerification {
-  alias: string;
-  code: string;
-  expiresAt: string;
-  profileName: string | null;
-}
-
 export interface MyBuilderContent {
   settings: BuilderCenterSettings;
+  /** Points this member got for linking an account, or null if they haven't yet. */
+  linkBonus: { points: number; alias: string; awardedAt: string } | null;
   /** Points already given for this member's claimed articles. */
   awardedPoints: number;
   articles: OwnBuilderArticle[];
   links: BuilderLink[];
-  pendingVerification: PendingVerification | null;
   lastSyncAt: string | null;
 }
 
@@ -105,24 +104,6 @@ export interface ClaimResult {
   results: { contentId: string; status: 'claimed' | 'skipped'; reason?: string; points?: number }[];
   claimed: number;
   pointsAdded: number;
-  points: number | null;
-  redeemablePoints: number | null;
-}
-
-export interface LinkStartResult {
-  alias: string;
-  code: string;
-  expiresAt: string;
-  profileName: string | null;
-  profileUrl: string;
-}
-
-export interface LinkVerifyResult {
-  alias: string;
-  added: number;
-  pointsAdded: number;
-  /** False until the first weekly sync has read the feed: then only suggestions were added. */
-  feedIndexed: boolean;
   points: number | null;
   redeemablePoints: number | null;
 }
@@ -147,6 +128,7 @@ export interface BuilderCenterSummary {
   totals: StatusCounts & {
     articles: number;
     pointsAwarded: number;
+    linkPointsAwarded: number;
     byType: Record<ContentType, number>;
     links: Record<BuilderLinkStatus, number>;
   };
@@ -161,6 +143,8 @@ export interface BuilderCenterSummary {
     /** Articles whose type the member changed before claiming. */
     relabelled: number;
     pointsAwarded: number;
+    /** Points for linking a Builder Center account. */
+    linkPoints: number;
     lastClaimedAt: string | null;
   }[];
   sync: BuilderSyncState | null;
@@ -185,7 +169,7 @@ export interface ImportSummary {
 
 export async function getMyBuilderContent(): Promise<MyBuilderContent> {
   const r = await callApi<MyBuilderContent>('/builder-center/me');
-  return { ...r, links: r.links || [], pendingVerification: r.pendingVerification || null };
+  return { ...r, links: r.links || [] };
 }
 
 /** Claimed articles of any member, for their public profile. */
@@ -250,14 +234,30 @@ export async function restoreBuilderAlias(alias: string): Promise<{ alias: strin
   return callApi('/builder-center/me/aliases/restore', { method: 'POST', body: JSON.stringify({ alias }) });
 }
 
-/** Step 1 of linking: a code to put in the Builder Center bio. */
-export async function startBuilderLink(alias: string): Promise<LinkStartResult> {
-  return callApi('/builder-center/me/link/start', { method: 'POST', body: JSON.stringify({ alias }) });
+export interface AliasCheckResult {
+  alias: string;
+  profileName: string | null;
+  headline: string | null;
+  profileUrl: string;
 }
 
-/** Step 2 of linking: we check the bio and add the account's articles. */
-export async function verifyBuilderLink(): Promise<LinkVerifyResult> {
-  return callApi('/builder-center/me/link/verify', { method: 'POST', body: '{}' });
+export interface AliasSaveResult {
+  alias: string;
+  /** Points for adding the alias, the first time only. */
+  linkPoints: number;
+  pointsAdded: number;
+  points: number | null;
+  redeemablePoints: number | null;
+}
+
+/** Look an alias up on Builder Center, for the member to confirm it is their profile. */
+export async function checkBuilderAlias(alias: string): Promise<AliasCheckResult> {
+  return callApi('/builder-center/me/alias/check', { method: 'POST', body: JSON.stringify({ alias }) });
+}
+
+/** Save the confirmed alias on the member's profile. */
+export async function saveBuilderAlias(alias: string): Promise<AliasSaveResult> {
+  return callApi('/builder-center/me/alias/save', { method: 'POST', body: JSON.stringify({ alias }) });
 }
 
 export interface AddArticleResult {

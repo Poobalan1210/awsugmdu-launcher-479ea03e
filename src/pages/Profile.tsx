@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { Trophy, Calendar, Target, FileText, Medal, Zap, Linkedin, Github, Twitter, ExternalLink, Building, User, Mic, BookOpen, CheckCircle, Clock, Award, ShoppingBag, Loader2, Package, Users, AlertCircle, Pencil, FolderGit2, Plus } from 'lucide-react';
+import { Trophy, Calendar, Target, FileText, Medal, Zap, Linkedin, Github, Twitter, Boxes, ExternalLink, Building, User, Mic, BookOpen, CheckCircle, Clock, Award, ShoppingBag, Loader2, Package, Users, AlertCircle, Pencil, FolderGit2, Plus } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { submitMeetupVerification, normalizeMeetupProfileUrl, getMeetupGroupUrl } from '@/lib/meetup';
@@ -39,13 +39,20 @@ import { ContentHistory } from '@/components/profile/ContentHistory';
 import { BuilderCenterActions } from '@/components/profile/BuilderCenterActions';
 import { BuilderCenterClaimCard } from '@/components/profile/BuilderCenterClaimCard';
 import { BuilderCenterClaimDialog } from '@/components/profile/BuilderCenterClaimDialog';
-import { BuilderCenterLinkDialog } from '@/components/profile/BuilderCenterLinkDialog';
+import { BuilderCenterLinkCard } from '@/components/profile/BuilderCenterLinkCard';
+import { BuilderCenterAliasDialog } from '@/components/profile/BuilderCenterAliasDialog';
+import { builderProfileUrl } from '@/lib/builderCenter';
 import { AddContentDialog } from '@/components/profile/AddContentDialog';
 import {
   buildContentHistory, getMemberBuilderArticles, getMyBuilderContent, remainingClaimPoints,
 } from '@/lib/builderCenter';
 import { getSpotlightSubmissions } from '@/lib/spotlight';
 import { BadgeImage } from '@/components/badges/BadgeImage';
+
+// The Blogs and Projects tabs, with Builder Center article claims and "Add a
+// blog/project", are off for now. Profiles show Badges, Activity and
+// Submissions, as before. Set to true to bring them back.
+const SHOW_CONTENT_TABS = false;
 
 export default function Profile() {
   const { slug } = useParams();
@@ -57,7 +64,7 @@ export default function Profile() {
   const { user: authUser, isLoading: authLoading, deleteAccount, refreshUser } = useAuth();
   const queryClient = useQueryClient();
   const [showBuilderDialog, setShowBuilderDialog] = useState(false);
-  const [showBuilderLinkDialog, setShowBuilderLinkDialog] = useState(false);
+  const [showBuilderAliasDialog, setShowBuilderAliasDialog] = useState(false);
   // "Add a blog" or "Add a project" on the member's own tabs.
   const [addContentType, setAddContentType] = useState<'blog' | 'project' | null>(null);
   // The signed-in member's Kiro University prize coupon, if they won one.
@@ -394,11 +401,17 @@ export default function Profile() {
     spotlight: profileSpotlight,
   });
 
-  const builderClaimsOpen = Boolean(isOwnProfile && myBuilderContent?.settings.claimsOpen);
+  const builderClaimsOpen = Boolean(SHOW_CONTENT_TABS && isOwnProfile && myBuilderContent?.settings.claimsOpen);
+  // Linking works while claims are open, or on its own switch.
+  const builderLinkingOpen = Boolean(
+    isOwnProfile && (myBuilderContent?.settings.claimsOpen || myBuilderContent?.settings.linkingOpen),
+  );
   const builderSuggestedCount = myBuilderContent?.articles.filter(a => a.status === 'suggested').length ?? 0;
   const builderReviewableCount = myBuilderContent?.articles
     .filter(a => a.status === 'suggested' || a.status === 'dismissed').length ?? 0;
   const builderLinked = Boolean(myBuilderContent?.links.some(l => l.status === 'verified'));
+  const builderAlias = myBuilderContent?.links.find(l => l.status === 'added')?.alias ?? null;
+  const builderLinkPoints = myBuilderContent && !myBuilderContent.linkBonus ? myBuilderContent.settings.pointsForLinking : 0;
   const historyLoading = loadingClaimedArticles || loadingProfileSpotlight || loadingSprints;
 
   // After claiming or linking: new totals now, then refetch.
@@ -422,22 +435,17 @@ export default function Profile() {
 
   const refreshBuilder = () => queryClient.invalidateQueries({ queryKey: ['builder-me'] });
 
-  // The member's own Blogs and Projects tabs: add one, and their Builder Center link.
+  // The Builder Center button next to LinkedIn: shown straight away, the server keeps it too.
+  const setShownBuilderAlias = (alias: string | null) =>
+    setProfileUser((prev) => prev ? { ...prev, builderCenterAlias: alias ?? undefined } : prev);
+
+  // The member's own Blogs and Projects tabs: add one.
   const tabActions = (type: 'blog' | 'project') => isOwnProfile ? (
     <div className="flex flex-col items-start gap-2 sm:items-end">
       <Button size="sm" onClick={() => setAddContentType(type)}>
         <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
         Add a {type}
       </Button>
-      {builderClaimsOpen && myBuilderContent && (
-        <BuilderCenterActions
-          content={myBuilderContent}
-          reviewableCount={builderReviewableCount}
-          onReview={() => setShowBuilderDialog(true)}
-          onLink={() => setShowBuilderLinkDialog(true)}
-          onChanged={refreshBuilder}
-        />
-      )}
     </div>
   ) : null;
 
@@ -853,6 +861,20 @@ export default function Profile() {
                         </a>
                       </Button>
                     )}
+                    {user.builderCenterAlias && (
+                      <Button variant="outline" size="sm" asChild>
+                        <a
+                          href={builderProfileUrl(user.builderCenterAlias)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="AWS Builder Center profile"
+                          aria-label={`AWS Builder Center profile @${user.builderCenterAlias}`}
+                        >
+                          <Boxes className="h-4 w-4" aria-hidden="true" />
+                          <span className="text-xs">Builder Center</span>
+                        </a>
+                      </Button>
+                    )}
                     <ShareButton
                       data={{
                         title: `${user.name} - AWS User Group Madurai`,
@@ -871,6 +893,20 @@ export default function Profile() {
                       </Button>
                     )}
                   </div>
+                  {/* Their Builder Center alias: change or remove it. */}
+                  {isOwnProfile && myBuilderContent && (builderAlias || builderLinked) && (
+                    <BuilderCenterActions
+                      className="mt-3 items-center md:items-start"
+                      content={myBuilderContent}
+                      reviewableCount={builderClaimsOpen ? builderReviewableCount : 0}
+                      onReview={() => setShowBuilderDialog(true)}
+                      onAddAlias={() => setShowBuilderAliasDialog(true)}
+                      onChanged={() => {
+                        refreshBuilder();
+                        setShownBuilderAlias(null);
+                      }}
+                    />
+                  )}
                 </div>
 
                 <div className="text-center">
@@ -947,40 +983,57 @@ export default function Profile() {
               potentialPoints={remainingClaimPoints(myBuilderContent)}
               linked={builderLinked}
               onReview={() => setShowBuilderDialog(true)}
-              onLink={() => setShowBuilderLinkDialog(true)}
+              onLink={() => setShowBuilderAliasDialog(true)}
+            />
+          </motion.div>
+        )}
+
+        {/* Until they add their alias: enter it, confirm the profile, earn the points. */}
+        {builderLinkingOpen && !builderLinked && !builderAlias && !(builderClaimsOpen && builderSuggestedCount > 0) && myBuilderContent && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.25 }}
+            className="mb-8"
+          >
+            <BuilderCenterLinkCard
+              points={builderLinkPoints}
+              onLink={() => setShowBuilderAliasDialog(true)}
             />
           </motion.div>
         )}
 
         {builderClaimsOpen && myBuilderContent && (
-          <>
-            <BuilderCenterClaimDialog
-              open={showBuilderDialog}
-              onOpenChange={setShowBuilderDialog}
-              content={myBuilderContent}
-              onClaimed={handleBuilderAdded}
-              onChanged={refreshBuilder}
-              // Wait for the claim dialog to close: opening one in the same frame
-              // leaves Radix's pointer-events lock on <body>.
-              onLink={() => { setShowBuilderDialog(false); window.setTimeout(() => setShowBuilderLinkDialog(true), 200); }}
-            />
-            <BuilderCenterLinkDialog
-              open={showBuilderLinkDialog}
-              onOpenChange={(open) => { setShowBuilderLinkDialog(open); if (!open) refreshBuilder(); }}
-              content={myBuilderContent}
-              onLinked={handleBuilderAdded}
-            />
-          </>
+          <BuilderCenterClaimDialog
+            open={showBuilderDialog}
+            onOpenChange={setShowBuilderDialog}
+            content={myBuilderContent}
+            onClaimed={handleBuilderAdded}
+            onChanged={refreshBuilder}
+            // Wait for the claim dialog to close: opening one in the same frame
+            // leaves Radix's pointer-events lock on <body>.
+            onLink={() => { setShowBuilderDialog(false); window.setTimeout(() => setShowBuilderAliasDialog(true), 200); }}
+          />
         )}
 
-        {isOwnProfile && (
+        {builderLinkingOpen && myBuilderContent && (
+          <BuilderCenterAliasDialog
+            open={showBuilderAliasDialog}
+            onOpenChange={(open) => { setShowBuilderAliasDialog(open); if (!open) refreshBuilder(); }}
+            points={builderLinkPoints}
+            currentAlias={builderAlias}
+            onSaved={(result) => { setShownBuilderAlias(result.alias); handleBuilderAdded(result); }}
+          />
+        )}
+
+        {SHOW_CONTENT_TABS && isOwnProfile && (
           <AddContentDialog
             open={addContentType !== null}
             onOpenChange={(open) => { if (!open) setAddContentType(null); }}
             type={addContentType || 'project'}
             builder={builderClaimsOpen && myBuilderContent ? myBuilderContent : null}
             onAdded={handleBuilderAdded}
-            onLink={() => setShowBuilderLinkDialog(true)}
+            onLink={() => setShowBuilderAliasDialog(true)}
           />
         )}
 
@@ -997,11 +1050,15 @@ export default function Profile() {
         )}
 
         <Tabs defaultValue="badges" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5 max-w-2xl">
+          <TabsList className={`grid w-full max-w-2xl ${SHOW_CONTENT_TABS ? 'grid-cols-5' : 'grid-cols-3'}`}>
             <TabsTrigger value="badges" className="px-1 text-xs sm:text-sm">Badges</TabsTrigger>
             <TabsTrigger value="activity" className="px-1 text-xs sm:text-sm">Activity</TabsTrigger>
-            <TabsTrigger value="blogs" className="px-1 text-xs sm:text-sm">Blogs</TabsTrigger>
-            <TabsTrigger value="projects" className="px-1 text-xs sm:text-sm">Projects</TabsTrigger>
+            {SHOW_CONTENT_TABS && (
+              <>
+                <TabsTrigger value="blogs" className="px-1 text-xs sm:text-sm">Blogs</TabsTrigger>
+                <TabsTrigger value="projects" className="px-1 text-xs sm:text-sm">Projects</TabsTrigger>
+              </>
+            )}
             <TabsTrigger value="submissions" className="px-1 text-xs sm:text-sm">Submissions</TabsTrigger>
           </TabsList>
 
@@ -1365,77 +1422,81 @@ export default function Profile() {
             </motion.div>
           </TabsContent>
 
-          {/* Blogs Tab */}
-          <TabsContent value="blogs">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.3 }}
-            >
-              <Card className="glass-card">
-                <CardHeader>
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <CardTitle className="flex items-center gap-2">
-                        <BookOpen className="h-5 w-5 text-primary" />
-                        {isOwnProfile ? 'Your Blogs' : `${user.name.split(' ')[0]}'s Blogs`}
-                      </CardTitle>
-                      <CardDescription>
-                        Blogs on AWS Builder Center, and blogs submitted to Skill Sprints and the Community Spotlight
-                      </CardDescription>
+          {SHOW_CONTENT_TABS && (
+            <>
+            {/* Blogs Tab */}
+            <TabsContent value="blogs">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.3 }}
+              >
+                <Card className="glass-card">
+                  <CardHeader>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <CardTitle className="flex items-center gap-2">
+                          <BookOpen className="h-5 w-5 text-primary" />
+                          {isOwnProfile ? 'Your Blogs' : `${user.name.split(' ')[0]}'s Blogs`}
+                        </CardTitle>
+                        <CardDescription>
+                          Blogs on AWS Builder Center, and blogs submitted to Skill Sprints and the Community Spotlight
+                        </CardDescription>
+                      </div>
+                      {tabActions('blog')}
                     </div>
-                    {tabActions('blog')}
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <ContentHistory
-                    entries={contentHistory.blogs}
-                    loading={historyLoading}
-                    emptyIcon={<BookOpen className="h-12 w-12" />}
-                    emptyText={isOwnProfile
-                      ? 'No blogs yet. Submit a blog to a Skill Sprint or the Community Spotlight.'
-                      : 'No blogs yet.'}
-                  />
-                </CardContent>
-              </Card>
-            </motion.div>
-          </TabsContent>
+                  </CardHeader>
+                  <CardContent>
+                    <ContentHistory
+                      entries={contentHistory.blogs}
+                      loading={historyLoading}
+                      emptyIcon={<BookOpen className="h-12 w-12" />}
+                      emptyText={isOwnProfile
+                        ? 'No blogs yet. Submit a blog to a Skill Sprint or the Community Spotlight.'
+                        : 'No blogs yet.'}
+                    />
+                  </CardContent>
+                </Card>
+              </motion.div>
+            </TabsContent>
 
-          {/* Projects Tab */}
-          <TabsContent value="projects">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.3 }}
-            >
-              <Card className="glass-card">
-                <CardHeader>
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <CardTitle className="flex items-center gap-2">
-                        <FolderGit2 className="h-5 w-5 text-primary" />
-                        {isOwnProfile ? 'Your Projects' : `${user.name.split(' ')[0]}'s Projects`}
-                      </CardTitle>
-                      <CardDescription>
-                        Projects on AWS Builder Center, repos submitted to Skill Sprints, and Community Spotlight projects
-                      </CardDescription>
+            {/* Projects Tab */}
+            <TabsContent value="projects">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.3 }}
+              >
+                <Card className="glass-card">
+                  <CardHeader>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <CardTitle className="flex items-center gap-2">
+                          <FolderGit2 className="h-5 w-5 text-primary" />
+                          {isOwnProfile ? 'Your Projects' : `${user.name.split(' ')[0]}'s Projects`}
+                        </CardTitle>
+                        <CardDescription>
+                          Projects on AWS Builder Center, repos submitted to Skill Sprints, and Community Spotlight projects
+                        </CardDescription>
+                      </div>
+                      {tabActions('project')}
                     </div>
-                    {tabActions('project')}
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <ContentHistory
-                    entries={contentHistory.projects}
-                    loading={historyLoading}
-                    emptyIcon={<FolderGit2 className="h-12 w-12" />}
-                    emptyText={isOwnProfile
-                      ? 'No projects yet. Submit a repo to a Skill Sprint or a project to the Community Spotlight.'
-                      : 'No projects yet.'}
-                  />
-                </CardContent>
-              </Card>
-            </motion.div>
-          </TabsContent>
+                  </CardHeader>
+                  <CardContent>
+                    <ContentHistory
+                      entries={contentHistory.projects}
+                      loading={historyLoading}
+                      emptyIcon={<FolderGit2 className="h-12 w-12" />}
+                      emptyText={isOwnProfile
+                        ? 'No projects yet. Submit a repo to a Skill Sprint or a project to the Community Spotlight.'
+                        : 'No projects yet.'}
+                    />
+                  </CardContent>
+                </Card>
+              </motion.div>
+            </TabsContent>
+            </>
+          )}
 
           {/* Submissions Tab */}
           <TabsContent value="submissions">
